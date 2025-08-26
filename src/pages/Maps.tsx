@@ -120,28 +120,27 @@ export default function Maps() {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}`, '_blank')
   }
 
+  // Cache para evitar geocoding duplicado
+  const geocodeCache = useRef<Map<string, { lat: number; lng: number } | null>>(new Map())
+  
   // 地理編碼函數
   const geocodeCustomer = async (customer: Customer): Promise<{ lat: number; lng: number } | null> => {
     const address = getAddress(customer)
     if (!address) return null
 
-    // 檢查快取
-    const cacheKey = `geo:${customer.id}:${address}`
-    const cached = localStorage.getItem(cacheKey)
-    if (cached) {
-      try {
-        return JSON.parse(cached)
-      } catch {}
+    // Check cache first
+    const cacheKey = `${customer.id}-${address}`
+    if (geocodeCache.current.has(cacheKey)) {
+      return geocodeCache.current.get(cacheKey)!
     }
 
-    const candidates: string[] = (() => {
-      const cityResolved = displayCity(customer)
-      const province = customer.province || ''
-      const locality = cityResolved || customer.city || province || ''
-      const minimal = [locality, province && locality !== province ? province : '', 'España'].filter(Boolean).join(', ')
-      // 優先用完整地址，再退回城市+省份
-      return [address, minimal].filter((v, idx, arr) => v && arr.indexOf(v) === idx)
-    })()
+    // Intentar varias consultas para mejorar la precisión
+    const candidates = [
+      `${address}, ${customer.city || ''}, ${customer.province || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      `${address}, ${customer.city || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      `${customer.city || ''}, ${customer.province || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      address
+    ].filter(q => q.length > 2)
 
     for (const query of candidates) {
       try {
@@ -150,33 +149,62 @@ export default function Maps() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ address: query })
         })
-        if (!resp.ok) throw new Error(`Geocode proxy error ${resp.status}`)
-        const json = await resp.json()
-        if (json?.success && json?.data?.lat && json?.data?.lng) {
-          const coords = { lat: Number(json.data.lat), lng: Number(json.data.lng) }
-          localStorage.setItem(cacheKey, JSON.stringify(coords))
-          return coords
+        if (resp.ok) {
+          const result = await resp.json()
+          if (result.success && result.data?.lat && result.data?.lng) {
+            const coords = { lat: result.data.lat, lng: result.data.lng }
+            geocodeCache.current.set(cacheKey, coords)
+            return coords
+          }
         }
       } catch (error) {
         console.warn('Geocoding failed for', query, error)
       }
     }
 
+    // Cache null result to avoid retrying
+    geocodeCache.current.set(cacheKey, null)
     return null
   }
 
   useEffect(() => {
-    // Pre-cargar coordenadas para clientes filtrados que no las tengan
-    filteredCustomers.forEach(c => {
+    // Pre-cargar coordenadas para clientes filtrados que no las tengan (con rate limiting)
+    const needGeocoding = filteredCustomers.filter(c => {
       const hasCoords = (typeof c.latitude === 'number' && typeof c.longitude === 'number') || coordsById[c.id]
-      if (!hasCoords && (c.address || c.city || c.notes || c.province)) {
-        geocodeCustomer(c).then(coords => {
-          if (coords) {
-            setCoordsById(prev => ({ ...prev, [c.id]: coords }))
-          }
-        })
-      }
+      return !hasCoords && (c.address || c.city || c.notes || c.province)
     })
+
+    // Limitar a máximo 5 requests simultáneos
+    const maxConcurrent = 5
+    let processed = 0
+    
+    const processInBatches = async () => {
+      for (let i = 0; i < needGeocoding.length; i += maxConcurrent) {
+        const batch = needGeocoding.slice(i, i + maxConcurrent)
+        
+        await Promise.all(
+          batch.map(async (c) => {
+            try {
+              const coords = await geocodeCustomer(c)
+              if (coords) {
+                setCoordsById(prev => ({ ...prev, [c.id]: coords }))
+              }
+            } catch (error) {
+              console.warn('Geocoding failed for customer', c.id, error)
+            }
+          })
+        )
+        
+        // Pausa entre batches para evitar rate limiting
+        if (i + maxConcurrent < needGeocoding.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      }
+    }
+
+    if (needGeocoding.length > 0) {
+      processInBatches()
+    }
   }, [filteredCustomers])
 
   // Iconos del mapa (SVG inline)
@@ -336,15 +364,29 @@ export default function Maps() {
           const hasCoords = (typeof c.latitude === 'number' && typeof c.longitude === 'number') || coordsById[c.id]
           return !hasCoords && (c.address || c.city || c.notes || c.province)
         })
-        for (const c of need) {
+        // Process in smaller batches to avoid overwhelming the API
+        const batchSize = 3
+        for (let i = 0; i < need.length; i += batchSize) {
           if (cancelled) break
-          geocodeCustomer(c).then(coords => {
-            if (coords) {
-              setCoordsById(prev => ({ ...prev, [c.id]: coords }))
-            }
-          })
-          // 小延遲避免被 Nominatim/外部服務拒絕
-          await sleep(350)
+          
+          const batch = need.slice(i, i + batchSize)
+          await Promise.all(
+            batch.map(async (c) => {
+              try {
+                const coords = await geocodeCustomer(c)
+                if (coords) {
+                  setCoordsById(prev => ({ ...prev, [c.id]: coords }))
+                }
+              } catch (error) {
+                console.warn('Geocoding failed for customer', c.id, error)
+              }
+            })
+          )
+          
+          // Longer delay between batches
+          if (i + batchSize < need.length) {
+            await sleep(1500)
+          }
         }
       } finally {
         isGeocodingRef.current = false
