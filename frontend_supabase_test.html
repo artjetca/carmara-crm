@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端 Supabase 連接測試</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        .log {
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>前端 Supabase 連接測試診斷</h1>
+        
+        <div class="test-section info">
+            <h3>測試說明</h3>
+            <p>此測試將檢查前端 Supabase 配置和登入功能，包括：</p>
+            <ul>
+                <li>環境變數載入檢查</li>
+                <li>Supabase 客戶端初始化</li>
+                <li>直接登入測試（rosariog.almenglo@gmail.com / admin123）</li>
+                <li>瀏覽器控制台錯誤檢查</li>
+                <li>用戶存在性檢查</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h3>測試控制</h3>
+            <button onclick="runAllTests()">執行所有測試</button>
+            <button onclick="testEnvironmentVariables()">檢查環境變數</button>
+            <button onclick="testSupabaseConnection()">測試 Supabase 連接</button>
+            <button onclick="testDirectLogin()">測試直接登入</button>
+            <button onclick="clearLogs()">清除日誌</button>
+        </div>
+
+        <div id="results"></div>
+        
+        <div class="test-section">
+            <h3>詳細日誌</h3>
+            <div id="logs" class="log"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 日誌功能
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('logs');
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            logElement.textContent += logEntry;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(`[Frontend Test] ${message}`);
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').textContent = '';
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function addResult(title, content, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-section ${type}`;
+            resultDiv.innerHTML = `<h4>${title}</h4>${content}`;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        // 測試 1: 環境變數檢查
+        function testEnvironmentVariables() {
+            log('開始檢查環境變數...');
+            
+            const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL;
+            const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
+            
+            let result = '<ul>';
+            let hasError = false;
+            
+            if (supabaseUrl) {
+                result += `<li>✅ VITE_SUPABASE_URL: ${supabaseUrl}</li>`;
+                log(`VITE_SUPABASE_URL 已設置: ${supabaseUrl}`);
+            } else {
+                result += '<li>❌ VITE_SUPABASE_URL: 未設置</li>';
+                log('錯誤: VITE_SUPABASE_URL 未設置', 'error');
+                hasError = true;
+            }
+            
+            if (supabaseAnonKey) {
+                result += `<li>✅ VITE_SUPABASE_ANON_KEY: ${supabaseAnonKey.substring(0, 20)}...</li>`;
+                log(`VITE_SUPABASE_ANON_KEY 已設置: ${supabaseAnonKey.substring(0, 20)}...`);
+            } else {
+                result += '<li>❌ VITE_SUPABASE_ANON_KEY: 未設置</li>';
+                log('錯誤: VITE_SUPABASE_ANON_KEY 未設置', 'error');
+                hasError = true;
+            }
+            
+            result += '</ul>';
+            
+            if (hasError) {
+                result += '<p><strong>修復建議:</strong> 檢查 .env.local 文件是否存在且包含正確的 Supabase 配置。</p>';
+            }
+            
+            addResult('環境變數檢查', result, hasError ? 'error' : 'success');
+            return !hasError;
+        }
+
+        // 測試 2: Supabase 連接測試
+        async function testSupabaseConnection() {
+            log('開始測試 Supabase 連接...');
+            
+            try {
+                // 改用 CDN ESM 匯入，避免裸模組在純 HTML 場景報錯
+                const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+                
+                const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || 'https://your-project.supabase.co';
+                const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || 'your-anon-key';
+                
+                const supabase = createClient(supabaseUrl, supabaseAnonKey);
+                
+                // 測試基本連接
+                const { data, error } = await supabase.from('customers').select('count', { count: 'exact', head: true });
+                
+                if (error) {
+                    log(`Supabase 連接錯誤: ${error.message}`, 'error');
+                    addResult('Supabase 連接測試', `<p>❌ 連接失敗: ${error.message}</p><p><strong>修復建議:</strong> 檢查 Supabase URL 和 Anon Key 是否正確。</p>`, 'error');
+                    return false;
+                } else {
+                    log('Supabase 連接成功');
+                    addResult('Supabase 連接測試', '<p>✅ Supabase 連接正常</p>', 'success');
+                    return supabase;
+                }
+            } catch (error) {
+                log(`Supabase 初始化錯誤: ${error.message}`, 'error');
+                addResult('Supabase 連接測試', `<p>❌ 初始化失敗: ${error.message}</p><p><strong>修復建議:</strong> 檢查網路連接和 Supabase 配置。</p>`, 'error');
+                return false;
+            }
+        }
+
+        // 測試 3: 直接登入測試
+        async function testDirectLogin() {
+            log('開始測試直接登入功能...');
+            
+            try {
+                const supabase = await testSupabaseConnection();
+                if (!supabase) {
+                    addResult('直接登入測試', '<p>❌ 無法進行登入測試，Supabase 連接失敗</p>', 'error');
+                    return false;
+                }
+                
+                const email = 'rosariog.almenglo@gmail.com';
+                const password = 'admin123';
+                
+                log(`嘗試使用 ${email} 登入...`);
+                
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+                
+                if (error) {
+                    log(`登入失敗: ${error.message}`, 'error');
+                    
+                    let suggestions = '<p><strong>修復建議:</strong></p><ul>';
+                    
+                    if (error.message.includes('Invalid login credentials')) {
+                        suggestions += '<li>檢查用戶是否存在於 Supabase Auth 中</li>';
+                        suggestions += '<li>驗證密碼是否正確</li>';
+                        suggestions += '<li>檢查 Supabase 項目設置</li>';
+                        
+                        // 使用 anon key 無法列出用戶，故此處僅顯示建議
+                        suggestions += '<li>提示: 使用 service role key 才能列出用戶</li>';
+                    }
+                    
+                    suggestions += '</ul>';
+                    
+                    addResult('直接登入測試', `<p>❌ 登入失敗: ${error.message}</p>${suggestions}`, 'error');
+                    return false;
+                } else {
+                    log('登入成功！');
+                    log(`用戶 ID: ${data.user.id}`);
+                    log(`用戶 Email: ${data.user.email}`);
+                    
+                    addResult('直接登入測試', `
+                        <p>✅ 登入成功！</p>
+                        <ul>
+                            <li>用戶 ID: ${data.user.id}</li>
+                            <li>用戶 Email: ${data.user.email}</li>
+                            <li>登入時間: ${new Date(data.user.last_sign_in_at).toLocaleString()}</li>
+                        </ul>
+                    `, 'success');
+                    
+                    // 登出以清理狀態
+                    await supabase.auth.signOut();
+                    log('已自動登出以清理測試狀態');
+                    
+                    return true;
+                }
+            } catch (error) {
+                log(`登入測試異常: ${error.message}`, 'error');
+                addResult('直接登入測試', `<p>❌ 測試異常: ${error.message}</p>`, 'error');
+                return false;
+            }
+        }
+
+        // 檢查瀏覽器控制台錯誤
+        function checkConsoleErrors() {
+            log('檢查瀏覽器控制台錯誤...');
+            
+            // 監聽控制台錯誤
+            const originalError = console.error;
+            const errors = [];
+            
+            console.error = function(...args) {
+                errors.push(args.join(' '));
+                originalError.apply(console, args);
+            };
+            
+            setTimeout(() => {
+                console.error = originalError;
+                
+                if (errors.length > 0) {
+                    let errorList = '<ul>';
+                    errors.forEach(err => errorList += `<li>${err}</li>`);
+                    errorList += '</ul>';
+                    addResult('控制台錯誤', errorList, 'warning');
+                } else {
+                    addResult('控制台錯誤', '<p>未檢測到錯誤</p>', 'success');
+                }
+            }, 3000);
+        }
+
+        // 一鍵執行
+        async function runAllTests() {
+            clearLogs();
+            testEnvironmentVariables();
+            await testSupabaseConnection();
+            await testDirectLogin();
+            checkConsoleErrors();
+        }
+    </script>
+</body>
+</html>
