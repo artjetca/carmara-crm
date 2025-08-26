@@ -2,7 +2,7 @@
  * Vercel deploy entry handler, for serverless deployment
  */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 
 const app = express();
@@ -12,12 +12,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check endpoint
-app.get('/api/health', (req: VercelRequest, res: VercelResponse) => {
+app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ success: true, message: 'ok' });
 });
 
 // Basic auth endpoint for testing
-app.post('/api/auth/login', (req: VercelRequest, res: VercelResponse) => {
+app.post('/api/auth/login', (req: Request, res: Response) => {
   const { email, password } = req.body;
   
   if (!email || !password) {
@@ -35,7 +35,7 @@ app.post('/api/auth/login', (req: VercelRequest, res: VercelResponse) => {
 });
 
 // 404 handler
-app.use((req: VercelRequest, res: VercelResponse) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     error: 'API not found'
@@ -43,7 +43,7 @@ app.use((req: VercelRequest, res: VercelResponse) => {
 });
 
 // Error handler
-app.use((error: Error, req: VercelRequest, res: VercelResponse, next: any) => {
+app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('API Error:', error);
   res.status(500).json({
     success: false,
