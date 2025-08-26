@@ -6,15 +6,13 @@ import express, { type Request, type Response, type NextFunction }  from 'expres
 
 // Environment variables are loaded in server.ts
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import authRoutes from './routes/auth.js';
-import customersRoutes from './routes/customers.js';
-import geocodeRoutes from './routes/geocode.js';
+import authRoutes from './routes/auth';
+import customersRoutes from './routes/customers';
+import geocodeRoutes from './routes/geocode';
 
-// for esm mode
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Remove ESM-specific code that may cause issues in Vercel
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
 
 // env is already loaded by `import 'dotenv/config'`
 

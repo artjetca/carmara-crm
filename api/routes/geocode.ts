@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express'
-import https from 'node:https'
-import http from 'node:http'
+import https from 'https'
+import http from 'http'
 
 const router = Router()
 
