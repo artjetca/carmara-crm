@@ -5,6 +5,5 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // Import without extension for TS/Node runtime compatibility on Vercel
 import app from './app';
 
-export default function handler(req: VercelRequest, res: VercelResponse) {
-  return app(req, res);
-}
+// Export the Express app directly; Express apps are request handlers compatible with Vercel
+export default app;

@@ -32,11 +32,8 @@ app.use('/api/geocode', geocodeRoutes);
 /**
  * health
  */
-app.use('/api/health', (req: Request, res: Response, next: NextFunction): void => {
-  res.status(200).json({
-    success: true,
-    message: 'ok'
-  });
+app.get('/api/health', (req: Request, res: Response): void => {
+  res.status(200).json({ success: true, message: 'ok' });
 });
 
 /**
