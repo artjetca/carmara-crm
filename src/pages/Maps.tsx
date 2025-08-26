@@ -256,13 +256,27 @@ export default function Maps() {
     })
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
     const newly: Record<string, { lat: number; lng: number }> = {}
+    
+    // 分批處理，每批最多5個，避免資源不足
+    const batchSize = 5
+    const batches = []
+    for (let i = 0; i < need.length; i += batchSize) {
+      batches.push(need.slice(i, i + batchSize))
+    }
+    
     try {
-      for (const c of need) {
-        const coords = await geocodeCustomer(c)
-        if (coords) {
-          newly[c.id] = coords
+      for (const batch of batches) {
+        for (const c of batch) {
+          const coords = await geocodeCustomer(c)
+          if (coords) {
+            newly[c.id] = coords
+          }
+          await sleep(1000)
         }
-        await sleep(200)
+        // 批次間額外等待，避免過載
+        if (batches.indexOf(batch) < batches.length - 1) {
+          await sleep(2000)
+        }
       }
 
       // 一次性合併新取得的座標，避免 setState 非同步導致 positions 不完整

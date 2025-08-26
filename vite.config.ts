@@ -1,11 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
-import { traeBadgePlugin } from 'vite-plugin-trae-solo-badge';
 import 'dotenv/config'
 
-// Always proxy to backend on 3033 to avoid Vite env overriding PORT and causing proxy to default to :80
-const apiPort = '3033'
+// Always proxy to backend on 3031 to match current server port
+const apiPort = '3031'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -17,15 +16,7 @@ export default defineConfig({
         ],
       },
     }),
-    traeBadgePlugin({
-      variant: 'dark',
-      position: 'bottom-right',
-      prodOnly: true,
-      clickable: true,
-      clickUrl: 'https://www.trae.ai/solo?showJoin=1',
-      autoTheme: true,
-      autoThemeTarget: '#root'
-    }), 
+ 
     tsconfigPaths(),
   ],
   server: {
