@@ -858,11 +858,19 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     const m = notes.match(new RegExp(`${key}:\\s*([^\\n|]+)`, 'i'))
     return m ? m[1].trim() : ''
   }
+  // 將省份字串正規化為統一格式（處理 Cadiz/Cádiz 差異）
+  const normalizeProvince = (val: string) => {
+    const s = String(val || '').trim().toLowerCase()
+    if (s === 'cadiz' || s === 'cádiz') return 'Cádiz'
+    if (s === 'huelva') return 'Huelva'
+    return val?.trim() || ''
+  }
+
   const deriveProvince = (c: Customer) => {
     const p = String(c.province || '').trim()
-    if (p) return p
+    if (p) return normalizeProvince(p)
     const fromNotes = extractFromNotes(c.notes, 'Provincia')
-    if (fromNotes) return fromNotes
+    if (fromNotes) return normalizeProvince(fromNotes)
     const city = String(c.city || '').trim()
     if (/^huelva$/i.test(city)) return 'Huelva'
     if (/^c(a|á)diz$/i.test(city)) return 'Cádiz'

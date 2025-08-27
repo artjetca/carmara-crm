@@ -159,10 +159,12 @@ export default function Maps() {
     }
 
     // Intentar varias consultas para mejorar la precisión
+    const resolvedProvince = displayProvince(customer) || customer.province || ''
     const candidates = [
-      `${address}, ${customer.city || ''}, ${customer.province || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      `${address}, ${customer.city || ''}, ${resolvedProvince}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
       `${address}, ${customer.city || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
-      `${customer.city || ''}, ${customer.province || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      `${customer.city || ''}, ${resolvedProvince}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      `${resolvedProvince}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
       address
     ].filter(q => q.length > 2)
 
