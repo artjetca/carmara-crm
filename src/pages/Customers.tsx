@@ -231,6 +231,11 @@ export default function Customers() {
         email: editData.email,
         address: editData.address,
       }
+      
+      // 添加 num 欄位（如果有值）
+      if ((editData as any).num !== undefined) {
+        update.num = (editData as any).num
+      }
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
@@ -849,6 +854,14 @@ export default function Customers() {
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Num</label>
+                <input
+                  className="w-full px-3 py-2 border rounded"
+                  value={(editData as any).num || ''}
+                  onChange={e => handleEditChange('num' as any, e.target.value)}
+                />
               </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Contrato</label>
