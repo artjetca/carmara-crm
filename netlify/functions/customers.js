@@ -122,39 +122,57 @@ exports.handler = async (event, context) => {
         };
       }
 
-      // 排除所有可能有 schema cache 問題的欄位
+      // 先處理需要透過 RPC 的欄位（避免 schema cache 問題）
+      const numToSet = requestBody.num ?? requestBody.numero ?? null;
+      const postalToSet = requestBody.postal_code ?? null;
+
+      if (numToSet !== null || postalToSet !== null) {
+        const { error: rpcError } = await admin
+          .rpc('update_customer_fields', {
+            p_id: id,
+            p_num: numToSet ?? null,
+            p_postal_code: postalToSet ?? null,
+          });
+
+        if (rpcError) {
+          return {
+            statusCode: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({ success: false, error: rpcError.message })
+          };
+        }
+      }
+
+      // 排除所有可能有 schema cache 問題的欄位，其他欄位以正常 UPDATE 執行
       const safeUpdateData = { ...updateData };
       delete safeUpdateData.num;
       delete safeUpdateData.customer_number;
       delete safeUpdateData.numero;
+      delete safeUpdateData.postal_code;
 
-      if (Object.keys(safeUpdateData).length === 0) {
-        return {
-          statusCode: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
-          },
-          body: JSON.stringify({ success: false, error: 'No valid fields to update' })
-        };
-      }
+      let updatedRow = null;
+      if (Object.keys(safeUpdateData).length > 0) {
+        const { data, error } = await admin
+          .from('customers')
+          .update(safeUpdateData)
+          .eq('id', id)
+          .select()
+          .single();
 
-      const { data, error } = await admin
-        .from('customers')
-        .update(safeUpdateData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) {
-        return {
-          statusCode: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
-          },
-          body: JSON.stringify({ success: false, error: error.message })
-        };
+        if (error) {
+          return {
+            statusCode: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({ success: false, error: error.message })
+          };
+        }
+        updatedRow = data;
       }
 
       return {
@@ -163,7 +181,7 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
         },
-        body: JSON.stringify({ success: true, data })
+        body: JSON.stringify({ success: true, data: updatedRow })
       };
     }
 

@@ -81,7 +81,7 @@ export default function Customers() {
       const postalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
       
       const line = [
-        csvEscape((c as any).numero || ''), // numero
+        csvEscape(((c as any).num ?? (c as any).numero) || ''), // número
         csvEscape(c.name),
         csvEscape(c.company || ''),
         csvEscape(c.phone || c.mobile_phone || ''),
@@ -204,6 +204,9 @@ export default function Customers() {
       address: c.address,
       city: c.city,
       notes: cleanNotes as any,
+      // 初始化 Número：優先使用 num，否則 fallback 到 numero
+      ...(typeof (c as any).num !== 'undefined' ? { num: (c as any).num } : {}),
+      ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
     })
     
     // 初始化省/市選擇
@@ -261,6 +264,11 @@ export default function Customers() {
       // 添加 contrato 欄位
       if ((editData as any).contrato !== undefined) {
         updateData.contrato = (editData as any).contrato
+      }
+
+      // 添加 Número（num）以觸發後端 RPC 更新
+      if ((editData as any).num !== undefined) {
+        updateData.num = (editData as any).num
       }
 
       console.log('Updating customer via API with data:', updateData)
@@ -707,7 +715,7 @@ export default function Customers() {
                     })
                     .join('\n').trim()
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
-                  const customerNum = (customer as any).numero || ''
+                  const customerNum = ((customer as any).num ?? (customer as any).numero) || ''
                   
                   return (
                     <tr key={customer.id} className={`hover:bg-gray-50 ${isHighlighted(customer) ? 'bg-yellow-50' : ''}`}>
@@ -733,7 +741,7 @@ export default function Customers() {
                         {postalCode || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {municipio || '-'}
+                        {customerNum || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {provincia || '-'}
@@ -796,6 +804,15 @@ export default function Customers() {
                   className="w-full px-3 py-2 border rounded"
                   value={editData.company || ''}
                   onChange={e => handleEditChange('company', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Número</label>
+                <input
+                  className="w-full px-3 py-2 border rounded"
+                  value={(editData as any).num || ''}
+                  onChange={e => setEditData(prev => ({ ...prev, num: e.target.value }))}
+                  placeholder="e.g. 1.2.3.4"
                 />
               </div>
               <div>
