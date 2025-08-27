@@ -149,30 +149,48 @@ export default function Maps() {
   
   // 地理編碼函數
   const geocodeCustomer = async (customer: Customer): Promise<{ lat: number; lng: number } | null> => {
-    const address = getAddress(customer) || ''
+    console.log(`[GEOCODE] Starting geocode for customer:`, {
+      id: customer.id,
+      name: customer.name,
+      address: customer.address,
+      city: customer.city,
+      province: customer.province,
+      notes: customer.notes?.substring(0, 100)
+    })
 
     // Check cache first
     const resolvedProvince = displayProvince(customer) || customer.province || ''
-    const baseKeyPart = address || `${customer.city || ''}-${resolvedProvince}` || `${resolvedProvince}` || 'noaddr'
+    const resolvedCity = displayCity(customer) || customer.city || ''
+    const baseKeyPart = `${customer.address || ''}-${resolvedCity}-${resolvedProvince}` || 'noaddr'
     const cacheKey = `${customer.id}-${baseKeyPart}`
     if (geocodeCache.current.has(cacheKey)) {
       console.log(`[GEOCODE] Cache hit for ${customer.name}: ${cacheKey}`)
       return geocodeCache.current.get(cacheKey)!
     }
 
-    // Intentar varias consultas para mejorar la precisión (soporta clientes sin dirección)
+    // 簡化候選查詢，專注於城市和省份
     const candidates = [
-      `${address}, ${customer.city || ''}, ${resolvedProvince}, España`,
-      `${address}, ${customer.city || ''}, España`,
-      `${customer.city || ''}, ${resolvedProvince}, España`,
+      // 完整地址
+      `${customer.address || ''}, ${resolvedCity}, ${resolvedProvince}, España`,
+      // 城市 + 省份
+      `${resolvedCity}, ${resolvedProvince}, España`,
+      // 只有省份
       `${resolvedProvince}, España`,
+      // 城市 + 西班牙
+      `${resolvedCity}, España`,
+      // 原始城市欄位
       `${customer.city || ''}, España`,
-      address
+      // 原始省份欄位
+      `${customer.province || ''}, España`
     ]
-      .map(q => q.replace(/,\s*,/g, ',').replace(/^,|,$/g, '').trim())
-      .filter(q => q && q.length > 2)
+      .map(q => q.replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim())
+      .filter(q => q && q.length > 3 && q !== 'España')
 
-    console.log(`[GEOCODE] Trying ${candidates.length} candidates for ${customer.name}:`, candidates)
+    console.log(`[GEOCODE] Resolved data for ${customer.name}:`, {
+      resolvedCity,
+      resolvedProvince,
+      candidates
+    })
 
     for (let i = 0; i < candidates.length; i++) {
       const query = candidates[i]
@@ -187,14 +205,15 @@ export default function Maps() {
         if (resp.ok) {
           const result = await resp.json()
           console.log(`[GEOCODE] Response for ${customer.name}:`, result)
-          if (result.lat && result.lng) {
+          if (result.lat && result.lng && typeof result.lat === 'number' && typeof result.lng === 'number') {
             const coords = { lat: result.lat, lng: result.lng }
             geocodeCache.current.set(cacheKey, coords)
             console.log(`[GEOCODE] SUCCESS for ${customer.name}:`, coords)
             return coords
           }
         } else {
-          console.warn(`[GEOCODE] HTTP ${resp.status} for ${customer.name} query: "${query}"`)
+          const errorText = await resp.text()
+          console.warn(`[GEOCODE] HTTP ${resp.status} for ${customer.name} query: "${query}" - ${errorText}`)
         }
       } catch (e) {
         console.warn(`[GEOCODE] Error for ${customer.name} query: "${query}"`, e)
@@ -295,6 +314,7 @@ export default function Maps() {
     }
     
     console.log(`[FIT_TO_ALL] Starting geocoding for ${need.length} customers in ${batches.length} batches`)
+    console.log(`[FIT_TO_ALL] Customers needing geocoding:`, need.map(c => ({ id: c.id, name: c.name, city: c.city, province: c.province })))
     
     try {
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -335,7 +355,17 @@ export default function Maps() {
         })
         .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number')
       
-      console.log(`[FIT_TO_ALL] Found ${positions.length} valid positions:`, positions.map(p => `${p.customer}: ${p.lat}, ${p.lng}`))
+      console.log(`[FIT_TO_ALL] Found ${positions.length} valid positions out of ${filteredCustomers.length} customers:`, positions.map(p => `${p.customer}: ${p.lat}, ${p.lng}`))
+      
+      // 如果沒有足夠的位置，嘗試使用預設座標
+      if (positions.length === 0) {
+        console.warn(`[FIT_TO_ALL] No coordinates found, using default Andalusia center`)
+        const defaultPos = { lat: 36.7, lng: -6.3 }
+        if (mapRef.current) {
+          mapRef.current.setView([defaultPos.lat, defaultPos.lng], 8)
+        }
+        return
+      }
       
       if (!positions.length) {
         console.warn(`[FIT_TO_ALL] No valid positions found from ${filteredCustomers.length} customers`)
@@ -348,8 +378,8 @@ export default function Maps() {
       }
       
       const bounds = L.latLngBounds(positions.map(p => L.latLng(p.lat, p.lng)))
-      console.log(`[FIT_TO_ALL] Fitting map to bounds:`, bounds)
-      mapRef.current.fitBounds(bounds.pad(0.2))
+      console.log(`[FIT_TO_ALL] Fitting map to bounds:`, bounds.toBBoxString())
+      mapRef.current.fitBounds(bounds.pad(0.1))
     } finally {
       setFittingAll(false)
     }
