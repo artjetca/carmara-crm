@@ -82,7 +82,7 @@ export default function Maps() {
       customer.company?.toLowerCase().includes(q) ||
       customer.city?.toLowerCase().includes(q)
     )
-    const matchesCity = !selectedCity || customer.city === selectedCity
+    const matchesCity = !selectedCity || displayProvince(customer) === selectedCity
     return matchesSearch && matchesCity
   })
 
@@ -107,6 +107,20 @@ export default function Maps() {
     if (fromNotes) return fromNotes
     const city = String(c.city || '').trim()
     if (city && !isProvinceName(city)) return city
+    return ''
+  }
+
+  const displayProvince = (c?: Customer): string => {
+    if (!c) return ''
+    // 先使用資料表中的 province 欄位
+    if (c.province && String(c.province).trim().length > 0) {
+      return String(c.province).trim()
+    }
+    if (c.city && isProvinceName(c.city)) return c.city
+    if (c.notes) {
+      const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
+      if (m) return m[1].trim()
+    }
     return ''
   }
 

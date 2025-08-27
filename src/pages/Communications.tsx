@@ -228,6 +228,10 @@ export default function Communications() {
 
   const displayProvince = (c?: Customer): string => {
     if (!c) return ''
+    // 先使用資料表中的 province 欄位
+    if (c.province && String(c.province).trim().length > 0) {
+      return String(c.province).trim()
+    }
     if (c.city && isProvinceName(c.city)) return c.city
     if (c.notes) {
       const m = c.notes.match(/Provincia:\s*([^\n]+)/i)

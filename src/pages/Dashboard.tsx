@@ -76,11 +76,27 @@ export default function Dashboard() {
         sampleNames: customersData?.slice(0, 10).map(c => c.name)
       })
       
-      // Obtener estadísticas de visitas
-      const { data: visitsData, error: visitsError } = await supabase
-        .from('visits')
-        .select('*')
-        .eq('user_id', user.id)
+      // Obtener estadísticas de visitas usando API
+      const visitsResponse = await fetch('/api/visits', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      let visitsData = []
+      let visitsError = null
+      
+      if (visitsResponse.ok) {
+        const visitsResult = await visitsResponse.json()
+        if (visitsResult.success) {
+          visitsData = visitsResult.data || []
+        } else {
+          visitsError = visitsResult.error
+        }
+      } else {
+        visitsError = 'Failed to fetch visits'
+      }
       
       // 调试信息：输出访问数据查询结果
       console.log('Dashboard Debug - Visits query result:', { visitsData, visitsError })
