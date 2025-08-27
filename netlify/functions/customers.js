@@ -10,14 +10,14 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
       },
       body: ''
     };
   }
 
-  if (event.httpMethod !== 'GET') {
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(event.httpMethod)) {
     return {
       statusCode: 405,
       headers: {
@@ -47,30 +47,151 @@ exports.handler = async (event, context) => {
       auth: { autoRefreshToken: false, persistSession: false } 
     });
 
-    const { data, error } = await admin
-      .from('customers')
-      .select('*')
-      .order('name');
+    // Handle GET request - fetch all customers
+    if (event.httpMethod === 'GET') {
+      const { data, error } = await admin
+        .from('customers')
+        .select('*')
+        .order('name');
 
-    if (error) {
+      if (error) {
+        return {
+          statusCode: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: error.message })
+        };
+      }
+
       return {
-        statusCode: 500,
+        statusCode: 200,
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
         },
-        body: JSON.stringify({ success: false, error: error.message })
+        body: JSON.stringify({ success: true, data })
       };
     }
 
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify({ success: true, data })
-    };
+    // Handle POST request - create new customer
+    if (event.httpMethod === 'POST') {
+      const requestBody = JSON.parse(event.body || '{}');
+      
+      const { data, error } = await admin
+        .from('customers')
+        .insert(requestBody)
+        .select()
+        .single();
+
+      if (error) {
+        return {
+          statusCode: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: error.message })
+        };
+      }
+
+      return {
+        statusCode: 201,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: JSON.stringify({ success: true, data })
+      };
+    }
+
+    // Handle PUT/PATCH request - update customer
+    if (event.httpMethod === 'PUT' || event.httpMethod === 'PATCH') {
+      const requestBody = JSON.parse(event.body || '{}');
+      const { id, ...updateData } = requestBody;
+
+      if (!id) {
+        return {
+          statusCode: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: 'Customer ID is required' })
+        };
+      }
+
+      const { data, error } = await admin
+        .from('customers')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        return {
+          statusCode: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: error.message })
+        };
+      }
+
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: JSON.stringify({ success: true, data })
+      };
+    }
+
+    // Handle DELETE request - delete customer
+    if (event.httpMethod === 'DELETE') {
+      const requestBody = JSON.parse(event.body || '{}');
+      const { id } = requestBody;
+
+      if (!id) {
+        return {
+          statusCode: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: 'Customer ID is required' })
+        };
+      }
+
+      const { error } = await admin
+        .from('customers')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        return {
+          statusCode: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: error.message })
+        };
+      }
+
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: JSON.stringify({ success: true, message: 'Customer deleted successfully' })
+      };
+    }
+
   } catch (e) {
     return {
       statusCode: 500,

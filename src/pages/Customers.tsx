@@ -155,12 +155,20 @@ export default function Customers() {
 
   const deleteCustomer = async (id: string) => {
      try {
-       const { error } = await supabase
-         .from('customers')
-         .delete()
-         .eq('id', id)
+       const response = await fetch('/api/customers', {
+         method: 'DELETE',
+         headers: {
+           'Content-Type': 'application/json',
+         },
+         body: JSON.stringify({ id })
+       })
+
+       const result = await response.json()
        
-       if (error) throw error
+       if (!response.ok || !result.success) {
+         throw new Error(result.error || 'Failed to delete customer')
+       }
+       
        // 從列表中移除該客戶
        setCustomers(customers.filter(c => c.id !== id))
        // 從已選取中移除
@@ -236,38 +244,22 @@ export default function Customers() {
       
       console.log('Updating customer with data:', update) // 调试日志
       
-      // 尝试直接更新所有字段，包括 num 和 postal_code
-      const { data, error } = await supabase
-        .from('customers')
-        .update(update)
-        .eq('id', editingCustomer.id)
-        .select()
-        .single()
+      // 使用 Netlify API 端點更新客戶資料
+      const response = await fetch('/api/customers', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingCustomer.id,
+          ...update
+        })
+      })
+
+      const result = await response.json()
       
-      if (error) {
-        // 如果包含 num/postal_code 的更新失败，尝试不包含这些字段的更新
-        if (error.message?.includes('num') || error.message?.includes('postal_code') || error.message?.includes('schema cache')) {
-          console.log('Schema cache issue, trying without num/postal_code fields')
-          const basicUpdate = { ...update }
-          delete (basicUpdate as any).num
-          delete (basicUpdate as any).postal_code
-          
-          const { data: retryData, error: retryError } = await supabase
-            .from('customers')
-            .update(basicUpdate)
-            .eq('id', editingCustomer.id)
-            .select()
-            .single()
-            
-          if (retryError) {
-            throw retryError
-          }
-          
-          // 静默处理 num/postal_code 字段，不显示错误给用户
-          console.log('Basic fields updated successfully, num/postal_code skipped due to schema cache')
-        } else {
-          throw error
-        }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to update customer')
       }
 
       // 更新前端列表
@@ -370,15 +362,23 @@ export default function Customers() {
     if (ids.length === 0) { setShowBulkConfirm(false); return }
     try {
       setBulkDeleting(true)
-      const chunkSize = 200
-      for (let i = 0; i < ids.length; i += chunkSize) {
-        const chunk = ids.slice(i, i + chunkSize)
-        const { error } = await supabase
-          .from('customers')
-          .delete()
-          .in('id', chunk)
-        if (error) throw error
+      // 使用 API 端點逐個刪除客戶
+      for (const id of ids) {
+        const response = await fetch('/api/customers', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id })
+        })
+
+        const result = await response.json()
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || `Failed to delete customer ${id}`)
+        }
       }
+      
       // 以目前列表為基礎，過濾掉被刪除的項目
       setCustomers(customers.filter(c => !selectedIds.has(c.id)))
       // 清空選取狀態
@@ -1047,14 +1047,21 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         created_by: user.id
       }
 
-      const { data, error } = await supabase
-        .from('customers')
-        .insert(payload)
-        .select()
-        .single()
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      })
 
-      if (error) throw error
-      if (data) onSave(data as Customer)
+      const result = await response.json()
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to create customer')
+      }
+
+      if (result.data) onSave(result.data as Customer)
     } catch (err) {
       console.error('Error creating customer:', err)
       alert(t.customers?.createError || 'Error creando cliente')
