@@ -54,7 +54,7 @@ export default function Customers() {
   // 导出当前筛选结果为 CSV
   const handleExportClick = () => {
     const rows = filteredAndSortedCustomers
-    const header = ['num','nombre','empresa','teléfono','email','dirección','C.P','ciudad','provincia','contrato','notas']
+    const header = ['numero','nombre','empresa','teléfono','email','dirección','C.P','ciudad','provincia','contrato','notas']
 
     const csvEscape = (v: any) => {
       const s = v === null || v === undefined ? '' : String(v)
@@ -81,7 +81,7 @@ export default function Customers() {
       const postalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
       
       const line = [
-        csvEscape(((c as any).num ?? (c as any).numero) || ''), // número
+        csvEscape(((c as any).numero ?? (c as any).num) || ''), // número (prefer numero for import)
         csvEscape(c.name),
         csvEscape(c.company || ''),
         csvEscape(c.phone || c.mobile_phone || ''),
@@ -713,7 +713,7 @@ export default function Customers() {
                     })
                     .join('\n').trim()
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
-                  const customerNum = ((customer as any).num ?? (customer as any).numero) || ''
+                  const customerNum = ((customer as any).numero ?? (customer as any).num) || ''
                   
                   return (
                     <tr key={customer.id} className={`hover:bg-gray-50 ${isHighlighted(customer) ? 'bg-yellow-50' : ''}`}>
@@ -963,7 +963,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
     email: '',
     address: '',
     city: '',
-    notes: ''
+    notes: '',
+    numero: ''
   })
   const [addProvince, setAddProvince] = useState<string>('')
   const [addMunicipio, setAddMunicipio] = useState<string>('')
@@ -1050,7 +1051,9 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         address: formData.address || null,
         city: formData.city || null,
         notes: finalNotes || null,
-        created_by: user.id
+        created_by: user.id,
+        // send as num; backend will dual-write to num/numero
+        num: formData.numero || null
       }
 
       const response = await fetch('/api/customers', {
@@ -1096,6 +1099,15 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               className="w-full px-3 py-2 border rounded"
               value={formData.company}
               onChange={e => handleChange('company', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-700 mb-1">Número</label>
+            <input
+              className="w-full px-3 py-2 border rounded"
+              value={formData.numero}
+              onChange={e => handleChange('numero', e.target.value)}
+              placeholder="Ingrese número del cliente"
             />
           </div>
           <div>

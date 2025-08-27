@@ -78,21 +78,91 @@ exports.handler = async (event, context) => {
     // Handle POST request - create new customer
     if (event.httpMethod === 'POST') {
       const requestBody = JSON.parse(event.body || '{}');
-      
-      const { data, error } = await admin
+      const numeroIncoming = Object.prototype.hasOwnProperty.call(requestBody, 'num')
+        ? requestBody.num
+        : (Object.prototype.hasOwnProperty.call(requestBody, 'numero') ? requestBody.numero : undefined);
+
+      // Avoid inserting num/numero directly to prevent schema cache errors
+      const insertBody = { ...requestBody };
+      delete insertBody.num;
+      delete insertBody.numero;
+
+      const { data: created, error: insErr } = await admin
         .from('customers')
-        .insert(requestBody)
+        .insert(insertBody)
         .select()
         .single();
 
-      if (error) {
+      if (insErr) {
         return {
           statusCode: 500,
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*'
           },
-          body: JSON.stringify({ success: false, error: error.message })
+          body: JSON.stringify({ success: false, error: insErr.message })
+        };
+      }
+
+      const warnings = [];
+      if (created && created.id && typeof numeroIncoming !== 'undefined' && numeroIncoming !== null) {
+        // Try write to num first
+        const tryNum = await admin
+          .from('customers')
+          .update({ num: numeroIncoming })
+          .eq('id', created.id);
+        if (tryNum.error) {
+          const msg = (tryNum.error.message || '').toLowerCase();
+          const isMissingNum = msg.includes("'num' column") || (msg.includes('num') && msg.includes('schema'));
+          if (isMissingNum) {
+            const tryNumero = await admin
+              .from('customers')
+              .update({ numero: numeroIncoming })
+              .eq('id', created.id);
+            if (tryNumero.error) {
+              const m2 = (tryNumero.error.message || '').toLowerCase();
+              const isMissingNumero = m2.includes("'numero' column") || (m2.includes('numero') && m2.includes('schema'));
+              if (isMissingNumero) {
+                warnings.push('Número 未持久化：schema cache 未暴露 num/numero，其他欄位已保存');
+              } else {
+                return {
+                  statusCode: 500,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                  },
+                  body: JSON.stringify({ success: false, error: tryNumero.error.message })
+                };
+              }
+            }
+          } else {
+            return {
+              statusCode: 500,
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+              },
+              body: JSON.stringify({ success: false, error: tryNum.error.message })
+            };
+          }
+        }
+      }
+
+      // Reselect final row
+      const { data: finalRow, error: selErr } = await admin
+        .from('customers')
+        .select('*')
+        .eq('id', created.id)
+        .single();
+
+      if (selErr) {
+        return {
+          statusCode: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: selErr.message })
         };
       }
 
@@ -102,7 +172,7 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
         },
-        body: JSON.stringify({ success: true, data })
+        body: JSON.stringify({ success: true, data: finalRow, warnings })
       };
     }
 
