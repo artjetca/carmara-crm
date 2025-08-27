@@ -50,14 +50,24 @@ export default function Maps() {
     }
     try {
       setLoading(true)
-      // 只加載當前用戶的客戶資料
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('created_by', user.id)
-        .order('name')
-      if (error) throw error
-      setCustomers(data || [])
+      
+      const response = await fetch('/api/customers', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      const result = await response.json()
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to load customers')
+      }
+
+      let rows = result.data || []
+      // 過濾只顯示當前用戶創建的客戶
+      const userCustomers = rows.filter((customer: any) => customer.created_by === user.id)
+      setCustomers(userCustomers)
     } catch (error) {
       console.error('Error loading customers:', error)
     } finally {

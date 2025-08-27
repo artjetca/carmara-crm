@@ -25,6 +25,9 @@ export default function Visits() {
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [selectedStatus, setSelectedStatus] = useState('')
+  const [selectedProvince, setSelectedProvince] = useState('')
+  const [selectedCity, setSelectedCity] = useState('')
+  const [selectedCustomer, setSelectedCustomer] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingVisit, setEditingVisit] = useState<Visit | null>(null)
   const [customerDetail, setCustomerDetail] = useState<Customer | null>(null)
@@ -62,28 +65,23 @@ export default function Visits() {
       
       if (visitsError) throw visitsError
       
-      // Cargar clientes
-      let { data: customersData, error: customersError } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('created_by', user?.id)
-        .order('name')
-
-      if (customersError) throw customersError
-
-      // 如果按 created_by 沒有任何客戶，嘗試不加過濾再查一次（容錯）
-      if (!customersData || customersData.length === 0) {
-        console.warn('[Visits] No customers for current user. Trying fallback without created_by filter.')
-        const fallback = await supabase
-          .from('customers')
-          .select('*')
-          .order('name')
-        console.log('[Visits] Fallback query result:', fallback)
-        if (!fallback.error && fallback.data) {
-          customersData = fallback.data
-          console.log('[Visits] Using fallback data, count:', customersData.length)
+      // Cargar clientes usando API
+      const response = await fetch('/api/customers', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
         }
+      })
+
+      const result = await response.json()
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to load customers')
       }
+
+      let customersData = result.data || []
+      // 過濾只顯示當前用戶創建的客戶
+      customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
 
       console.log('[Visits] Final customers data:', customersData?.length || 0, 'records')
 
@@ -194,12 +192,59 @@ export default function Visits() {
     }
   }
 
+  // 省份和城市數據
+  const provinces = ['Cádiz', 'Huelva']
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
+    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+  }
+
+  const availableCities = selectedProvince ? municipiosByProvince[selectedProvince] || [] : []
+
+  // 輔助函數 - 重命名避免重複定義
+  const isProvinceNameFilter = (v?: string) => {
+    const s = String(v || '').trim().toLowerCase()
+    return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+  }
+
+  const displayProvince = (c?: Customer): string => {
+    if (!c) return ''
+    if (c.city && isProvinceNameFilter(c.city)) return c.city
+    if (c.notes) {
+      const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
+      if (m) return m[1].trim()
+    }
+    return ''
+  }
+
+  const filteredCustomers = customers.filter(customer => {
+    const matchesProvince = !selectedProvince || displayProvince(customer) === selectedProvince
+    const matchesCity = !selectedCity || displayCity(customer) === selectedCity
+    return matchesProvince && matchesCity
+  })
+
   const filteredVisits = visits.filter(visit => {
     const matchesStatus = !selectedStatus || visit.status === selectedStatus
     const visitDate = new Date(visit.scheduled_at)
     const filterDate = selectedDate
     const matchesDate = visitDate.toDateString() === filterDate.toDateString()
-    return matchesStatus && matchesDate
+    const matchesCustomer = !selectedCustomer || visit.customer_id === selectedCustomer
+    
+    // 如果選擇了省份或城市，檢查訪問的客戶是否符合條件
+    if (selectedProvince || selectedCity) {
+      const customer = customers.find(c => c.id === visit.customer_id)
+      if (!customer) return false
+      
+      const customerProvince = displayProvince(customer)
+      const customerCity = displayCity(customer)
+      
+      const matchesProvince = !selectedProvince || customerProvince === selectedProvince
+      const matchesCity = !selectedCity || customerCity === selectedCity
+      
+      if (!matchesProvince || !matchesCity) return false
+    }
+    
+    return matchesStatus && matchesDate && matchesCustomer
   })
 
   const navigateDate = (direction: 'prev' | 'next') => {
@@ -235,9 +280,9 @@ export default function Visits() {
 
       {/* Filtros y navegación de fecha */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-4">
           {/* Navegación de fecha */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center justify-center space-x-4">
             <button
               onClick={() => navigateDate('prev')}
               className="p-2 hover:bg-gray-100 rounded-lg"
@@ -257,20 +302,77 @@ export default function Visits() {
             </button>
           </div>
           
-          {/* Filtro de estado */}
-          <div className="flex items-center space-x-4">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">{t.visits.allStatuses}</option>
-              <option value="programada">Programada</option>
-              <option value="completada">Completada</option>
-              <option value="cancelada">Cancelada</option>
-              <option value="reprogramada">Reprogramada</option>
-            </select>
+          {/* Filtros */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+              <select
+                value={selectedProvince}
+                onChange={(e) => {
+                  setSelectedProvince(e.target.value)
+                  setSelectedCity('')
+                  setSelectedCustomer('')
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Todas</option>
+                {provinces.map(province => (
+                  <option key={province} value={province}>{province}</option>
+                ))}
+              </select>
+            </div>
             
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+              <select
+                value={selectedCity}
+                onChange={(e) => {
+                  setSelectedCity(e.target.value)
+                  setSelectedCustomer('')
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={!selectedProvince}
+              >
+                <option value="">Todas</option>
+                {availableCities.map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+              <select
+                value={selectedCustomer}
+                onChange={(e) => setSelectedCustomer(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Seleccionar cliente</option>
+                {filteredCustomers.map(customer => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name} - {customer.company}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">{t.visits.allStatuses}</option>
+                <option value="programada">Programada</option>
+                <option value="completada">Completada</option>
+                <option value="cancelada">Cancelada</option>
+                <option value="reprogramada">Reprogramada</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-center">
             <input
               type="date"
               value={selectedDate.toISOString().split('T')[0]}

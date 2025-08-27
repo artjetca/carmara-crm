@@ -69,6 +69,9 @@ export default function Communications() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedProvince, setSelectedProvince] = useState('')
+  const [selectedCity, setSelectedCity] = useState('')
+  const [selectedCustomer, setSelectedCustomer] = useState('')
   const [showCallModal, setShowCallModal] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const t = translations
@@ -120,14 +123,23 @@ export default function Communications() {
       
       if (messagesError) throw messagesError
       
-      // Cargar clientes
-      const { data: customersData, error: customersError } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('name')
+      // Cargar clientes usando API
+      const response = await fetch('/api/customers', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      const result = await response.json()
       
-      if (customersError) throw customersError
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to load customers')
+      }
+
+      let customersData = result.data || []
+      // 過濾只顯示當前用戶創建的客戶
+      customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
       
       setCalls(callsData || [])
       setMessages(messagesData || [])
@@ -184,6 +196,58 @@ export default function Communications() {
         return 'bg-yellow-100 text-yellow-800'
     }
   }
+
+  // 省份和城市數據
+  const provinces = ['Cádiz', 'Huelva']
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
+    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+  }
+
+  const availableCities = selectedProvince ? municipiosByProvince[selectedProvince] || [] : []
+
+  // 輔助函數
+  const isProvinceName = (v?: string) => {
+    const s = String(v || '').trim().toLowerCase()
+    return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+  }
+
+  const extractCityForDisplay = (notes?: string): string => {
+    if (!notes) return ''
+    const m = notes.match(/Ciudad:\s*([^\n]+)/i)
+    return m ? m[1].trim() : ''
+  }
+
+  const displayCity = (c?: Customer): string => {
+    if (!c) return ''
+    const cityFromNotes = extractCityForDisplay(c.notes)
+    if (cityFromNotes) return cityFromNotes
+    if (c.city && !isProvinceName(c.city)) return c.city
+    return ''
+  }
+
+  const displayProvince = (c?: Customer): string => {
+    if (!c) return ''
+    if (c.city && isProvinceName(c.city)) return c.city
+    if (c.notes) {
+      const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
+      if (m) return m[1].trim()
+    }
+    return ''
+  }
+
+  const filteredCustomers = customers.filter(customer => {
+    const matchesProvince = !selectedProvince || displayProvince(customer) === selectedProvince
+    const matchesCity = !selectedCity || displayCity(customer) === selectedCity
+    const matchesCustomer = !selectedCustomer || customer.id === selectedCustomer
+    const matchesSearch = !searchTerm || (
+      customer.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    
+    return matchesProvince && matchesCity && matchesCustomer && matchesSearch
+  })
 
   const filteredCalls = calls.filter(call => {
     const contactName = call.type === 'incoming' 
@@ -278,17 +342,72 @@ export default function Communications() {
 
         {/* Filtros */}
         <div className="p-6 border-b border-gray-200">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder={t.communications.searchPlaceholder}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+                <select
+                  value={selectedProvince}
+                  onChange={(e) => {
+                    setSelectedProvince(e.target.value)
+                    setSelectedCity('')
+                    setSelectedCustomer('')
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Todas</option>
+                  {provinces.map(province => (
+                    <option key={province} value={province}>{province}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+                <select
+                  value={selectedCity}
+                  onChange={(e) => {
+                    setSelectedCity(e.target.value)
+                    setSelectedCustomer('')
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={!selectedProvince}
+                >
+                  <option value="">Todas</option>
+                  {availableCities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                <select
+                  value={selectedCustomer}
+                  onChange={(e) => setSelectedCustomer(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Seleccionar cliente</option>
+                  {filteredCustomers.map(customer => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name} - {customer.company}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder={t.communications.searchPlaceholder}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
               </div>
             </div>
           </div>
