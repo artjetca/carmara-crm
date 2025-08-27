@@ -147,6 +147,42 @@ export default function Maps() {
   // Cache para evitar geocoding duplicado
   const geocodeCache = useRef<Map<string, { lat: number; lng: number } | null>>(new Map())
   
+  // 硬編碼主要城市座標作為備用
+  const getCityCoordinates = (city: string, province: string): { lat: number; lng: number } | null => {
+    const cityKey = `${city.toLowerCase().trim()}, ${province.toLowerCase().trim()}`
+    const coordinates: Record<string, { lat: number; lng: number }> = {
+      // Huelva省主要城市
+      'huelva, huelva': { lat: 37.2614, lng: -6.9447 },
+      'lepe, huelva': { lat: 37.2531, lng: -7.2044 },
+      'almonte, huelva': { lat: 37.2631, lng: -6.5147 },
+      'moguer, huelva': { lat: 37.2758, lng: -6.8386 },
+      'ayamonte, huelva': { lat: 37.2097, lng: -7.4031 },
+      'isla cristina, huelva': { lat: 37.1969, lng: -7.3158 },
+      'valverde del camino, huelva': { lat: 37.5831, lng: -6.7486 },
+      'cartaya, huelva': { lat: 37.2831, lng: -7.1531 },
+      'palos de la frontera, huelva': { lat: 37.2264, lng: -6.9031 },
+      'bollullos par del condado, huelva': { lat: 37.3431, lng: -6.5431 },
+      // Cádiz省主要城市
+      'cádiz, cádiz': { lat: 36.5297, lng: -6.2925 },
+      'cadiz, cadiz': { lat: 36.5297, lng: -6.2925 },
+      'jerez de la frontera, cádiz': { lat: 36.6864, lng: -6.1364 },
+      'jerez, cádiz': { lat: 36.6864, lng: -6.1364 },
+      'algeciras, cádiz': { lat: 36.1322, lng: -5.4553 },
+      'la línea de la concepción, cádiz': { lat: 36.1658, lng: -5.3497 },
+      'puerto real, cádiz': { lat: 36.5331, lng: -6.1831 },
+      'san fernando, cádiz': { lat: 36.4614, lng: -6.1997 },
+      'chiclana de la frontera, cádiz': { lat: 36.4197, lng: -6.1497 },
+      'el puerto de santa maría, cádiz': { lat: 36.5997, lng: -6.2331 },
+      'sanlúcar de barrameda, cádiz': { lat: 36.7781, lng: -6.3531 },
+      // 省份級別座標
+      ', huelva': { lat: 37.2614, lng: -6.9447 },
+      ', cádiz': { lat: 36.5297, lng: -6.2925 },
+      ', cadiz': { lat: 36.5297, lng: -6.2925 }
+    }
+    
+    return coordinates[cityKey] || null
+  }
+
   // 地理編碼函數
   const geocodeCustomer = async (customer: Customer): Promise<{ lat: number; lng: number } | null> => {
     console.log(`[GEOCODE] Starting geocode for customer:`, {
@@ -166,6 +202,14 @@ export default function Maps() {
     if (geocodeCache.current.has(cacheKey)) {
       console.log(`[GEOCODE] Cache hit for ${customer.name}: ${cacheKey}`)
       return geocodeCache.current.get(cacheKey)!
+    }
+
+    // 首先嘗試硬編碼座標
+    const hardcodedCoords = getCityCoordinates(resolvedCity, resolvedProvince)
+    if (hardcodedCoords) {
+      console.log(`[GEOCODE] Using hardcoded coordinates for ${customer.name} (${resolvedCity}, ${resolvedProvince}):`, hardcodedCoords)
+      geocodeCache.current.set(cacheKey, hardcodedCoords)
+      return hardcodedCoords
     }
 
     // 簡化候選查詢，專注於城市和省份
@@ -192,10 +236,11 @@ export default function Maps() {
       candidates
     })
 
+    // 如果沒有硬編碼座標，嘗試 API 地理編碼
     for (let i = 0; i < candidates.length; i++) {
       const query = candidates[i]
       try {
-        console.log(`[GEOCODE] Attempt ${i + 1}/${candidates.length} for ${customer.name}: "${query}"`)
+        console.log(`[GEOCODE] API attempt ${i + 1}/${candidates.length} for ${customer.name}: "${query}"`)
         const resp = await fetch('/api/geocode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -204,23 +249,31 @@ export default function Maps() {
         
         if (resp.ok) {
           const result = await resp.json()
-          console.log(`[GEOCODE] Response for ${customer.name}:`, result)
+          console.log(`[GEOCODE] API response for ${customer.name}:`, result)
           if (result.lat && result.lng && typeof result.lat === 'number' && typeof result.lng === 'number') {
             const coords = { lat: result.lat, lng: result.lng }
             geocodeCache.current.set(cacheKey, coords)
-            console.log(`[GEOCODE] SUCCESS for ${customer.name}:`, coords)
+            console.log(`[GEOCODE] API SUCCESS for ${customer.name}:`, coords)
             return coords
           }
         } else {
           const errorText = await resp.text()
-          console.warn(`[GEOCODE] HTTP ${resp.status} for ${customer.name} query: "${query}" - ${errorText}`)
+          console.warn(`[GEOCODE] API HTTP ${resp.status} for ${customer.name} query: "${query}" - ${errorText}`)
         }
       } catch (e) {
-        console.warn(`[GEOCODE] Error for ${customer.name} query: "${query}"`, e)
+        console.warn(`[GEOCODE] API error for ${customer.name} query: "${query}"`, e)
       }
     }
     
-    console.warn(`[GEOCODE] FAILED all candidates for ${customer.name}`)
+    // 最後嘗試省份級別的硬編碼座標
+    const provinceCoords = getCityCoordinates('', resolvedProvince)
+    if (provinceCoords) {
+      console.log(`[GEOCODE] Using province-level coordinates for ${customer.name} (${resolvedProvince}):`, provinceCoords)
+      geocodeCache.current.set(cacheKey, provinceCoords)
+      return provinceCoords
+    }
+    
+    console.warn(`[GEOCODE] FAILED all methods for ${customer.name}`)
     geocodeCache.current.set(cacheKey, null)
     return null
   }
