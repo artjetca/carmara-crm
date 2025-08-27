@@ -223,71 +223,73 @@ export default function Customers() {
   const handleEditSave = async () => {
     if (!editingCustomer) return
     try {
-      // 準備更新資料：基礎欄位
-      const update: any = {
+      // 使用 API 端點更新客戶，避免 schema cache 問題
+      const updateData: any = {
         name: editData.name,
         company: editData.company,
         phone: editData.phone,
         email: editData.email,
         address: editData.address,
       }
-      
+
       // 添加 num 欄位（如果有值）
       if ((editData as any).num !== undefined && (editData as any).num !== '') {
-        update.num = (editData as any).num
+        updateData.num = (editData as any).num
       }
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
       const hasMunicipio = Boolean(editMunicipio && editMunicipio.trim())
       if (hasProvince) {
-        // 寫入 province 欄位（供後續篩選使用）
-        update.province = editProvince.trim()
-        // Cádiz/Huelva 規則：city = 省名；其他省份：city = municipio
+        updateData.province = editProvince.trim()
         if (/^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
-          update.city = editProvince.trim()
+          updateData.city = editProvince.trim()
         } else if (hasMunicipio) {
-          update.city = editMunicipio.trim()
-        } else if (editData.city) {
-          update.city = String(editData.city)
+          updateData.city = editMunicipio.trim()
         }
-      } else {
-        // 未選省，保留目前 city 值（若有選 municipio 但無省，不強制覆蓋）
-        if (editData.city !== undefined) update.city = editData.city
+      } else if (hasMunicipio) {
+        updateData.city = editMunicipio.trim()
       }
 
-      // 組合 notes：保留使用者內容，加上 Provincia/Ciudad 行（如有）
-      const userNotes = ((editData as any).notes || '').trim()
-      const noteLines: string[] = []
-      if (userNotes) noteLines.push(userNotes)
-      if (hasProvince) noteLines.push(`Provincia: ${editProvince.trim()}`)
-      if (hasMunicipio) noteLines.push(`Ciudad: ${editMunicipio.trim()}`)
-      if (noteLines.length > 0) {
-        update.notes = noteLines.join('\n')
+      // 組合 notes
+      let notesArray: string[] = []
+      const userNotes = (editData as any).notes?.trim()
+      if (userNotes) notesArray.push(userNotes)
+      if (hasProvince) notesArray.push(`Provincia: ${editProvince.trim()}`)
+      if (hasMunicipio) notesArray.push(`Ciudad: ${editMunicipio.trim()}`)
+      if (notesArray.length > 0) {
+        updateData.notes = notesArray.join(' | ')
       }
-      
-      console.log('Updating customer with data:', update) // 调试日志
-      
-      // 使用 Netlify API 端點更新客戶資料
-      const response = await fetch('/api/customers', {
+
+      // 添加 contrato 欄位
+      if ((editData as any).contrato !== undefined) {
+        updateData.contrato = (editData as any).contrato
+      }
+
+      console.log('Updating customer via API with data:', updateData)
+
+      // 使用 API 端點更新
+      const response = await fetch(`/api/customers`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: editingCustomer.id,
-          ...update
-        })
+        body: JSON.stringify({ id: editingCustomer.id, ...updateData })
       })
+
+      if (!response.ok) {
+        const errorData = await response.text()
+        throw new Error(`API Error: ${response.status} - ${errorData}`)
+      }
 
       const result = await response.json()
       
-      if (!response.ok || !result.success) {
+      if (!result.success) {
         throw new Error(result.error || 'Failed to update customer')
       }
 
       // 更新前端列表
-      setCustomers(customers.map(c => (c.id === editingCustomer.id ? { ...c, ...update } as Customer : c)))
+      setCustomers(customers.map(c => (c.id === editingCustomer.id ? { ...c, ...updateData } as Customer : c)))
       setEditingCustomer(null)
       setEditData({})
       setEditProvince('')
