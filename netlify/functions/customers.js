@@ -87,11 +87,30 @@ exports.handler = async (event, context) => {
       delete insertBody.num;
       delete insertBody.numero;
 
-      const { data: created, error: insErr } = await admin
+      // 第一次嘗試插入（含 created_by 若有）
+      let { data: created, error: insErr } = await admin
         .from('customers')
         .insert(insertBody)
         .select()
         .single();
+
+      // 若因 created_by 外鍵失敗，移除 created_by 後重試
+      if (insErr) {
+        const msg = (insErr.message || '').toLowerCase();
+        const hasCreatedBy = Object.prototype.hasOwnProperty.call(insertBody, 'created_by');
+        const isFK = msg.includes('foreign key') || msg.includes('violates foreign key') || msg.includes('references');
+        if (hasCreatedBy && isFK) {
+          const retryBody = { ...insertBody };
+          delete retryBody.created_by;
+          const retry = await admin
+            .from('customers')
+            .insert(retryBody)
+            .select()
+            .single();
+          created = retry.data;
+          insErr = retry.error || null;
+        }
+      }
 
       if (insErr) {
         return {
