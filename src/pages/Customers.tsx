@@ -223,26 +223,42 @@ export default function Customers() {
   const handleEditSave = async () => {
     if (!editingCustomer) return
     try {
-      // 準備更新資料，包含省市資訊但不寫入notes
-      // 移除不存在的 num 和 postal_code 欄位
-      const update: any = { 
+      // 準備更新資料：基礎欄位
+      const update: any = {
         name: editData.name,
         company: editData.company,
         phone: editData.phone,
         email: editData.email,
         address: editData.address,
-        city: editData.city
       }
-      
-      // 如果有選擇省市，在notes中加入省市資訊（但不顯示給用戶編輯）
-      if (editProvince && editMunicipio) {
-        const userNotes = ((editData as any).notes || '').trim()
-        const provinceInfo = `Provincia: ${editProvince}`
-        const cityInfo = `Ciudad: ${editMunicipio}`
-        const finalNotes = [userNotes, provinceInfo, cityInfo].filter(Boolean).join('\n')
-        update.notes = finalNotes
-      } else if ((editData as any).notes) {
-        update.notes = (editData as any).notes
+
+      // 計算 city 與 province 欄位
+      const hasProvince = Boolean(editProvince && editProvince.trim())
+      const hasMunicipio = Boolean(editMunicipio && editMunicipio.trim())
+      if (hasProvince) {
+        // 寫入 province 欄位（供後續篩選使用）
+        update.province = editProvince.trim()
+        // Cádiz/Huelva 規則：city = 省名；其他省份：city = municipio
+        if (/^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
+          update.city = editProvince.trim()
+        } else if (hasMunicipio) {
+          update.city = editMunicipio.trim()
+        } else if (editData.city) {
+          update.city = String(editData.city)
+        }
+      } else {
+        // 未選省，保留目前 city 值（若有選 municipio 但無省，不強制覆蓋）
+        if (editData.city !== undefined) update.city = editData.city
+      }
+
+      // 組合 notes：保留使用者內容，加上 Provincia/Ciudad 行（如有）
+      const userNotes = ((editData as any).notes || '').trim()
+      const noteLines: string[] = []
+      if (userNotes) noteLines.push(userNotes)
+      if (hasProvince) noteLines.push(`Provincia: ${editProvince.trim()}`)
+      if (hasMunicipio) noteLines.push(`Ciudad: ${editMunicipio.trim()}`)
+      if (noteLines.length > 0) {
+        update.notes = noteLines.join('\n')
       }
       
       console.log('Updating customer with data:', update) // 调试日志
