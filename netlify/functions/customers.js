@@ -156,20 +156,28 @@ exports.handler = async (event, context) => {
         }
       }
 
+      let warnings = [];
       if (Object.keys(specialFields).length > 0) {
         const { error: spErr } = await admin
           .from('customers')
           .update(specialFields)
           .eq('id', id);
         if (spErr) {
-          return {
-            statusCode: 500,
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify({ success: false, error: spErr.message })
-          };
+          const msg = spErr.message || '';
+          const isSchemaCacheNum = msg.includes("'num' column") || msg.toLowerCase().includes('num') && msg.toLowerCase().includes('schema');
+          const isSchemaCacheNumero = msg.includes("'numero' column") || msg.toLowerCase().includes('numero') && msg.toLowerCase().includes('schema');
+          if (isSchemaCacheNum || isSchemaCacheNumero) {
+            warnings.push('Número no actualizado por caché de esquema; se guardaron otros campos.');
+          } else {
+            return {
+              statusCode: 500,
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+              },
+              body: JSON.stringify({ success: false, error: spErr.message })
+            };
+          }
         }
       }
 
@@ -197,7 +205,7 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
         },
-        body: JSON.stringify({ success: true, data: finalRow })
+        body: JSON.stringify({ success: true, data: finalRow, warnings })
       };
     }
 
