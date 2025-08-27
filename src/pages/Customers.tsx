@@ -235,7 +235,10 @@ export default function Customers() {
         address: editData.address,
       }
 
-      // 跳過所有可能有 schema cache 問題的欄位
+      // 包含 Número 欄位
+      if ((editData as any).num !== undefined) {
+        updateData.num = (editData as any).num || null
+      }
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
@@ -266,9 +269,6 @@ export default function Customers() {
         updateData.contrato = (editData as any).contrato
       }
 
-      // 暫時移除 num 更新，避免 RPC 錯誤
-      // TODO: 修復後端 RPC 函數後重新啟用
-
       console.log('Updating customer via API with data:', updateData)
 
       // 使用 API 端點更新
@@ -291,7 +291,7 @@ export default function Customers() {
         throw new Error(result.error || 'Failed to update customer')
       }
 
-      // 更新前端列表
+      // 更新前端列表（包含 num 等欄位）
       setCustomers(customers.map(c => (c.id === editingCustomer.id ? { ...c, ...updateData } as Customer : c)))
       setEditingCustomer(null)
       setEditData({})
@@ -807,11 +807,9 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Número</label>
                 <input
-                  className="w-full px-3 py-2 border rounded bg-gray-100"
+                  className="w-full px-3 py-2 border rounded"
                   value={(editData as any).num || ''}
-                  readOnly
-                  placeholder="Campo temporalmente deshabilitado"
-                  title="Este campo no se puede editar temporalmente debido a problemas técnicos"
+                  onChange={e => setEditData(prev => ({ ...prev, num: e.target.value }))}
                 />
               </div>
               <div>

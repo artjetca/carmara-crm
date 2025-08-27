@@ -122,36 +122,72 @@ exports.handler = async (event, context) => {
         };
       }
 
-      // 暫時跳過 num 和 postal_code 更新，避免 schema cache 問題
-      // TODO: 修復 RPC 函數或找到其他解決方案
+      // 特殊欄位與一般欄位分開更新，避免 RPC 與快取問題
+      const specialFields = {};
+      if (Object.prototype.hasOwnProperty.call(updateData, 'num')) {
+        specialFields.num = updateData.num;
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, 'postal_code')) {
+        specialFields.postal_code = updateData.postal_code;
+      }
 
-      // 排除所有可能有 schema cache 問題的欄位，其他欄位以正常 UPDATE 執行
-      const safeUpdateData = { ...updateData };
-      delete safeUpdateData.num;
-      delete safeUpdateData.customer_number;
-      delete safeUpdateData.numero;
-      delete safeUpdateData.postal_code;
+      const normalFields = { ...updateData };
+      delete normalFields.num;
+      delete normalFields.numero;
+      delete normalFields.customer_number;
+      delete normalFields.postal_code;
 
-      let updatedRow = null;
-      if (Object.keys(safeUpdateData).length > 0) {
-        const { data, error } = await admin
+      // 執行更新，優先更新一般欄位，再更新特殊欄位（或反之皆可）
+      if (Object.keys(normalFields).length > 0) {
+        const { error: upErr } = await admin
           .from('customers')
-          .update(safeUpdateData)
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (error) {
+          .update(normalFields)
+          .eq('id', id);
+        if (upErr) {
           return {
             statusCode: 500,
             headers: {
               'Content-Type': 'application/json',
               'Access-Control-Allow-Origin': '*'
             },
-            body: JSON.stringify({ success: false, error: error.message })
+            body: JSON.stringify({ success: false, error: upErr.message })
           };
         }
-        updatedRow = data;
+      }
+
+      if (Object.keys(specialFields).length > 0) {
+        const { error: spErr } = await admin
+          .from('customers')
+          .update(specialFields)
+          .eq('id', id);
+        if (spErr) {
+          return {
+            statusCode: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({ success: false, error: spErr.message })
+          };
+        }
+      }
+
+      // 回傳最新資料列
+      const { data: finalRow, error: selErr } = await admin
+        .from('customers')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (selErr) {
+        return {
+          statusCode: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: selErr.message })
+        };
       }
 
       return {
@@ -160,7 +196,7 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
         },
-        body: JSON.stringify({ success: true, data: updatedRow })
+        body: JSON.stringify({ success: true, data: finalRow })
       };
     }
 
