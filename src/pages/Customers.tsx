@@ -81,7 +81,7 @@ export default function Customers() {
       const postalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
       
       const line = [
-        csvEscape((c as any).customer_number || (c as any).num || (index + 1)), // num
+        csvEscape((c as any).numero || ''), // numero
         csvEscape(c.name),
         csvEscape(c.company || ''),
         csvEscape(c.phone || c.mobile_phone || ''),
@@ -232,7 +232,10 @@ export default function Customers() {
         address: editData.address,
       }
 
-      // 移除 Num 欄位編輯功能，避免 schema cache 問題
+      // 添加 numero 欄位
+      if ((editData as any).numero !== undefined && (editData as any).numero !== '') {
+        updateData.numero = (editData as any).numero
+      }
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
@@ -676,14 +679,8 @@ export default function Customers() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dirección</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">C.P</th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('city')}
-                >
-                  <div className="flex items-center gap-1">
-                    Ciudad
-                    <SortIcon field="city" />
-                  </div>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  NÚMERO
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Provincia</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contrato</th>
@@ -713,7 +710,7 @@ export default function Customers() {
                     })
                     .join('\n').trim()
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
-                  const customerNum = (customer as any).customer_number || (customer as any).num || (index + 1)
+                  const customerNum = (customer as any).numero || ''
                   
                   return (
                     <tr key={customer.id} className={`hover:bg-gray-50 ${isHighlighted(customer) ? 'bg-yellow-50' : ''}`}>
@@ -788,6 +785,15 @@ export default function Customers() {
           <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg p-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Editar cliente</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Número</label>
+                <input
+                  className="w-full px-3 py-2 border rounded"
+                  value={(editData as any).numero || ''}
+                  onChange={e => handleEditChange('numero' as any, e.target.value)}
+                  placeholder="Número de cliente"
+                />
+              </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Nombre</label>
                 <input
