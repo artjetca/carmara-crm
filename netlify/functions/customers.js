@@ -122,9 +122,24 @@ exports.handler = async (event, context) => {
         };
       }
 
+      // 排除 num 欄位避免 schema cache 問題
+      const safeUpdateData = { ...updateData };
+      delete safeUpdateData.num;
+
+      if (Object.keys(safeUpdateData).length === 0) {
+        return {
+          statusCode: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          },
+          body: JSON.stringify({ success: false, error: 'No valid fields to update' })
+        };
+      }
+
       const { data, error } = await admin
         .from('customers')
-        .update(updateData)
+        .update(safeUpdateData)
         .eq('id', id)
         .select()
         .single();

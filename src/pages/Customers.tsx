@@ -232,10 +232,8 @@ export default function Customers() {
         address: editData.address,
       }
 
-      // 添加 num 欄位（如果有值）
-      if ((editData as any).num !== undefined && (editData as any).num !== '') {
-        updateData.num = (editData as any).num
-      }
+      // 跳過 num 欄位儲存（schema cache 問題）
+      // num 欄位僅供顯示用途
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
@@ -794,10 +792,10 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Num</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="w-full px-3 py-2 border rounded bg-gray-100"
                   value={(editData as any).num || ''}
-                  onChange={e => handleEditChange('num' as any, e.target.value)}
-                  placeholder="Número de cliente"
+                  placeholder="Número de cliente (solo lectura)"
+                  readOnly
                 />
               </div>
               <div>
