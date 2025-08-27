@@ -125,7 +125,8 @@ exports.handler = async (event, context) => {
       // 特殊欄位與一般欄位分開更新，避免 RPC 與快取問題
       const specialFields = {};
       if (Object.prototype.hasOwnProperty.call(updateData, 'num')) {
-        specialFields.num = updateData.num;
+        // 臨時對應：將 num 寫入舊欄位 numero，避免 schema cache 導致的 500
+        specialFields.numero = updateData.num;
       }
       if (Object.prototype.hasOwnProperty.call(updateData, 'postal_code')) {
         specialFields.postal_code = updateData.postal_code;
@@ -133,7 +134,7 @@ exports.handler = async (event, context) => {
 
       const normalFields = { ...updateData };
       delete normalFields.num;
-      delete normalFields.numero;
+      delete normalFields.numero; // 避免與 specialFields 重複
       delete normalFields.customer_number;
       delete normalFields.postal_code;
 
