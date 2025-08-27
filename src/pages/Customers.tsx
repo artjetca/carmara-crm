@@ -120,32 +120,33 @@ export default function Customers() {
     }
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('created_by', user.id)
-        .order('created_at', { ascending: false })
       
-      if (error) throw error
-
-      let rows = data || []
-
-      // 如果為 0 筆，嘗試不帶 created_by 再查（容錯）
-      if (rows.length === 0) {
-        console.warn('[Customers] No customers for current user. Trying fallback without created_by filter.')
-        const fallback = await supabase
-          .from('customers')
-          .select('*')
-          .order('created_at', { ascending: false })
-        if (!fallback.error && fallback.data) {
-          rows = fallback.data
-          if (rows.length > 0) {
-            setUnownedWarning('已載入未歸屬於你帳號的客戶（created_by 不匹配）。')
-          }
+      const response = await fetch('/api/customers', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
         }
+      })
+
+      const result = await response.json()
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to load customers')
       }
 
-      setCustomers(rows)
+      let rows = result.data || []
+
+      // 過濾只顯示當前用戶創建的客戶
+      const userCustomers = rows.filter((customer: any) => customer.created_by === user.id)
+      
+      // 如果為 0 筆，顯示所有客戶（容錯）
+      if (userCustomers.length === 0 && rows.length > 0) {
+        console.warn('[Customers] No customers for current user. Showing all customers.')
+        setUnownedWarning('已載入未歸屬於你帳號的客戶（created_by 不匹配）。')
+        setCustomers(rows)
+      } else {
+        setCustomers(userCustomers)
+      }
     } catch (error) {
       console.error('Error loading customers:', error)
     } finally {
