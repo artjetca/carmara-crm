@@ -81,7 +81,7 @@ export default function Customers() {
       const postalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
       
       const line = [
-        csvEscape((c as any).num || (index + 1)), // num
+        csvEscape((c as any).customer_number || (c as any).num || (index + 1)), // num
         csvEscape(c.name),
         csvEscape(c.company || ''),
         csvEscape(c.phone || c.mobile_phone || ''),
@@ -232,8 +232,10 @@ export default function Customers() {
         address: editData.address,
       }
 
-      // 跳過 num 欄位儲存（schema cache 問題）
-      // num 欄位僅供顯示用途
+      // 添加 customer_number 欄位（取代 num）
+      if ((editData as any).customer_number !== undefined && (editData as any).customer_number !== '') {
+        updateData.customer_number = (editData as any).customer_number
+      }
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
@@ -714,7 +716,7 @@ export default function Customers() {
                     })
                     .join('\n').trim()
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
-                  const customerNum = (customer as any).num || (index + 1)
+                  const customerNum = (customer as any).customer_number || (customer as any).num || (index + 1)
                   
                   return (
                     <tr key={customer.id} className={`hover:bg-gray-50 ${isHighlighted(customer) ? 'bg-yellow-50' : ''}`}>
@@ -792,10 +794,10 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Num</label>
                 <input
-                  className="w-full px-3 py-2 border rounded bg-gray-100"
-                  value={(editData as any).num || ''}
-                  placeholder="Número de cliente (solo lectura)"
-                  readOnly
+                  className="w-full px-3 py-2 border rounded"
+                  value={(editData as any).customer_number || ''}
+                  onChange={e => handleEditChange('customer_number' as any, e.target.value)}
+                  placeholder="Número de cliente"
                 />
               </div>
               <div>
