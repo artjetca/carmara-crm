@@ -86,6 +86,26 @@ exports.handler = async (event, context) => {
       const insertBody = { ...requestBody };
       delete insertBody.num;
       delete insertBody.numero;
+      // 僅允許 city 為 'Cádiz' 或 'Huelva'，否則設為 null 以避免 CHECK 限制
+      if (Object.prototype.hasOwnProperty.call(insertBody, 'city')) {
+        const cityVal = insertBody.city;
+        if (cityVal !== 'Cádiz' && cityVal !== 'Huelva') {
+          insertBody.city = null;
+        }
+      }
+      // 依據資料庫約束清理電話欄位：9位數且以6-9開頭，其餘設為 null
+      const sanitizePhone = (val) => {
+        if (val === undefined || val === null) return null;
+        const digits = String(val).replace(/\D+/g, '');
+        if (digits.length === 0) return null;
+        return /^[6789][0-9]{8}$/.test(digits) ? digits : null;
+      };
+      if (Object.prototype.hasOwnProperty.call(insertBody, 'phone')) {
+        insertBody.phone = sanitizePhone(insertBody.phone);
+      }
+      if (Object.prototype.hasOwnProperty.call(insertBody, 'mobile_phone')) {
+        insertBody.mobile_phone = sanitizePhone(insertBody.mobile_phone);
+      }
 
       // 第一次嘗試插入（含 created_by 若有）
       let { data: created, error: insErr } = await admin
@@ -199,6 +219,27 @@ exports.handler = async (event, context) => {
     if (event.httpMethod === 'PUT' || event.httpMethod === 'PATCH') {
       const requestBody = JSON.parse(event.body || '{}');
       const { id, ...updateData } = requestBody;
+
+      // 清理 city：只接受 'Cádiz' 或 'Huelva'，否則改為 null
+      if (Object.prototype.hasOwnProperty.call(updateData, 'city')) {
+        const c = updateData.city;
+        if (c !== 'Cádiz' && c !== 'Huelva') {
+          updateData.city = null;
+        }
+      }
+      // 清理電話欄位以符合 CHECK 限制
+      const sanitizePhoneU = (val) => {
+        if (val === undefined || val === null) return null;
+        const digits = String(val).replace(/\D+/g, '');
+        if (digits.length === 0) return null;
+        return /^[6789][0-9]{8}$/.test(digits) ? digits : null;
+      };
+      if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) {
+        updateData.phone = sanitizePhoneU(updateData.phone);
+      }
+      if (Object.prototype.hasOwnProperty.call(updateData, 'mobile_phone')) {
+        updateData.mobile_phone = sanitizePhoneU(updateData.mobile_phone);
+      }
 
       if (!id) {
         return {

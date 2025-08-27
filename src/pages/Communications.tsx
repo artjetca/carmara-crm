@@ -781,20 +781,71 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     type: 'sms' as 'sms' | 'email',
     subject: '',
     message: '',
-    scheduled_date: new Date().toISOString().slice(0, 16)
+    scheduled_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+    scheduled_time: '09:00' // HH:MM
   })
   const [loading, setLoading] = useState(false)
   const t = translations
+  // 省/市用於過濾客戶下拉選單（不持久化到資料庫）
+  const [selectedProvince, setSelectedProvince] = useState<string>('')
+  const [selectedCity, setSelectedCity] = useState<string>('')
+
+  // 本地 Province/City 常數（與 Visits 一致）
+  const provinces = ['Cádiz', 'Huelva']
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
+    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+  }
+
+  // 本地輔助：從 notes/欄位推導省市
+  const isProvinceName = (v?: string) => /^(huelva|c(a|á)diz)$/i.test(String(v || '').trim())
+  const extractFromNotes = (notes: string | undefined, key: 'Provincia' | 'Ciudad') => {
+    if (!notes) return ''
+    const m = notes.match(new RegExp(`${key}:\\s*([^\\n|]+)`, 'i'))
+    return m ? m[1].trim() : ''
+  }
+  const deriveProvince = (c: Customer) => {
+    const p = String(c.province || '').trim()
+    if (p) return p
+    const fromNotes = extractFromNotes(c.notes, 'Provincia')
+    if (fromNotes) return fromNotes
+    const city = String(c.city || '').trim()
+    if (/^huelva$/i.test(city)) return 'Huelva'
+    if (/^c(a|á)diz$/i.test(city)) return 'Cádiz'
+    return ''
+  }
+  const deriveCity = (c: Customer) => {
+    const fromNotes = extractFromNotes(c.notes, 'Ciudad')
+    if (fromNotes) return fromNotes
+    const city = String(c.city || '').trim()
+    if (city && !isProvinceName(city)) return city
+    return ''
+  }
+
+  // 依省市過濾顧客
+  const modalFilteredCustomers = customers.filter(c => {
+    // 確保當前已選客戶永遠在清單中，避免被過濾掉
+    if (formData.customer_id && c.id === formData.customer_id) return true
+    const provinceOk = !selectedProvince || deriveProvince(c) === selectedProvince
+    const cityOk = !selectedCity || deriveCity(c) === selectedCity
+    return provinceOk && cityOk
+  })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
+      // 組合為 ISO 字串（使用本地時間，不加 Z，讓後端以原時區呈現）
+      const scheduledFor = new Date(`${formData.scheduled_date}T${formData.scheduled_time}:00`).toISOString()
       const { data, error } = await supabase
         .from('scheduled_messages')
         .insert({
-          ...formData,
+          customer_id: formData.customer_id,
+          type: formData.type,
+          subject: formData.subject,
+          message: formData.message,
+          scheduled_for: scheduledFor,
           status: 'pending',
           user_id: user?.id
         })
@@ -818,6 +869,43 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           <h2 className="text-xl font-bold text-gray-900 mb-6">{t.communications.scheduleMessage}</h2>
           
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+                <select
+                  value={selectedProvince}
+                  onChange={(e) => {
+                    setSelectedProvince(e.target.value)
+                    setSelectedCity('')
+                    setFormData({ ...formData, customer_id: '' })
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Todas</option>
+                  {provinces.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+                <select
+                  value={selectedCity}
+                  onChange={(e) => {
+                    setSelectedCity(e.target.value)
+                    setFormData({ ...formData, customer_id: '' })
+                  }}
+                  disabled={!selectedProvince}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Todas</option>
+                  {(selectedProvince ? municipiosByProvince[selectedProvince] || [] : []).map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t.communications.customer} *
@@ -829,7 +917,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">{t.communications.selectCustomer}</option>
-                {customers.map(customer => (
+                {modalFilteredCustomers.map(customer => (
                   <option key={customer.id} value={customer.id}>
                     {customer.name} - {customer.company}
                   </option>
@@ -879,16 +967,29 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t.communications.scheduledDate}
-              </label>
-              <input
-                type="datetime-local"
-                value={formData.scheduled_date}
-                onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fecha
+                </label>
+                <input
+                  type="date"
+                  value={formData.scheduled_date}
+                  onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Hora *
+                </label>
+                <input
+                  type="time"
+                  value={formData.scheduled_time}
+                  onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
             </div>
             
             <div className="flex justify-end space-x-3 pt-4">
