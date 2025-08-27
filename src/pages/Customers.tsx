@@ -266,10 +266,8 @@ export default function Customers() {
         updateData.contrato = (editData as any).contrato
       }
 
-      // 添加 Número（num）以觸發後端 RPC 更新
-      if ((editData as any).num !== undefined) {
-        updateData.num = (editData as any).num
-      }
+      // 暫時移除 num 更新，避免 RPC 錯誤
+      // TODO: 修復後端 RPC 函數後重新啟用
 
       console.log('Updating customer via API with data:', updateData)
 
@@ -809,10 +807,11 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Número</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="w-full px-3 py-2 border rounded bg-gray-100"
                   value={(editData as any).num || ''}
-                  onChange={e => setEditData(prev => ({ ...prev, num: e.target.value }))}
-                  placeholder="e.g. 1.2.3.4"
+                  readOnly
+                  placeholder="Campo temporalmente deshabilitado"
+                  title="Este campo no se puede editar temporalmente debido a problemas técnicos"
                 />
               </div>
               <div>

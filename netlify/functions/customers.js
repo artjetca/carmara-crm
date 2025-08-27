@@ -122,29 +122,8 @@ exports.handler = async (event, context) => {
         };
       }
 
-      // 先處理需要透過 RPC 的欄位（避免 schema cache 問題）
-      const numToSet = requestBody.num ?? requestBody.numero ?? null;
-      const postalToSet = requestBody.postal_code ?? null;
-
-      if (numToSet !== null || postalToSet !== null) {
-        const { error: rpcError } = await admin
-          .rpc('update_customer_fields', {
-            p_id: id,
-            p_num: numToSet ?? null,
-            p_postal_code: postalToSet ?? null,
-          });
-
-        if (rpcError) {
-          return {
-            statusCode: 500,
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify({ success: false, error: rpcError.message })
-          };
-        }
-      }
+      // 暫時跳過 num 和 postal_code 更新，避免 schema cache 問題
+      // TODO: 修復 RPC 函數或找到其他解決方案
 
       // 排除所有可能有 schema cache 問題的欄位，其他欄位以正常 UPDATE 執行
       const safeUpdateData = { ...updateData };
