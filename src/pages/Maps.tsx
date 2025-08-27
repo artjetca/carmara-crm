@@ -156,6 +156,7 @@ export default function Maps() {
     const baseKeyPart = address || `${customer.city || ''}-${resolvedProvince}` || `${resolvedProvince}` || 'noaddr'
     const cacheKey = `${customer.id}-${baseKeyPart}`
     if (geocodeCache.current.has(cacheKey)) {
+      console.log(`[GEOCODE] Cache hit for ${customer.name}: ${cacheKey}`)
       return geocodeCache.current.get(cacheKey)!
     }
 
@@ -165,32 +166,42 @@ export default function Maps() {
       `${address}, ${customer.city || ''}, España`,
       `${customer.city || ''}, ${resolvedProvince}, España`,
       `${resolvedProvince}, España`,
+      `${customer.city || ''}, España`,
       address
     ]
       .map(q => q.replace(/,\s*,/g, ',').replace(/^,|,$/g, '').trim())
       .filter(q => q && q.length > 2)
 
-    for (const query of candidates) {
+    console.log(`[GEOCODE] Trying ${candidates.length} candidates for ${customer.name}:`, candidates)
+
+    for (let i = 0; i < candidates.length; i++) {
+      const query = candidates[i]
       try {
+        console.log(`[GEOCODE] Attempt ${i + 1}/${candidates.length} for ${customer.name}: "${query}"`)
         const resp = await fetch('/api/geocode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ address: query })
         })
+        
         if (resp.ok) {
           const result = await resp.json()
-          if (result.success && result.data?.lat && result.data?.lng) {
-            const coords = { lat: result.data.lat, lng: result.data.lng }
+          console.log(`[GEOCODE] Response for ${customer.name}:`, result)
+          if (result.lat && result.lng) {
+            const coords = { lat: result.lat, lng: result.lng }
             geocodeCache.current.set(cacheKey, coords)
+            console.log(`[GEOCODE] SUCCESS for ${customer.name}:`, coords)
             return coords
           }
+        } else {
+          console.warn(`[GEOCODE] HTTP ${resp.status} for ${customer.name} query: "${query}"`)
         }
-      } catch (error) {
-        console.warn('Geocoding failed for', query, error)
+      } catch (e) {
+        console.warn(`[GEOCODE] Error for ${customer.name} query: "${query}"`, e)
       }
     }
-
-    // Cache null result to avoid retrying
+    
+    console.warn(`[GEOCODE] FAILED all candidates for ${customer.name}`)
     geocodeCache.current.set(cacheKey, null)
     return null
   }
@@ -283,36 +294,61 @@ export default function Maps() {
       batches.push(need.slice(i, i + batchSize))
     }
     
+    console.log(`[FIT_TO_ALL] Starting geocoding for ${need.length} customers in ${batches.length} batches`)
+    
     try {
-      for (const batch of batches) {
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex]
+        console.log(`[FIT_TO_ALL] Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} customers`)
+        
         for (const c of batch) {
+          console.log(`[FIT_TO_ALL] Geocoding customer: ${c.name}`)
           const coords = await geocodeCustomer(c)
           if (coords) {
             newly[c.id] = coords
+            console.log(`[FIT_TO_ALL] Got coordinates for ${c.name}:`, coords)
+          } else {
+            console.warn(`[FIT_TO_ALL] No coordinates found for ${c.name}`)
           }
-          await sleep(1000)
+          await sleep(800)
         }
         // 批次間額外等待，避免過載
-        if (batches.indexOf(batch) < batches.length - 1) {
-          await sleep(2000)
+        if (batchIndex < batches.length - 1) {
+          console.log(`[FIT_TO_ALL] Waiting between batches...`)
+          await sleep(1500)
         }
       }
 
       // 一次性合併新取得的座標，避免 setState 非同步導致 positions 不完整
       if (Object.keys(newly).length) {
+        // 更新座標狀態
         setCoordsById(prev => ({ ...prev, ...newly }))
       }
-
+      console.log(`[FIT_TO_ALL] Updated coordsById with ${Object.keys(newly).length} new coordinates`)
+      
+      // 計算所有位置並調整地圖視野
       const positions = filteredCustomers
         .map(c => {
           const lat = typeof c.latitude === 'number' ? c.latitude : (newly[c.id]?.lat ?? coordsById[c.id]?.lat)
           const lng = typeof c.longitude === 'number' ? c.longitude : (newly[c.id]?.lng ?? coordsById[c.id]?.lng)
-          return { lat, lng }
+          return { customer: c.name, lat, lng }
         })
-        .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number') as { lat: number; lng: number }[]
-
-      if (!positions.length || !mapRef.current) return
+        .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number')
+      
+      console.log(`[FIT_TO_ALL] Found ${positions.length} valid positions:`, positions.map(p => `${p.customer}: ${p.lat}, ${p.lng}`))
+      
+      if (!positions.length) {
+        console.warn(`[FIT_TO_ALL] No valid positions found from ${filteredCustomers.length} customers`)
+        return
+      }
+      
+      if (!mapRef.current) {
+        console.warn(`[FIT_TO_ALL] No map reference available`)
+        return
+      }
+      
       const bounds = L.latLngBounds(positions.map(p => L.latLng(p.lat, p.lng)))
+      console.log(`[FIT_TO_ALL] Fitting map to bounds:`, bounds)
       mapRef.current.fitBounds(bounds.pad(0.2))
     } finally {
       setFittingAll(false)
