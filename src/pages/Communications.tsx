@@ -131,6 +131,7 @@ export default function Communications() {
         }
       })
 
+
       const result = await response.json()
       
       if (!response.ok || !result.success) {
@@ -635,6 +636,10 @@ function CallModal({ customers, onClose, onSave }: CallModalProps) {
   })
   const [loading, setLoading] = useState(false)
   const t = translations
+  const selectedId = formData.type === 'outgoing' ? formData.to_user : formData.from_user
+  const selectedCustomer = customers.find(c => c.id === selectedId)
+  const cityFromNotes = selectedCustomer?.notes?.match(/Ciudad:\s*([^\n]+)/i)?.[1]?.trim() || ''
+  const cityForMap = cityFromNotes || (selectedCustomer?.city || '')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -703,6 +708,55 @@ function CallModal({ customers, onClose, onSave }: CallModalProps) {
                 ))}
               </select>
             </div>
+
+            {selectedCustomer && (
+              <div className="border rounded-lg p-3 bg-gray-50 text-sm text-gray-700">
+                <div className="font-semibold text-gray-900">{selectedCustomer.name}</div>
+                <div className="text-gray-600">{selectedCustomer.company || 'Sin empresa'}</div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  <span>
+                    <span className="font-medium">Teléfono:</span>{' '}
+                    {selectedCustomer.phone ? (
+                      <a href={`tel:${selectedCustomer.phone}`} className="text-blue-600 hover:underline">{selectedCustomer.phone}</a>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </span>
+                  <span>
+                    <span className="font-medium">Móvil:</span>{' '}
+                    {selectedCustomer.mobile_phone ? (
+                      <a href={`tel:${selectedCustomer.mobile_phone}`} className="text-blue-600 hover:underline">{selectedCustomer.mobile_phone}</a>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </span>
+                  <span>
+                    <span className="font-medium">Email:</span>{' '}
+                    {selectedCustomer.email ? (
+                      <a href={`mailto:${selectedCustomer.email}`} className="text-blue-600 hover:underline">{selectedCustomer.email}</a>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </span>
+                </div>
+                <div className="mt-1">
+                  <span className="font-medium">Dirección:</span>{' '}
+                  {selectedCustomer.address ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedCustomer.address || ''} ${cityForMap || ''}`.trim())}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                      title="Abrir en Google Maps"
+                    >
+                      {selectedCustomer.address}
+                    </a>
+                  ) : (
+                    <span className="text-gray-500">Sin dirección</span>
+                  )}
+                </div>
+              </div>
+            )}
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -822,6 +876,9 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     return ''
   }
 
+  // 當前在下拉中選擇的客戶（用於顯示聯絡方式與地址）
+  const selectedCustomer = customers.find(c => c.id === formData.customer_id)
+
   // 依省市過濾顧客
   const modalFilteredCustomers = customers.filter(c => {
     // 確保當前已選客戶永遠在清單中，避免被過濾掉
@@ -924,6 +981,55 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                 ))}
               </select>
             </div>
+
+            {selectedCustomer && (
+              <div className="border rounded-lg p-3 bg-gray-50 text-sm text-gray-700">
+                <div className="font-semibold text-gray-900">{selectedCustomer.name}</div>
+                <div className="text-gray-600">{selectedCustomer.company || 'Sin empresa'}</div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  <span>
+                    <span className="font-medium">Teléfono:</span>{' '}
+                    {selectedCustomer.phone ? (
+                      <a href={`tel:${selectedCustomer.phone}`} className="text-blue-600 hover:underline">{selectedCustomer.phone}</a>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </span>
+                  <span>
+                    <span className="font-medium">Móvil:</span>{' '}
+                    {selectedCustomer.mobile_phone ? (
+                      <a href={`tel:${selectedCustomer.mobile_phone}`} className="text-blue-600 hover:underline">{selectedCustomer.mobile_phone}</a>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </span>
+                  <span>
+                    <span className="font-medium">Email:</span>{' '}
+                    {selectedCustomer.email ? (
+                      <a href={`mailto:${selectedCustomer.email}`} className="text-blue-600 hover:underline">{selectedCustomer.email}</a>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </span>
+                </div>
+                <div className="mt-1">
+                  <span className="font-medium">Dirección:</span>{' '}
+                  {selectedCustomer.address ? (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedCustomer.address || ''} ${deriveCity(selectedCustomer) || ''}`.trim())}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                      title="Abrir en Google Maps"
+                    >
+                      {selectedCustomer.address}
+                    </a>
+                  ) : (
+                    <span className="text-gray-500">Sin dirección</span>
+                  )}
+                </div>
+              </div>
+            )}
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

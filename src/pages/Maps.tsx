@@ -191,45 +191,8 @@ export default function Maps() {
     return null
   }
 
-  useEffect(() => {
-    // Pre-cargar coordenadas para clientes filtrados que no las tengan (con rate limiting)
-    const needGeocoding = filteredCustomers.filter(c => {
-      const hasCoords = (typeof c.latitude === 'number' && typeof c.longitude === 'number') || coordsById[c.id]
-      return !hasCoords && (c.address || c.city || c.notes || c.province)
-    })
-
-    // Limitar a máximo 5 requests simultáneos
-    const maxConcurrent = 5
-    let processed = 0
-    
-    const processInBatches = async () => {
-      for (let i = 0; i < needGeocoding.length; i += maxConcurrent) {
-        const batch = needGeocoding.slice(i, i + maxConcurrent)
-        
-        await Promise.all(
-          batch.map(async (c) => {
-            try {
-              const coords = await geocodeCustomer(c)
-              if (coords) {
-                setCoordsById(prev => ({ ...prev, [c.id]: coords }))
-              }
-            } catch (error) {
-              console.warn('Geocoding failed for customer', c.id, error)
-            }
-          })
-        )
-        
-        // Pausa entre batches para evitar rate limiting
-        if (i + maxConcurrent < needGeocoding.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000))
-        }
-      }
-    }
-
-    if (needGeocoding.length > 0) {
-      processInBatches()
-    }
-  }, [filteredCustomers])
+  // Nota: se eliminó un efecto de geocodificación duplicado para evitar
+  // solicitudes concurrentes excesivas que producían errores de recursos insuficientes.
 
   // Iconos del mapa (SVG inline)
   const customerIcon = useMemo(() => L.divIcon({
