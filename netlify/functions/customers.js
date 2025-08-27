@@ -122,19 +122,9 @@ exports.handler = async (event, context) => {
         };
       }
 
-      // 特殊欄位與一般欄位分開更新，避免 RPC 與快取問題
-      const specialFields = {};
-      if (Object.prototype.hasOwnProperty.call(updateData, 'num')) {
-        // 臨時對應：將 num 寫入舊欄位 numero，避免 schema cache 導致的 500
-        specialFields.numero = updateData.num;
-      }
-      if (Object.prototype.hasOwnProperty.call(updateData, 'postal_code')) {
-        specialFields.postal_code = updateData.postal_code;
-      }
-
       const normalFields = { ...updateData };
       delete normalFields.num;
-      delete normalFields.numero; // 避免與 specialFields 重複
+      delete normalFields.numero; // 避免與特殊處理重複
       delete normalFields.customer_number;
       delete normalFields.postal_code;
 
@@ -156,18 +146,56 @@ exports.handler = async (event, context) => {
         }
       }
 
-      let warnings = [];
-      if (Object.keys(specialFields).length > 0) {
-        const { error: spErr } = await admin
+      const warnings = [];
+
+      // 單獨處理 postal_code（若提供）
+      if (Object.prototype.hasOwnProperty.call(updateData, 'postal_code')) {
+        const { error: pcErr } = await admin
           .from('customers')
-          .update(specialFields)
+          .update({ postal_code: updateData.postal_code })
           .eq('id', id);
-        if (spErr) {
-          const msg = spErr.message || '';
-          const isSchemaCacheNum = msg.includes("'num' column") || msg.toLowerCase().includes('num') && msg.toLowerCase().includes('schema');
-          const isSchemaCacheNumero = msg.includes("'numero' column") || msg.toLowerCase().includes('numero') && msg.toLowerCase().includes('schema');
-          if (isSchemaCacheNum || isSchemaCacheNumero) {
-            warnings.push('Número no actualizado por caché de esquema; se guardaron otros campos.');
+        if (pcErr) {
+          return {
+            statusCode: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({ success: false, error: pcErr.message })
+          };
+        }
+      }
+
+      // 單獨處理 Número：先嘗試 num，若欄位不存在則改寫 numero
+      if (Object.prototype.hasOwnProperty.call(updateData, 'num')) {
+        const tryNum = await admin
+          .from('customers')
+          .update({ num: updateData.num })
+          .eq('id', id);
+        if (tryNum.error) {
+          const msg = (tryNum.error.message || '').toLowerCase();
+          const isMissingNum = msg.includes("'num' column") || (msg.includes('num') && msg.includes('schema'));
+          if (isMissingNum) {
+            const tryNumero = await admin
+              .from('customers')
+              .update({ numero: updateData.num })
+              .eq('id', id);
+            if (tryNumero.error) {
+              const m2 = (tryNumero.error.message || '').toLowerCase();
+              const isMissingNumero = m2.includes("'numero' column") || (m2.includes('numero') && m2.includes('schema'));
+              if (isMissingNumero) {
+                warnings.push('Número 未持久化：schema cache 未暴露 num/numero，其他欄位已保存');
+              } else {
+                return {
+                  statusCode: 500,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                  },
+                  body: JSON.stringify({ success: false, error: tryNumero.error.message })
+                };
+              }
+            }
           } else {
             return {
               statusCode: 500,
@@ -175,7 +203,7 @@ exports.handler = async (event, context) => {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
               },
-              body: JSON.stringify({ success: false, error: spErr.message })
+              body: JSON.stringify({ success: false, error: tryNum.error.message })
             };
           }
         }
