@@ -122,9 +122,10 @@ exports.handler = async (event, context) => {
         };
       }
 
-      // 允許 customer_number 欄位，排除 num 欄位
+      // 排除所有可能有 schema cache 問題的欄位
       const safeUpdateData = { ...updateData };
       delete safeUpdateData.num;
+      delete safeUpdateData.customer_number;
 
       if (Object.keys(safeUpdateData).length === 0) {
         return {

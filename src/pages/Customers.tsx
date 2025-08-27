@@ -232,10 +232,7 @@ export default function Customers() {
         address: editData.address,
       }
 
-      // 添加 customer_number 欄位（取代 num）
-      if ((editData as any).customer_number !== undefined && (editData as any).customer_number !== '') {
-        updateData.customer_number = (editData as any).customer_number
-      }
+      // 移除 Num 欄位編輯功能，避免 schema cache 問題
 
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
@@ -791,15 +788,6 @@ export default function Customers() {
           <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg p-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Editar cliente</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-700 mb-1">Num</label>
-                <input
-                  className="w-full px-3 py-2 border rounded"
-                  value={(editData as any).customer_number || ''}
-                  onChange={e => handleEditChange('customer_number' as any, e.target.value)}
-                  placeholder="Número de cliente"
-                />
-              </div>
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Nombre</label>
                 <input
