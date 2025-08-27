@@ -149,24 +149,26 @@ export default function Maps() {
   
   // 地理編碼函數
   const geocodeCustomer = async (customer: Customer): Promise<{ lat: number; lng: number } | null> => {
-    const address = getAddress(customer)
-    if (!address) return null
+    const address = getAddress(customer) || ''
 
     // Check cache first
-    const cacheKey = `${customer.id}-${address}`
+    const resolvedProvince = displayProvince(customer) || customer.province || ''
+    const baseKeyPart = address || `${customer.city || ''}-${resolvedProvince}` || `${resolvedProvince}` || 'noaddr'
+    const cacheKey = `${customer.id}-${baseKeyPart}`
     if (geocodeCache.current.has(cacheKey)) {
       return geocodeCache.current.get(cacheKey)!
     }
 
-    // Intentar varias consultas para mejorar la precisión
-    const resolvedProvince = displayProvince(customer) || customer.province || ''
+    // Intentar varias consultas para mejorar la precisión (soporta clientes sin dirección)
     const candidates = [
-      `${address}, ${customer.city || ''}, ${resolvedProvince}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
-      `${address}, ${customer.city || ''}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
-      `${customer.city || ''}, ${resolvedProvince}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
-      `${resolvedProvince}, España`.replace(/,\s*,/g, ',').replace(/^,|,$/g, ''),
+      `${address}, ${customer.city || ''}, ${resolvedProvince}, España`,
+      `${address}, ${customer.city || ''}, España`,
+      `${customer.city || ''}, ${resolvedProvince}, España`,
+      `${resolvedProvince}, España`,
       address
-    ].filter(q => q.length > 2)
+    ]
+      .map(q => q.replace(/,\s*,/g, ',').replace(/^,|,$/g, '').trim())
+      .filter(q => q && q.length > 2)
 
     for (const query of candidates) {
       try {
