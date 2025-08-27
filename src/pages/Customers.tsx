@@ -197,16 +197,13 @@ export default function Customers() {
       .join('\n').trim()
     
     setEditData({
-      num: (c as any).num || '',
       name: c.name,
       company: c.company,
       phone: c.phone,
       email: c.email,
       address: c.address,
-      postal_code: (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || '',
       city: c.city,
       notes: cleanNotes as any,
-      contrato: (c as any).contrato || '',
     })
     
     // 初始化省/市選擇
@@ -227,11 +224,14 @@ export default function Customers() {
     if (!editingCustomer) return
     try {
       // 準備更新資料，包含省市資訊但不寫入notes
-      const update = { 
-        ...editData,
-        // 明确包含 num 和 postal_code 字段
-        num: (editData as any).num || null,
-        postal_code: (editData as any).postal_code || null
+      // 移除不存在的 num 和 postal_code 欄位
+      const update: any = { 
+        name: editData.name,
+        company: editData.company,
+        phone: editData.phone,
+        email: editData.email,
+        address: editData.address,
+        city: editData.city
       }
       
       // 如果有選擇省市，在notes中加入省市資訊（但不顯示給用戶編輯）
@@ -241,6 +241,8 @@ export default function Customers() {
         const cityInfo = `Ciudad: ${editMunicipio}`
         const finalNotes = [userNotes, provinceInfo, cityInfo].filter(Boolean).join('\n')
         update.notes = finalNotes
+      } else if ((editData as any).notes) {
+        update.notes = (editData as any).notes
       }
       
       console.log('Updating customer with data:', update) // 调试日志
@@ -767,15 +769,6 @@ export default function Customers() {
             <h3 className="text-lg font-semibold mb-4">Editar cliente</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-700 mb-1">Num</label>
-                <input
-                  className="w-full px-3 py-2 border rounded"
-                  value={(editData as any).num || ''}
-                  onChange={e => handleEditChange('num' as any, e.target.value)}
-                  placeholder="A1"
-                />
-              </div>
-              <div>
                 <label className="block text-sm text-gray-700 mb-1">Nombre</label>
                 <input
                   className="w-full px-3 py-2 border rounded"
@@ -813,16 +806,6 @@ export default function Customers() {
                   className="w-full px-3 py-2 border rounded"
                   value={editData.address || ''}
                   onChange={e => handleEditChange('address', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-700 mb-1">C.P</label>
-                <input
-                  className="w-full px-3 py-2 border rounded"
-                  value={(editData as any).postal_code || ''}
-                  onChange={e => handleEditChange('postal_code' as any, e.target.value)}
-                  placeholder="21000"
-                  maxLength={5}
                 />
               </div>
               <div>
@@ -946,15 +929,12 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
   const { user } = useAuth()
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
-    num: '',
     name: '',
     company: '',
     phone: '',
     email: '',
     address: '',
-    postal_code: '',
     city: '',
-    contrato: '',
     notes: ''
   })
   const [addProvince, setAddProvince] = useState<string>('')
@@ -1035,15 +1015,12 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
       }
 
       const payload = {
-        num: formData.num || null,
         name: formData.name,
         company: formData.company || null,
         phone: formData.phone || null,
         email: formData.email || null,
         address: formData.address || null,
-        postal_code: formData.postal_code || null,
         city: formData.city || null,
-        contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id
       }
@@ -1076,15 +1053,6 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
       <div className="bg-white w-full max-w-xl rounded-lg shadow-lg p-6">
         <h3 className="text-lg font-semibold mb-4">Agregar cliente</h3>
         <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Num</label>
-            <input
-              className="w-full px-3 py-2 border rounded"
-              value={formData.num}
-              onChange={e => handleChange('num', e.target.value)}
-              placeholder="A1"
-            />
-          </div>
           <div>
             <label className="block text-sm text-gray-700 mb-1">Nombre</label>
             <input
@@ -1128,16 +1096,6 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-700 mb-1">C.P</label>
-            <input
-              className="w-full px-3 py-2 border rounded"
-              value={formData.postal_code}
-              onChange={e => handleChange('postal_code', e.target.value)}
-              placeholder="21000"
-              maxLength={5}
-            />
-          </div>
-          <div>
             <label className="block text-sm text-gray-700 mb-1">Provincia</label>
             <select
               className="w-full px-3 py-2 border rounded"
@@ -1162,14 +1120,6 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Contrato</label>
-            <input
-              className="w-full px-3 py-2 border rounded"
-              value={formData.contrato}
-              onChange={e => handleChange('contrato', e.target.value)}
-            />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Notas</label>
