@@ -209,6 +209,8 @@ export default function Maps() {
     if (hardcodedCoords) {
       console.log(`[GEOCODE] Using hardcoded coordinates for ${customer.name} (${resolvedCity}, ${resolvedProvince}):`, hardcodedCoords)
       geocodeCache.current.set(cacheKey, hardcodedCoords)
+      // 立即更新 coordsById 狀態
+      setCoordsById(prev => ({ ...prev, [customer.id]: hardcodedCoords }))
       return hardcodedCoords
     }
 
@@ -270,6 +272,8 @@ export default function Maps() {
     if (provinceCoords) {
       console.log(`[GEOCODE] Using province-level coordinates for ${customer.name} (${resolvedProvince}):`, provinceCoords)
       geocodeCache.current.set(cacheKey, provinceCoords)
+      // 立即更新 coordsById 狀態
+      setCoordsById(prev => ({ ...prev, [customer.id]: provinceCoords }))
       return provinceCoords
     }
     
@@ -445,9 +449,36 @@ export default function Maps() {
     return null
   }
 
-  const markerPositions = filteredCustomers
-    .map(c => ({ c, pos: getCustomerLatLng(c) }))
-    .filter(item => !!item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
+  // 計算標記位置，包含硬編碼座標
+  const markerPositions = useMemo(() => {
+    return filteredCustomers
+      .map(c => {
+        // 首先檢查資料庫座標
+        let pos = getCustomerLatLng(c)
+        
+        // 如果沒有座標，嘗試硬編碼座標
+        if (!pos) {
+          const resolvedProvince = displayProvince(c) || c.province || ''
+          const resolvedCity = displayCity(c) || c.city || ''
+          const hardcodedCoords = getCityCoordinates(resolvedCity, resolvedProvince)
+          if (hardcodedCoords) {
+            pos = hardcodedCoords
+            // 立即更新狀態以供下次使用
+            setCoordsById(prev => ({ ...prev, [c.id]: hardcodedCoords }))
+          } else {
+            // 嘗試省份級別座標
+            const provinceCoords = getCityCoordinates('', resolvedProvince)
+            if (provinceCoords) {
+              pos = provinceCoords
+              setCoordsById(prev => ({ ...prev, [c.id]: provinceCoords }))
+            }
+          }
+        }
+        
+        return { c, pos }
+      })
+      .filter(item => !!item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
+  }, [filteredCustomers, coordsById])
 
   const flyToCustomer = async (c: Customer) => {
     let pos = getCustomerLatLng(c)
