@@ -139,8 +139,8 @@ export default function Communications() {
       }
 
       let customersData = result.data || []
-      // 過濾只顯示當前用戶創建的客戶
-      customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
+      // 不過濾客戶，顯示所有客戶數據（與 Programación de Visitas 一致）
+      // customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
       
       setCalls(callsData || [])
       setMessages(messagesData || [])
