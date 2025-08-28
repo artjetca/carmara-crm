@@ -880,11 +880,13 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
 
   // 本地輔助：從 notes/欄位推導省市
   const isProvinceName = (v?: string) => /^(huelva|c(a|á)diz)$/i.test(String(v || '').trim())
+  
   const extractFromNotes = (notes: string | undefined, key: 'Provincia' | 'Ciudad') => {
     if (!notes) return ''
     const m = notes.match(new RegExp(`${key}:\\s*([^\\n|]+)`, 'i'))
     return m ? m[1].trim() : ''
   }
+  
   // 將省份字串正規化為統一格式（處理 Cadiz/Cádiz 差異）
   const normalizeProvince = (val: string) => {
     const s = String(val || '').trim().toLowerCase()
@@ -903,6 +905,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     if (/^c(a|á)diz$/i.test(city)) return 'Cádiz'
     return ''
   }
+  
   const deriveCity = (c: Customer) => {
     const fromNotes = extractFromNotes(c.notes, 'Ciudad')
     if (fromNotes) return fromNotes
