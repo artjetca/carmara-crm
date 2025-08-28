@@ -172,6 +172,33 @@ export default function Maps() {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}`, '_blank')
   }
 
+  // 僅針對精準地址嘗試 API 地理編碼（不使用硬編碼），用於點擊左側客戶時優先精準定位
+  const geocodeCustomerPrecise = async (customer: Customer): Promise<{ lat: number; lng: number } | null> => {
+    const resolvedProvince = displayProvince(customer) || customer.province || ''
+    const resolvedCity = displayCity(customer) || customer.city || ''
+    const full = `${customer.address || ''}, ${resolvedCity}, ${resolvedProvince}, España`
+      .replace(/,\s*,/g, ',')
+      .replace(/^,\s*|,\s*$/g, '')
+      .trim()
+    if (!full || full === 'España') return null
+    try {
+      console.log('[GEOCODE_PRECISE] Query:', full)
+      const resp = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: full })
+      })
+      if (!resp.ok) return null
+      const result = await resp.json()
+      if (result && typeof result.lat === 'number' && typeof result.lng === 'number') {
+        return { lat: result.lat, lng: result.lng }
+      }
+    } catch (e) {
+      console.warn('[GEOCODE_PRECISE] failed', e)
+    }
+    return null
+  }
+
   // Cache para evitar geocoding duplicado
   const geocodeCache = useRef<Map<string, { lat: number; lng: number } | null>>(new Map())
   
@@ -346,6 +373,29 @@ export default function Maps() {
       () => undefined,
       { enableHighAccuracy: true, timeout: 8000 }
     )
+  }
+
+  // 一鍵精準定位：對當前篩選的客戶逐一做 API 地理編碼，盡量精準到地址
+  const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
+  const preciseLocate = async () => {
+    if (locatingAllPrecise) return
+    setLocatingAllPrecise(true)
+    try {
+      console.log('[PRECISE_LOCATE] Start geocoding all filtered customers:', filteredCustomers.length)
+      for (const c of filteredCustomers) {
+        try {
+          const coords = await geocodeCustomer(c)
+          if (coords) setCoordsById(prev => ({ ...prev, [c.id]: coords }))
+        } catch (e) {
+          console.warn('[PRECISE_LOCATE] geocode failed for', c.id, e)
+        }
+      }
+      // 定位完成後，自動 fit
+      await new Promise(r => setTimeout(r, 200))
+      await fitToAll()
+    } finally {
+      setLocatingAllPrecise(false)
+    }
   }
 
   // Determinar centro inicial
@@ -544,11 +594,25 @@ export default function Maps() {
   }, [filteredCustomers, coordsById])
 
   const flyToCustomer = async (c: Customer) => {
-    let pos = getCustomerLatLng(c)
-    if (!pos) {
-      await geocodeCustomer(c)
-      pos = getCustomerLatLng(c)
+    // 先嘗試用詳細地址做精準地理編碼
+    let pos = null as { lat: number; lng: number } | null
+    if (c.address || c.notes) {
+      const precise = await geocodeCustomerPrecise(c)
+      if (precise) {
+        pos = precise
+        setCoordsById(prev => ({ ...prev, [c.id]: precise }))
+      }
     }
+
+    // 若沒有拿到精準地址，再用現有/硬編碼/省級回退
+    if (!pos) {
+      pos = getCustomerLatLng(c)
+      if (!pos) {
+        await geocodeCustomer(c)
+        pos = getCustomerLatLng(c)
+      }
+    }
+
     if (pos && mapRef.current) {
       mapRef.current.flyTo([pos.lat, pos.lng], 14, { duration: 0.8 })
     }
@@ -713,6 +777,18 @@ export default function Maps() {
                     <span className="inline-block h-3 w-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin" />
                   )}
                   <span className="text-xs text-gray-700">{fittingAll ? 'Localizando…' : 'Ver todos'}</span>
+                </button>
+                <button
+                  onClick={preciseLocate}
+                  title="精準定位"
+                  disabled={locatingAllPrecise}
+                  aria-busy={locatingAllPrecise}
+                  className={`inline-flex items-center space-x-2 px-3 py-2 rounded-md shadow border transition-colors ${locatingAllPrecise ? 'bg-gray-100 cursor-not-allowed' : 'bg-white/90 backdrop-blur hover:bg-white'}`}
+                >
+                  {locatingAllPrecise && (
+                    <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+                  )}
+                  <span className="text-xs text-gray-700">{locatingAllPrecise ? 'Geocodificando…' : '精準定位'}</span>
                 </button>
                 <button
                   onClick={locateMe}
