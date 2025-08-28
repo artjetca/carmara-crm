@@ -577,21 +577,21 @@ export default function Maps() {
       // 對相同座標的標記做微擾，避免重疊
       try {
         const groups: Record<string, number[]> = {}
-        const keyOf = (p: { lat: number; lng: number }) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`
+        const keyOf = (p: { lat: number; lng: number }) => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`
         arr.forEach((item, idx) => {
           const k = keyOf(item.pos)
           if (!groups[k]) groups[k] = []
           groups[k].push(idx)
         })
-        const baseR = 0.0007 // 約 70m 視覺偏移
+        const baseR = 0.003 // 增加到約 300m 視覺偏移，確保分散
         Object.values(groups).forEach(indices => {
           if (indices.length <= 1) return
           const n = indices.length
-          const radius = baseR * (1 + Math.min(n, 6) * 0.15)
+          const radius = baseR * (1 + Math.min(n, 8) * 0.3) // 增加半徑倍數
           indices.forEach((arrIndex, i) => {
-            const angle = (2 * Math.PI * i) / n
-            const dx = radius * Math.cos(angle)
-            const dy = radius * Math.sin(angle)
+            const angle = (2 * Math.PI * i) / n + (Math.random() * 0.5 - 0.25) // 添加隨機角度
+            const dx = radius * Math.cos(angle) * (0.8 + Math.random() * 0.4) // 添加隨機距離變化
+            const dy = radius * Math.sin(angle) * (0.8 + Math.random() * 0.4)
             const p = arr[arrIndex].pos
             arr[arrIndex] = {
               c: arr[arrIndex].c,
@@ -599,6 +599,7 @@ export default function Maps() {
             }
           })
         })
+        console.log('[MARKER_POSITIONS] Applied jitter to', Object.keys(groups).length, 'coordinate groups')
       } catch (e) {
         console.warn('[MARKER_POSITIONS] jitter failed', e)
       }
@@ -807,7 +808,7 @@ export default function Maps() {
                 </button>
                 <button
                   onClick={preciseLocate}
-                  title="精準定位"
+                  title="Localización precisa"
                   disabled={locatingAllPrecise}
                   aria-busy={locatingAllPrecise}
                   className={`inline-flex items-center space-x-2 px-3 py-2 rounded-md shadow border transition-colors ${locatingAllPrecise ? 'bg-gray-100 cursor-not-allowed' : 'bg-white/90 backdrop-blur hover:bg-white'}`}
@@ -815,7 +816,7 @@ export default function Maps() {
                   {locatingAllPrecise && (
                     <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
                   )}
-                  <span className="text-xs text-gray-700">{locatingAllPrecise ? 'Geocodificando…' : '精準定位'}</span>
+                  <span className="text-xs text-gray-700">{locatingAllPrecise ? 'Geocodificando…' : 'Localización precisa'}</span>
                 </button>
                 <button
                   onClick={locateMe}
