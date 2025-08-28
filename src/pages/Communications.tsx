@@ -79,8 +79,11 @@ export default function Communications() {
   useEffect(() => {
     if (user?.id) {
       loadData()
+    } else if (user === null) {
+      // User is not authenticated, stop loading
+      setLoading(false)
     }
-  }, [user?.id])
+  }, [user])
 
   const loadData = async () => {
     try {
