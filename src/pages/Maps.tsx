@@ -75,16 +75,34 @@ export default function Maps() {
     }
   }
 
-  const filteredCustomers = customers.filter(customer => {
-    const q = searchTerm.toLowerCase()
-    const matchesSearch = (
-      customer.name?.toLowerCase().includes(q) ||
-      customer.company?.toLowerCase().includes(q) ||
-      customer.city?.toLowerCase().includes(q)
-    )
-    const matchesCity = !selectedCity || displayProvince(customer) === selectedCity
-    return matchesSearch && matchesCity
-  })
+  const filteredCustomers = useMemo(() => {
+    try {
+      return customers.filter(customer => {
+        if (!customer) return false
+        
+        const q = searchTerm.toLowerCase()
+        const matchesSearch = (
+          customer.name?.toLowerCase().includes(q) ||
+          customer.company?.toLowerCase().includes(q) ||
+          customer.city?.toLowerCase().includes(q)
+        )
+        
+        // 如果沒有選擇城市或選擇的是空字串，顯示所有客戶
+        if (!selectedCity || selectedCity === '') {
+          return matchesSearch
+        }
+        
+        // 檢查省份是否匹配
+        const customerProvince = displayProvince(customer)
+        const matchesCity = customerProvince === selectedCity
+        
+        return matchesSearch && matchesCity
+      })
+    } catch (error) {
+      console.error('[FILTER] Error filtering customers:', error)
+      return []
+    }
+  }, [customers, searchTerm, selectedCity])
 
   // Solo mostrar provincias Cádiz y Huelva en el filtro
   const cities = ['Cádiz', 'Huelva']
@@ -103,25 +121,35 @@ export default function Maps() {
 
   const displayCity = (c?: Customer): string => {
     if (!c) return ''
-    const fromNotes = extractCityForDisplay(c.notes)
-    if (fromNotes) return fromNotes
-    const city = String(c.city || '').trim()
-    if (city && !isProvinceName(city)) return city
-    return ''
+    try {
+      const fromNotes = extractCityForDisplay(c.notes)
+      if (fromNotes) return fromNotes
+      const city = String(c.city || '').trim()
+      if (city && !isProvinceName(city)) return city
+      return ''
+    } catch (error) {
+      console.error('[DISPLAY_CITY] Error processing customer:', c, error)
+      return ''
+    }
   }
 
   const displayProvince = (c?: Customer): string => {
     if (!c) return ''
-    // 先使用資料表中的 province 欄位
-    if (c.province && String(c.province).trim().length > 0) {
-      return String(c.province).trim()
+    try {
+      // 先使用資料表中的 province 欄位
+      if (c.province && String(c.province).trim().length > 0) {
+        return String(c.province).trim()
+      }
+      if (c.city && isProvinceName(c.city)) return c.city
+      if (c.notes) {
+        const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
+        if (m) return m[1].trim()
+      }
+      return ''
+    } catch (error) {
+      console.error('[DISPLAY_PROVINCE] Error processing customer:', c, error)
+      return ''
     }
-    if (c.city && isProvinceName(c.city)) return c.city
-    if (c.notes) {
-      const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
-      if (m) return m[1].trim()
-    }
-    return ''
   }
 
   const getAddress = (c: Customer) => {
@@ -442,33 +470,40 @@ export default function Maps() {
 
   // 計算標記位置，包含硬編碼座標
   const markerPositions = useMemo(() => {
-    return filteredCustomers
-      .map(c => {
-        // 首先檢查資料庫座標
-        let pos = getCustomerLatLng(c)
-        
-        // 如果沒有座標，嘗試硬編碼座標
-        if (!pos) {
-          const resolvedProvince = displayProvince(c) || c.province || ''
-          const resolvedCity = displayCity(c) || c.city || ''
-          const hardcodedCoords = getCityCoordinates(resolvedCity, resolvedProvince)
-          if (hardcodedCoords) {
-            pos = hardcodedCoords
-            // 立即更新狀態以供下次使用
-            setCoordsById(prev => ({ ...prev, [c.id]: hardcodedCoords }))
-          } else {
-            // 嘗試省份級別座標
-            const provinceCoords = getCityCoordinates('', resolvedProvince)
-            if (provinceCoords) {
-              pos = provinceCoords
-              setCoordsById(prev => ({ ...prev, [c.id]: provinceCoords }))
+    try {
+      return filteredCustomers
+        .map(c => {
+          if (!c || !c.id) return null
+          
+          // 首先檢查資料庫座標
+          let pos = getCustomerLatLng(c)
+          
+          // 如果沒有座標，嘗試硬編碼座標
+          if (!pos) {
+            const resolvedProvince = displayProvince(c) || c.province || ''
+            const resolvedCity = displayCity(c) || c.city || ''
+            const hardcodedCoords = getCityCoordinates(resolvedCity, resolvedProvince)
+            if (hardcodedCoords) {
+              pos = hardcodedCoords
+              // 立即更新狀態以供下次使用
+              setCoordsById(prev => ({ ...prev, [c.id]: hardcodedCoords }))
+            } else {
+              // 嘗試省份級別座標
+              const provinceCoords = getCityCoordinates('', resolvedProvince)
+              if (provinceCoords) {
+                pos = provinceCoords
+                setCoordsById(prev => ({ ...prev, [c.id]: provinceCoords }))
+              }
             }
           }
-        }
-        
-        return { c, pos }
-      })
-      .filter(item => !!item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
+          
+          return { c, pos }
+        })
+        .filter(item => item && item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
+    } catch (error) {
+      console.error('[MARKER_POSITIONS] Error calculating marker positions:', error)
+      return []
+    }
   }, [filteredCustomers, coordsById])
 
   const flyToCustomer = async (c: Customer) => {
