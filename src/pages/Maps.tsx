@@ -684,6 +684,15 @@ export default function Maps() {
 
     if (pos && mapRef.current) {
       mapRef.current.flyTo([pos.lat, pos.lng], 14, { duration: 0.8 })
+      
+      // 延遲一下讓地圖飛行完成，然後打開對應標記的彈出窗口
+      setTimeout(() => {
+        // 找到對應的標記並觸發點擊事件來顯示彈出窗口
+        const marker = document.querySelector(`[data-customer-id="${c.id}"]`) as HTMLElement
+        if (marker) {
+          marker.click()
+        }
+      }, 1000)
     }
     setSelectedCustomer(c)
   }
@@ -878,26 +887,81 @@ export default function Maps() {
                 />
 
                 {markerPositions.map(({ c, pos }) => (
-                  // @ts-expect-error react-leaflet typings may not include 'icon' though Leaflet MarkerOptions supports it
-                  <Marker key={c.id} position={[pos.lat, pos.lng]} icon={customerIcon as any} eventHandlers={{ click: () => setSelectedCustomer(c) }}>
+                  <Marker 
+                    key={c.id} 
+                    position={[pos.lat, pos.lng]} 
+                    // @ts-expect-error react-leaflet icon prop typing issue
+                    icon={customerIcon as any} 
+                    eventHandlers={{ 
+                      click: () => setSelectedCustomer(c),
+                      add: (e) => {
+                        // 為標記添加 data-customer-id 屬性，方便從左側點擊時找到
+                        const marker = e.target
+                        if (marker && marker.getElement) {
+                          const element = marker.getElement()
+                          if (element) {
+                            element.setAttribute('data-customer-id', c.id)
+                          }
+                        }
+                      }
+                    }}
+                  >
                     {/* @ts-expect-error Leaflet PopupOptions supports minWidth */}
-                    <Popup minWidth={240 as any}>
-                      <div className="space-y-1">
-                        <div className="font-semibold text-gray-900">{c.name}</div>
-                        {c.company && <div className="text-xs text-gray-600">{c.company}</div>}
-                        <div className="text-sm text-gray-700">{c.address}</div>
-                        <div className="text-sm text-gray-500">{displayCity(c) || c.city || c.province}</div>
-                        <div className="flex items-center space-x-3 pt-2">
+                    <Popup minWidth={280 as any} maxWidth={320 as any}>
+                      <div className="space-y-3">
+                        <div className="border-b border-gray-200 pb-2">
+                          <div className="font-semibold text-gray-900 text-base">{c.name}</div>
+                          {c.company && <div className="text-sm text-gray-600 mt-1">{c.company}</div>}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          {c.address && (
+                            <div className="flex items-start space-x-2">
+                              <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm text-gray-700">{c.address}</div>
+                            </div>
+                          )}
+                          
+                          <div className="flex items-center space-x-2">
+                            <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <div className="text-sm text-gray-500">{displayCity(c) || c.city || c.province}</div>
+                          </div>
+                          
                           {(c.phone || c.mobile_phone) && (
-                            <a href={`tel:${c.phone || c.mobile_phone}`} className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm">
-                              <Phone className="w-4 h-4 mr-1" /> {t.maps.call}
+                            <div className="flex items-center space-x-2">
+                              <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              <div className="text-sm text-gray-700">{c.phone || c.mobile_phone}</div>
+                            </div>
+                          )}
+                          
+                          {c.email && (
+                            <div className="flex items-center space-x-2">
+                              <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                              <div className="text-sm text-gray-700">{c.email}</div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+                          {(c.phone || c.mobile_phone) && (
+                            <a 
+                              href={`tel:${c.phone || c.mobile_phone}`} 
+                              className="inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
+                            >
+                              <Phone className="w-3 h-3 mr-1" /> Llamar
                             </a>
                           )}
-                          <button onClick={() => getDirections(c)} className="inline-flex items-center text-green-600 hover:text-green-800 text-sm">
-                            <Navigation className="w-4 h-4 mr-1" /> {t.maps.getDirections}
+                          <button 
+                            onClick={() => getDirections(c)} 
+                            className="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md transition-colors"
+                          >
+                            <Navigation className="w-3 h-3 mr-1" /> Direcciones
                           </button>
-                          <button onClick={() => openInGoogleMaps(c)} className="inline-flex items-center text-indigo-600 hover:text-indigo-800 text-sm">
-                            <ExternalLink className="w-4 h-4 mr-1" /> {t.maps.openInMaps}
+                          <button 
+                            onClick={() => openInGoogleMaps(c)} 
+                            className="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3 mr-1" /> Google Maps
                           </button>
                         </div>
                       </div>
