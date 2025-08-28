@@ -44,6 +44,21 @@ export default function Customers() {
     return match ? match[1].trim() : ''
   }
 
+  // 清除備註中的 "Provincia: ..." 與 "Ciudad: ..." 標籤（支持以 \n 或 " | " 拼接的舊資料）
+  const stripLocationTags = (notes?: string): string => {
+    if (!notes) return ''
+    let s = notes
+    // 移除以管線拼接的片段，例如 " | Provincia: Huelva" 或 "| Ciudad: Bonares"
+    s = s.replace(/\s*\|\s*Provincia:\s*[^|\n]+/gi, '')
+         .replace(/\s*\|\s*Ciudad:\s*[^|\n]+/gi, '')
+    // 移除獨立行的片段
+    s = s.replace(/(^|\n)\s*Provincia:\s*[^\n]+/gi, '')
+         .replace(/(^|\n)\s*Ciudad:\s*[^\n]+/gi, '')
+    // 清理多餘的分隔符與空白
+    s = s.replace(/\s*\|\s*/g, ' | ').replace(/^(\s*\|\s*)+|(\s*\|\s*)+$/g, '')
+    return s.trim()
+  }
+
   // 从文本中提取邮递区号 (西班牙格式: 5位数字)
   const extractPostalCode = (text?: string): string => {
     if (!text) return ''
@@ -65,7 +80,9 @@ export default function Customers() {
 
     rows.forEach((c, index) => {
       const isProvinceInCityField = c.city === 'Cádiz' || c.city === 'Huelva'
-      const provincia = isProvinceInCityField ? (c.city || '') : (extractProvince(c.notes) || '')
+      const provincia = isProvinceInCityField
+        ? (c.city || '')
+        : ((c.province || '') || (extractProvince(c.notes) || ''))
       const municipioFromNotes = extractMunicipality(c.notes)
       const municipio = municipioFromNotes || (!isProvinceInCityField ? (c.city || '') : '')
       const contrato = (c as any).contrato || ''
@@ -189,12 +206,7 @@ export default function Customers() {
     setEditingCustomer(c)
     
     // 分離用戶的notes和省市資訊
-    const cleanNotes = ((c.notes as string) || '').split('\n')
-      .filter((line: string) => {
-        const trimmed = line.trim().toLowerCase()
-        return !trimmed.startsWith('provincia:') && !trimmed.startsWith('ciudad:')
-      })
-      .join('\n').trim()
+    const cleanNotes = stripLocationTags(c.notes as string)
     
     setEditData({
       name: c.name,
@@ -254,15 +266,9 @@ export default function Customers() {
         updateData.city = editMunicipio.trim()
       }
 
-      // 組合 notes
-      let notesArray: string[] = []
+      // 不再自動把 省/市 寫進 notes，僅保留使用者輸入
       const userNotes = (editData as any).notes?.trim()
-      if (userNotes) notesArray.push(userNotes)
-      if (hasProvince) notesArray.push(`Provincia: ${editProvince.trim()}`)
-      if (hasMunicipio) notesArray.push(`Ciudad: ${editMunicipio.trim()}`)
-      if (notesArray.length > 0) {
-        updateData.notes = notesArray.join(' | ')
-      }
+      updateData.notes = userNotes || null
 
       // 添加 contrato 欄位
       if ((editData as any).contrato !== undefined) {
@@ -702,16 +708,13 @@ export default function Customers() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAndSortedCustomers.map((customer, index) => {
                   const isProvinceInCityField = customer.city === 'Cádiz' || customer.city === 'Huelva'
-                  const provincia = isProvinceInCityField ? (customer.city || '') : (extractProvince(customer.notes) || '')
+                  const provincia = isProvinceInCityField
+        ? (customer.city || '')
+        : ((customer.province || '') || (extractProvince(customer.notes) || ''))
                   const municipioFromNotes = extractMunicipality(customer.notes)
                   const municipio = municipioFromNotes || (!isProvinceInCityField ? (customer.city || '') : '')
                   const contrato = (customer as any).contrato || ''
-                  const cleanNotes = ((customer.notes as string) || '').split('\n')
-                    .filter((line: string) => {
-                      const trimmed = line.trim().toLowerCase()
-                      return !trimmed.startsWith('provincia:') && !trimmed.startsWith('ciudad:')
-                    })
-                    .join('\n').trim()
+                  const cleanNotes = stripLocationTags(customer.notes as string)
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
                   const customerNum = ((customer as any).numero ?? (customer as any).num) || ''
                   
@@ -963,6 +966,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
     email: '',
     address: '',
     city: '',
+    contrato: '',
     notes: '',
     numero: ''
   })
@@ -1035,13 +1039,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
 
     setLoading(true)
     try {
-      // 準備備註，包含省市資訊
-      let finalNotes = formData.notes || ''
-      if (addProvince && addMunicipio) {
-        const provinceInfo = `Provincia: ${addProvince}`
-        const cityInfo = `Ciudad: ${addMunicipio}`
-        finalNotes = [finalNotes, provinceInfo, cityInfo].filter(Boolean).join('\n')
-      }
+      // 不再將 省/市 資訊自動寫入 notes，僅保留用戶輸入
+      const finalNotes = formData.notes || ''
 
       const payload = {
         name: formData.name,
@@ -1050,6 +1049,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         email: formData.email || null,
         address: formData.address || null,
         city: formData.city || null,
+        contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id,
         // send as num; backend will dual-write to num/numero
@@ -1160,6 +1160,14 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-700 mb-1">Contrato</label>
+            <input
+              className="w-full px-3 py-2 border rounded"
+              value={(formData as any).contrato}
+              onChange={e => handleChange('contrato', e.target.value)}
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Notas</label>
