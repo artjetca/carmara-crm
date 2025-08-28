@@ -386,27 +386,55 @@ export default function Maps() {
     )
   }
 
-  // 一鍵精準定位：對當前篩選的客戶逐一做 API 地理編碼，盡量精準到地址
+  // 一鍵精準定位：對當前篩選的客戶逐一做 API 地理編碼，獲取真實街道地址坐標
   const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
   const preciseLocate = async () => {
     if (locatingAllPrecise) return
     setLocatingAllPrecise(true)
     try {
-      console.log('[PRECISE_LOCATE] Start geocoding all filtered customers:', filteredCustomers.length)
+      console.log('[PRECISE_LOCATE] Start precise geocoding for', filteredCustomers.length, 'customers')
       
-      // 清除現有的硬編碼座標緩存，強制重新地理編碼
+      // 清除現有緩存，強制重新地理編碼
       geocodeCache.current.clear()
+      const newCoords: Record<string, { lat: number; lng: number }> = {}
       
       for (const c of filteredCustomers) {
         try {
-          const coords = await geocodeCustomer(c)
-          if (coords) setCoordsById(prev => ({ ...prev, [c.id]: coords }))
-          // 添加延遲避免 API 限流
-          await new Promise(r => setTimeout(r, 100))
+          // 只有當客戶有地址信息時才嘗試精確地理編碼
+          if (c.address && c.address.trim()) {
+            console.log(`[PRECISE_LOCATE] Geocoding ${c.name} with address: ${c.address}`)
+            const coords = await geocodeCustomerPrecise(c)
+            if (coords) {
+              newCoords[c.id] = coords
+              console.log(`[PRECISE_LOCATE] Success for ${c.name}:`, coords)
+            } else {
+              console.warn(`[PRECISE_LOCATE] Failed to geocode precise address for ${c.name}`)
+              // 回退到一般地理編碼
+              const fallbackCoords = await geocodeCustomer(c)
+              if (fallbackCoords) {
+                newCoords[c.id] = fallbackCoords
+              }
+            }
+          } else {
+            console.log(`[PRECISE_LOCATE] No address for ${c.name}, using fallback geocoding`)
+            const coords = await geocodeCustomer(c)
+            if (coords) {
+              newCoords[c.id] = coords
+            }
+          }
+          // 延遲避免 API 限流
+          await new Promise(r => setTimeout(r, 200))
         } catch (e) {
           console.warn('[PRECISE_LOCATE] geocode failed for', c.id, e)
         }
       }
+      
+      // 批量更新所有坐標
+      if (Object.keys(newCoords).length > 0) {
+        setCoordsById(prev => ({ ...prev, ...newCoords }))
+        console.log(`[PRECISE_LOCATE] Updated coordinates for ${Object.keys(newCoords).length} customers`)
+      }
+      
       // 定位完成後，自動 fit
       await new Promise(r => setTimeout(r, 500))
       await fitToAll()
@@ -485,13 +513,8 @@ export default function Maps() {
         }
       }
       
-      // 使用 jitter 後的位置，並去重(以 4 位小數作為鍵)
-      const dedup: Record<string, { lat: number; lng: number }> = {}
-      markerPositions.forEach(m => {
-        const key = `${m.pos.lat.toFixed(4)},${m.pos.lng.toFixed(4)}`
-        if (!dedup[key]) dedup[key] = m.pos
-      })
-      const allPositions = Object.values(dedup)
+      // 使用真實坐標位置進行 fitBounds
+      const allPositions = markerPositions.map(m => m.pos)
 
       console.log(`[FIT_TO_ALL] Final positions for fitting:`, allPositions)
       
@@ -541,15 +564,7 @@ export default function Maps() {
           // 首先檢查資料庫座標
           let pos = getCustomerLatLng(c)
           
-          // 如果沒有座標且有地址，優先嘗試精確地理編碼
-          if (!pos && c.address && c.address.trim()) {
-            // 觸發異步地理編碼，但不在這裡等待結果
-            geocodeCustomer(c).then(coords => {
-              if (coords) {
-                setCoordsById(prev => ({ ...prev, [c.id]: coords }))
-              }
-            }).catch(() => {})
-          }
+          // 如果沒有座標，不在這裡觸發地理編碼，讓用戶手動點擊"Localización precisa"按鈕
           
           // 如果仍沒有座標，使用硬編碼座標作為最後回退
           if (!pos) {
@@ -574,35 +589,7 @@ export default function Maps() {
         })
         .filter(item => item && item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
 
-      // 對相同座標的標記做微擾，避免重疊
-      try {
-        const groups: Record<string, number[]> = {}
-        const keyOf = (p: { lat: number; lng: number }) => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`
-        arr.forEach((item, idx) => {
-          const k = keyOf(item.pos)
-          if (!groups[k]) groups[k] = []
-          groups[k].push(idx)
-        })
-        const baseR = 0.003 // 增加到約 300m 視覺偏移，確保分散
-        Object.values(groups).forEach(indices => {
-          if (indices.length <= 1) return
-          const n = indices.length
-          const radius = baseR * (1 + Math.min(n, 8) * 0.3) // 增加半徑倍數
-          indices.forEach((arrIndex, i) => {
-            const angle = (2 * Math.PI * i) / n + (Math.random() * 0.5 - 0.25) // 添加隨機角度
-            const dx = radius * Math.cos(angle) * (0.8 + Math.random() * 0.4) // 添加隨機距離變化
-            const dy = radius * Math.sin(angle) * (0.8 + Math.random() * 0.4)
-            const p = arr[arrIndex].pos
-            arr[arrIndex] = {
-              c: arr[arrIndex].c,
-              pos: { lat: p.lat + dy, lng: p.lng + dx }
-            }
-          })
-        })
-        console.log('[MARKER_POSITIONS] Applied jitter to', Object.keys(groups).length, 'coordinate groups')
-      } catch (e) {
-        console.warn('[MARKER_POSITIONS] jitter failed', e)
-      }
+      // 不使用微擾，保持真實地理坐標
 
       // 調試：輸出標記統計與示例
       try {
