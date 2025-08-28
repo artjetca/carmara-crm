@@ -698,38 +698,72 @@ export default function Maps() {
   }, [filteredCustomers, coordsById])
 
   const flyToCustomer = async (c: Customer) => {
+    console.log(`[FLY_TO_CUSTOMER] Starting for ${c.name}`)
+    
     // 先嘗試用詳細地址做精準地理編碼
     let pos = null as { lat: number; lng: number } | null
     if (c.address || c.notes) {
       const precise = await geocodeCustomerPrecise(c)
       if (precise) {
         pos = precise
-        setCoordsById(prev => ({ ...prev, [c.id]: precise }))
+        setCoordsById(prev => {
+          const updated = { ...prev, [c.id]: precise }
+          try {
+            localStorage.setItem('carmara-customer-coords', JSON.stringify(updated))
+          } catch (e) {
+            console.warn('[FLY_TO_CUSTOMER] Failed to save coordinates to localStorage:', e)
+          }
+          return updated
+        })
+        console.log(`[FLY_TO_CUSTOMER] Got precise coordinates for ${c.name}:`, precise)
       }
     }
 
     // 若沒有拿到精準地址，再用現有/硬編碼/省級回退
     if (!pos) {
       pos = getCustomerLatLng(c)
+      console.log(`[FLY_TO_CUSTOMER] Existing coordinates for ${c.name}:`, pos)
+      
       if (!pos) {
+        console.log(`[FLY_TO_CUSTOMER] No existing coordinates, geocoding ${c.name}`)
         await geocodeCustomer(c)
         pos = getCustomerLatLng(c)
+        console.log(`[FLY_TO_CUSTOMER] After geocoding for ${c.name}:`, pos)
       }
     }
 
     if (pos && mapRef.current) {
+      console.log(`[FLY_TO_CUSTOMER] Flying to ${c.name} at:`, pos)
       mapRef.current.flyTo([pos.lat, pos.lng], 14, { duration: 0.8 })
       
-      // 延遲一下讓地圖飛行完成，然後打開對應標記的彈出窗口
+      // 設置選中的客戶，這會觸發地圖上對應標記的高亮
+      setSelectedCustomer(c)
+      
+      // 延遲一下讓地圖飛行完成，然後嘗試打開彈出窗口
       setTimeout(() => {
-        // 找到對應的標記並觸發點擊事件來顯示彈出窗口
+        // 方法1: 通過 data-customer-id 找到標記
         const marker = document.querySelector(`[data-customer-id="${c.id}"]`) as HTMLElement
         if (marker) {
+          console.log(`[FLY_TO_CUSTOMER] Found marker element for ${c.name}, clicking`)
           marker.click()
+        } else {
+          console.warn(`[FLY_TO_CUSTOMER] Could not find marker element for ${c.name}`)
+          
+          // 方法2: 通過 Leaflet API 找到標記並打開彈出窗口
+          if (mapRef.current) {
+            mapRef.current.eachLayer((layer: any) => {
+              if (layer.options && layer.options.customerId === c.id) {
+                console.log(`[FLY_TO_CUSTOMER] Found Leaflet marker for ${c.name}, opening popup`)
+                layer.openPopup()
+              }
+            })
+          }
         }
-      }, 1000)
+      }, 1200)
+    } else {
+      console.warn(`[FLY_TO_CUSTOMER] No position found for ${c.name}`)
+      setSelectedCustomer(c)
     }
-    setSelectedCustomer(c)
   }
 
   // Secuenciar geocodificación para evitar saturar servicios externos
@@ -926,7 +960,13 @@ export default function Maps() {
                     key={c.id} 
                     position={[pos.lat, pos.lng]} 
                     // @ts-expect-error react-leaflet icon prop typing issue
-                    icon={customerIcon as any} 
+                    icon={customerIcon as any}
+                    ref={(ref) => {
+                      // 為標記添加自定義屬性，方便查找
+                      if (ref) {
+                        (ref as any).options.customerId = c.id
+                      }
+                    }}
                     eventHandlers={{ 
                       click: () => setSelectedCustomer(c),
                       add: (e) => {
@@ -937,6 +977,10 @@ export default function Maps() {
                           if (element) {
                             element.setAttribute('data-customer-id', c.id)
                           }
+                        }
+                        // 同時為 Leaflet 層添加自定義屬性
+                        if (marker) {
+                          (marker as any).options.customerId = c.id
                         }
                       }
                     }}
