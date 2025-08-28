@@ -238,7 +238,7 @@ export default function Maps() {
     return coordinates[cityKey] || null
   }
 
-  // 地理編碼函數
+  // 地理編碼函數 - 優先使用 API 獲取精確地址
   const geocodeCustomer = async (customer: Customer): Promise<{ lat: number; lng: number } | null> => {
     console.log(`[GEOCODE] Starting geocode for customer:`, {
       id: customer.id,
@@ -259,7 +259,18 @@ export default function Maps() {
       return geocodeCache.current.get(cacheKey)!
     }
 
-    // 首先嘗試硬編碼座標
+    // 優先嘗試 API 地理編碼獲取精確地址（如果有地址信息）
+    if (customer.address && customer.address.trim()) {
+      const preciseCoords = await geocodeCustomerPrecise(customer)
+      if (preciseCoords) {
+        console.log(`[GEOCODE] Using API precise coordinates for ${customer.name}:`, preciseCoords)
+        geocodeCache.current.set(cacheKey, preciseCoords)
+        setCoordsById(prev => ({ ...prev, [customer.id]: preciseCoords }))
+        return preciseCoords
+      }
+    }
+
+    // 如果沒有地址或 API 失敗，才使用硬編碼座標
     const hardcodedCoords = getCityCoordinates(resolvedCity, resolvedProvince)
     if (hardcodedCoords) {
       console.log(`[GEOCODE] Using hardcoded coordinates for ${customer.name} (${resolvedCity}, ${resolvedProvince}):`, hardcodedCoords)
@@ -382,16 +393,22 @@ export default function Maps() {
     setLocatingAllPrecise(true)
     try {
       console.log('[PRECISE_LOCATE] Start geocoding all filtered customers:', filteredCustomers.length)
+      
+      // 清除現有的硬編碼座標緩存，強制重新地理編碼
+      geocodeCache.current.clear()
+      
       for (const c of filteredCustomers) {
         try {
           const coords = await geocodeCustomer(c)
           if (coords) setCoordsById(prev => ({ ...prev, [c.id]: coords }))
+          // 添加延遲避免 API 限流
+          await new Promise(r => setTimeout(r, 100))
         } catch (e) {
           console.warn('[PRECISE_LOCATE] geocode failed for', c.id, e)
         }
       }
       // 定位完成後，自動 fit
-      await new Promise(r => setTimeout(r, 200))
+      await new Promise(r => setTimeout(r, 500))
       await fitToAll()
     } finally {
       setLocatingAllPrecise(false)
@@ -514,7 +531,7 @@ export default function Maps() {
     return null
   }
 
-  // 計算標記位置，包含硬編碼座標，並對重疊座標加入微擾(jitter)
+  // 計算標記位置，優先使用精確地址，並對重疊座標加入微擾(jitter)
   const markerPositions = useMemo(() => {
     try {
       const arr = filteredCustomers
@@ -524,7 +541,17 @@ export default function Maps() {
           // 首先檢查資料庫座標
           let pos = getCustomerLatLng(c)
           
-          // 如果沒有座標，嘗試硬編碼座標
+          // 如果沒有座標且有地址，優先嘗試精確地理編碼
+          if (!pos && c.address && c.address.trim()) {
+            // 觸發異步地理編碼，但不在這裡等待結果
+            geocodeCustomer(c).then(coords => {
+              if (coords) {
+                setCoordsById(prev => ({ ...prev, [c.id]: coords }))
+              }
+            }).catch(() => {})
+          }
+          
+          // 如果仍沒有座標，使用硬編碼座標作為最後回退
           if (!pos) {
             const resolvedProvince = displayProvince(c) || c.province || ''
             const resolvedCity = displayCity(c) || c.city || ''
