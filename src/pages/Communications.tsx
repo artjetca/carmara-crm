@@ -248,7 +248,15 @@ export default function Communications() {
   const provinces = ['Cádiz', 'Huelva']
   const municipiosByProvince: Record<string, string[]> = {
     'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
-    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+    'Huelva': [
+      'Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado',
+      'Punta Umbría', 'Gibraleón', 'La Palma del Condado', 'Aljaraque', 'Trigueros', 'San Juan del Puerto', 'Beas', 'Rociana del Condado', 'Bonares', 'Niebla',
+      'Villablanca', 'San Bartolomé de la Torre', 'Villanueva de los Castillejos', 'Lucena del Puerto', 'Alosno', 'Calañas', 'Minas de Riotinto', 'Nerva', 'El Campillo', 'Zalamea la Real',
+      'Aracena', 'Cortegana', 'Aroche', 'Jabugo', 'Santa Olalla del Cala', 'Hinojos', 'Chucena', 'Escacena del Campo', 'Paterna del Campo', 'Manzanilla',
+      'Villalba del Alcor', 'Villarrasa', 'Paymogo', 'Puebla de Guzmán', 'Cabezas Rubias', 'Villanueva de las Cruces', 'Berrocal', 'Campofrío', 'La Granada de Río-Tinto',
+      'Cumbres Mayores', 'Cumbres de San Bartolomé', 'Cumbres de Enmedio', 'Encinasola', 'Rosal de la Frontera', 'San Silvestre de Guzmán', 'Sanlúcar de Guadiana', 'El Granado',
+      'Cortelazor', 'Castaño del Robledo', 'Fuenteheridos', 'Galaroza', 'Higuera de la Sierra', 'Linares de la Sierra', 'Los Marines', 'Santa Ana la Real', 'Valdelarco', 'Zufre'
+    ]
   }
 
   // Obtener todas las ciudades únicas de los clientes existentes
@@ -877,7 +885,15 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   const provinces = ['Cádiz', 'Huelva']
   const municipiosByProvince: Record<string, string[]> = {
     'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
-    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+    'Huelva': [
+      'Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado',
+      'Punta Umbría', 'Gibraleón', 'La Palma del Condado', 'Aljaraque', 'Trigueros', 'San Juan del Puerto', 'Beas', 'Rociana del Condado', 'Bonares', 'Niebla',
+      'Villablanca', 'San Bartolomé de la Torre', 'Villanueva de los Castillejos', 'Lucena del Puerto', 'Alosno', 'Calañas', 'Minas de Riotinto', 'Nerva', 'El Campillo', 'Zalamea la Real',
+      'Aracena', 'Cortegana', 'Aroche', 'Jabugo', 'Santa Olalla del Cala', 'Hinojos', 'Chucena', 'Escacena del Campo', 'Paterna del Campo', 'Manzanilla',
+      'Villalba del Alcor', 'Villarrasa', 'Paymogo', 'Puebla de Guzmán', 'Cabezas Rubias', 'Villanueva de las Cruces', 'Berrocal', 'Campofrío', 'La Granada de Río-Tinto',
+      'Cumbres Mayores', 'Cumbres de San Bartolomé', 'Cumbres de Enmedio', 'Encinasola', 'Rosal de la Frontera', 'San Silvestre de Guzmán', 'Sanlúcar de Guadiana', 'El Granado',
+      'Cortelazor', 'Castaño del Robledo', 'Fuenteheridos', 'Galaroza', 'Higuera de la Sierra', 'Linares de la Sierra', 'Los Marines', 'Santa Ana la Real', 'Valdelarco', 'Zufre'
+    ]
   }
 
   // 本地輔助：從 notes/欄位推導省市
