@@ -216,16 +216,39 @@ export default function Customers() {
       address: c.address,
       city: c.city,
       notes: cleanNotes as any,
+      contrato: (c as any).contrato || '',
       // 初始化 Número：優先使用 num，否則 fallback 到 numero
       ...(typeof (c as any).num !== 'undefined' ? { num: (c as any).num } : {}),
       ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
     })
     
-    // 初始化省/市選擇
-    const prov = (c.city === 'Cádiz' || c.city === 'Huelva') ? c.city : extractProvince(c.notes)
+    // 初始化省/市選擇 - 增強省份推斷邏輯
+    let prov = ''
+    // 1. 優先使用 province 欄位
+    if (c.province && String(c.province).trim()) {
+      prov = String(c.province).trim()
+    }
+    // 2. 檢查 city 是否為省份名稱
+    else if (c.city === 'Cádiz' || c.city === 'Huelva') {
+      prov = c.city
+    }
+    // 3. 從 notes 提取省份
+    else {
+      prov = extractProvince(c.notes) || ''
+    }
+    // 4. 從城市名稱推斷省份
+    if (!prov && c.city) {
+      const city = String(c.city).trim()
+      if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === city.toLowerCase())) {
+        prov = 'Huelva'
+      } else if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === city.toLowerCase())) {
+        prov = 'Cádiz'
+      }
+    }
+    
     const muni = extractMunicipality(c.notes) || ((c.city !== 'Cádiz' && c.city !== 'Huelva') ? (c.city || '') : '')
-    setEditProvince(prov || '')
-    setEditMunicipio(muni || '')
+    setEditProvince(prov)
+    setEditMunicipio(muni)
   }
 
   const handleEditChange = (
@@ -264,6 +287,13 @@ export default function Customers() {
         }
       } else if (hasMunicipio) {
         updateData.city = editMunicipio.trim()
+        // 如果只有城市沒有省份，嘗試推斷省份
+        const city = editMunicipio.trim()
+        if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === city.toLowerCase())) {
+          updateData.province = 'Huelva'
+        } else if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === city.toLowerCase())) {
+          updateData.province = 'Cádiz'
+        }
       }
 
       // 不再自動把 省/市 寫進 notes，僅保留使用者輸入
