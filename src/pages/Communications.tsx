@@ -77,12 +77,21 @@ export default function Communications() {
   const t = translations
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (user?.id) {
+      loadData()
+    }
+  }, [user?.id])
 
   const loadData = async () => {
     try {
       setLoading(true)
+      
+      // Verificar que el usuario esté autenticado antes de cargar datos
+      if (!user?.id) {
+        console.warn('User not authenticated, skipping data load')
+        setLoading(false)
+        return
+      }
       
       // Cargar llamadas
       const { data: callsData, error: callsError } = await supabase
@@ -102,7 +111,7 @@ export default function Communications() {
             full_name
           )
         `)
-        .eq('from_user', user?.id)
+        .eq('from_user', user.id)
         .order('created_at', { ascending: false })
       
       if (callsError) throw callsError
