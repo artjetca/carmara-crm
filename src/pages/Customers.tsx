@@ -746,6 +746,7 @@ export default function Customers() {
         ? (customer.city || '')
         : ((customer.province || '') || (extractProvince(customer.notes) || ''))
                   const municipioFromNotes = extractMunicipality(customer.notes)
+                  // 顯示邏輯：優先從notes提取，否則使用city欄位（除非city是省份名）
                   const municipio = municipioFromNotes || (!isProvinceInCityField ? (customer.city || '') : '')
                   const contrato = (customer as any).contrato || ''
                   const cleanNotes = stripLocationTags(customer.notes as string)
@@ -776,7 +777,7 @@ export default function Customers() {
                         {postalCode || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {municipio || '-'}
+                        {customer.city && !isProvinceInCityField ? customer.city : (municipioFromNotes || '-')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {provincia || '-'}
