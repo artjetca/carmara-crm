@@ -418,18 +418,14 @@ export default function Maps() {
         }
       }
       
-      // 重新計算位置
-      const allPositions = filteredCustomers
-        .map(c => {
-          const lat = typeof c.latitude === 'number' ? c.latitude : coordsById[c.id]?.lat
-          const lng = typeof c.longitude === 'number' ? c.longitude : coordsById[c.id]?.lng
-          if (typeof lat === 'number' && typeof lng === 'number') {
-            return { lat, lng }
-          }
-          return null
-        })
-        .filter(Boolean) as { lat: number; lng: number }[]
-      
+      // 使用 jitter 後的位置，並去重(以 4 位小數作為鍵)
+      const dedup: Record<string, { lat: number; lng: number }> = {}
+      markerPositions.forEach(m => {
+        const key = `${m.pos.lat.toFixed(4)},${m.pos.lng.toFixed(4)}`
+        if (!dedup[key]) dedup[key] = m.pos
+      })
+      const allPositions = Object.values(dedup)
+
       console.log(`[FIT_TO_ALL] Final positions for fitting:`, allPositions)
       
       if (allPositions.length === 0) {
@@ -468,7 +464,7 @@ export default function Maps() {
     return null
   }
 
-  // 計算標記位置，包含硬編碼座標
+  // 計算標記位置，包含硬編碼座標，並對重疊座標加入微擾(jitter)
   const markerPositions = useMemo(() => {
     try {
       const arr = filteredCustomers
@@ -500,6 +496,35 @@ export default function Maps() {
           return { c, pos }
         })
         .filter(item => item && item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
+
+      // 對相同座標的標記做微擾，避免重疊
+      try {
+        const groups: Record<string, number[]> = {}
+        const keyOf = (p: { lat: number; lng: number }) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`
+        arr.forEach((item, idx) => {
+          const k = keyOf(item.pos)
+          if (!groups[k]) groups[k] = []
+          groups[k].push(idx)
+        })
+        const baseR = 0.0007 // 約 70m 視覺偏移
+        Object.values(groups).forEach(indices => {
+          if (indices.length <= 1) return
+          const n = indices.length
+          const radius = baseR * (1 + Math.min(n, 6) * 0.15)
+          indices.forEach((arrIndex, i) => {
+            const angle = (2 * Math.PI * i) / n
+            const dx = radius * Math.cos(angle)
+            const dy = radius * Math.sin(angle)
+            const p = arr[arrIndex].pos
+            arr[arrIndex] = {
+              c: arr[arrIndex].c,
+              pos: { lat: p.lat + dy, lng: p.lng + dx }
+            }
+          })
+        })
+      } catch (e) {
+        console.warn('[MARKER_POSITIONS] jitter failed', e)
+      }
 
       // 調試：輸出標記統計與示例
       try {
