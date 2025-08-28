@@ -701,9 +701,6 @@ export default function Maps() {
 
               <MapContainer
                 style={{ height: '100%', width: '100%' }}
-                center={defaultCenter as any}
-                zoom={9}
-                ref={mapRef}
               >
                 <MapInit center={defaultCenter} />
                 <TileLayer
