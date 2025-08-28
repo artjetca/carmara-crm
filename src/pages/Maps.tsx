@@ -159,6 +159,12 @@ export default function Maps() {
     }
   }
 
+  // 省份和城市數據
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
+    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+  }
+
   const displayProvince = (c?: Customer): string => {
     if (!c) return ''
     try {
@@ -171,6 +177,10 @@ export default function Maps() {
         const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
         if (m) return m[1].trim()
       }
+      // 從城市名稱推斷省份
+      const city = String(c.city || '').trim()
+      if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Huelva'
+      if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Cádiz'
       return ''
     } catch (error) {
       console.error('[DISPLAY_PROVINCE] Error processing customer:', c, error)
