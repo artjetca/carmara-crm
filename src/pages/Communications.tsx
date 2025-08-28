@@ -925,6 +925,13 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     // Infer province by municipality membership
     if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Huelva'
     if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Cádiz'
+    // If city field is empty, try infer using Ciudad from notes
+    const cityFromNotes = extractFromNotes(c.notes, 'Ciudad')
+    if (cityFromNotes) {
+      const lc = cityFromNotes.toLowerCase()
+      if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === lc)) return 'Huelva'
+      if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === lc)) return 'Cádiz'
+    }
     return ''
   }
   
