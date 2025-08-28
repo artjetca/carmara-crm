@@ -903,8 +903,12 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     const fromNotes = extractFromNotes(c.notes, 'Provincia')
     if (fromNotes) return normalizeProvince(fromNotes)
     const city = String(c.city || '').trim()
+    // City equals province
     if (/^huelva$/i.test(city)) return 'Huelva'
     if (/^c(a|á)diz$/i.test(city)) return 'Cádiz'
+    // Infer province by municipality membership
+    if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Huelva'
+    if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Cádiz'
     return ''
   }
   
