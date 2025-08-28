@@ -205,7 +205,22 @@ export default function Communications() {
     'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
   }
 
-  const availableCities = selectedProvince ? municipiosByProvince[selectedProvince] || [] : []
+  // Obtener todas las ciudades únicas de los clientes existentes
+  const customerCities = Array.from(new Set(
+    customers.map(c => displayCity(c)).filter(city => city.length > 0)
+  )).sort()
+  
+  // Combinar ciudades predefinidas con ciudades de clientes
+  const predefinedCities = selectedProvince ? municipiosByProvince[selectedProvince] || [] : []
+  const allCities = Array.from(new Set([...predefinedCities, ...customerCities])).sort()
+  const availableCities = selectedProvince 
+    ? allCities.filter(city => {
+        // Si hay provincia seleccionada, mostrar ciudades predefinidas + ciudades de clientes de esa provincia
+        const clientsInProvince = customers.filter(c => displayProvince(c) === selectedProvince)
+        const citiesInProvince = clientsInProvince.map(c => displayCity(c)).filter(city => city.length > 0)
+        return predefinedCities.includes(city) || citiesInProvince.includes(city)
+      })
+    : allCities
 
   // 輔助函數
   const isProvinceName = (v?: string) => {
