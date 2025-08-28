@@ -355,77 +355,68 @@ export default function Maps() {
   const fitToAll = async () => {
     if (fittingAll) return
     setFittingAll(true)
-    // 先為目前列表中沒有座標的客戶做一次地理編碼（逐一 await，確保完成後再 fitBounds）
-    const need = filteredCustomers.filter(c => {
-      const hasCoords = (typeof c.latitude === 'number' && typeof c.longitude === 'number') || coordsById[c.id]
-      return !hasCoords && (c.address || c.city || c.notes || c.province)
-    })
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-    const newly: Record<string, { lat: number; lng: number }> = {}
-    
-    // 分批處理，每批最多5個，避免資源不足
-    const batchSize = 5
-    const batches = []
-    for (let i = 0; i < need.length; i += batchSize) {
-      batches.push(need.slice(i, i + batchSize))
-    }
-    
-    console.log(`[FIT_TO_ALL] Starting geocoding for ${need.length} customers in ${batches.length} batches`)
-    console.log(`[FIT_TO_ALL] Customers needing geocoding:`, need.map(c => ({ id: c.id, name: c.name, city: c.city, province: c.province })))
+    console.log(`[FIT_TO_ALL] Starting fit to all with ${filteredCustomers.length} filtered customers`)
     
     try {
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex]
-        console.log(`[FIT_TO_ALL] Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} customers`)
+      // 直接使用現有的 markerPositions
+      const currentPositions = markerPositions.map(m => m.pos)
+      console.log(`[FIT_TO_ALL] Current marker positions:`, currentPositions)
+      
+      // 如果沒有任何標記，嘗試為所有客戶獲取座標
+      if (currentPositions.length === 0) {
+        console.log(`[FIT_TO_ALL] No markers found, trying to get coordinates for all customers`)
+        const newCoords: Record<string, { lat: number; lng: number }> = {}
         
-        for (const c of batch) {
-          console.log(`[FIT_TO_ALL] Geocoding customer: ${c.name}`)
-          const coords = await geocodeCustomer(c)
-          if (coords) {
-            newly[c.id] = coords
-            console.log(`[FIT_TO_ALL] Got coordinates for ${c.name}:`, coords)
-          } else {
-            console.warn(`[FIT_TO_ALL] No coordinates found for ${c.name}`)
+        for (const customer of filteredCustomers) {
+          const resolvedProvince = displayProvince(customer) || customer.province || ''
+          const resolvedCity = displayCity(customer) || customer.city || ''
+          
+          // 嘗試硬編碼座標
+          let coords = getCityCoordinates(resolvedCity, resolvedProvince)
+          if (!coords) {
+            coords = getCityCoordinates('', resolvedProvince) // 省份級別
           }
-          await sleep(800)
+          
+          if (coords) {
+            newCoords[customer.id] = coords
+            console.log(`[FIT_TO_ALL] Assigned coordinates to ${customer.name}:`, coords)
+          }
         }
-        // 批次間額外等待，避免過載
-        if (batchIndex < batches.length - 1) {
-          console.log(`[FIT_TO_ALL] Waiting between batches...`)
-          await sleep(1500)
+        
+        if (Object.keys(newCoords).length > 0) {
+          setCoordsById(prev => ({ ...prev, ...newCoords }))
+          // 等待狀態更新
+          await new Promise(resolve => setTimeout(resolve, 100))
         }
       }
-
-      // 一次性合併新取得的座標，避免 setState 非同步導致 positions 不完整
-      if (Object.keys(newly).length) {
-        // 更新座標狀態
-        setCoordsById(prev => ({ ...prev, ...newly }))
-      }
-      console.log(`[FIT_TO_ALL] Updated coordsById with ${Object.keys(newly).length} new coordinates`)
       
-      // 計算所有位置並調整地圖視野
-      const positions = filteredCustomers
+      // 重新計算位置
+      const allPositions = filteredCustomers
         .map(c => {
-          const lat = typeof c.latitude === 'number' ? c.latitude : (newly[c.id]?.lat ?? coordsById[c.id]?.lat)
-          const lng = typeof c.longitude === 'number' ? c.longitude : (newly[c.id]?.lng ?? coordsById[c.id]?.lng)
-          return { customer: c.name, lat, lng }
+          const lat = typeof c.latitude === 'number' ? c.latitude : coordsById[c.id]?.lat
+          const lng = typeof c.longitude === 'number' ? c.longitude : coordsById[c.id]?.lng
+          if (typeof lat === 'number' && typeof lng === 'number') {
+            return { lat, lng }
+          }
+          return null
         })
-        .filter(p => typeof p.lat === 'number' && typeof p.lng === 'number')
+        .filter(Boolean) as { lat: number; lng: number }[]
       
-      console.log(`[FIT_TO_ALL] Found ${positions.length} valid positions out of ${filteredCustomers.length} customers:`, positions.map(p => `${p.customer}: ${p.lat}, ${p.lng}`))
+      console.log(`[FIT_TO_ALL] Final positions for fitting:`, allPositions)
       
-      // 如果沒有足夠的位置，嘗試使用預設座標
-      if (positions.length === 0) {
+      if (allPositions.length === 0) {
         console.warn(`[FIT_TO_ALL] No coordinates found, using default Andalusia center`)
-        const defaultPos = { lat: 36.7, lng: -6.3 }
         if (mapRef.current) {
-          mapRef.current.setView([defaultPos.lat, defaultPos.lng], 8)
+          mapRef.current.setView([36.7, -6.3], 8)
         }
         return
       }
       
-      if (!positions.length) {
-        console.warn(`[FIT_TO_ALL] No valid positions found from ${filteredCustomers.length} customers`)
+      if (allPositions.length === 1) {
+        console.log(`[FIT_TO_ALL] Only one position, centering on it`)
+        if (mapRef.current) {
+          mapRef.current.setView([allPositions[0].lat, allPositions[0].lng], 12)
+        }
         return
       }
       
@@ -434,8 +425,8 @@ export default function Maps() {
         return
       }
       
-      const bounds = L.latLngBounds(positions.map(p => L.latLng(p.lat, p.lng)))
-      console.log(`[FIT_TO_ALL] Fitting map to bounds:`, bounds.toBBoxString())
+      const bounds = L.latLngBounds(allPositions.map(p => L.latLng(p.lat, p.lng)))
+      console.log(`[FIT_TO_ALL] Fitting map to bounds with ${allPositions.length} positions`)
       mapRef.current.fitBounds(bounds.pad(0.1))
     } finally {
       setFittingAll(false)
