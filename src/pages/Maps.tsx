@@ -180,21 +180,44 @@ export default function Maps() {
       .replace(/,\s*,/g, ',')
       .replace(/^,\s*|,\s*$/g, '')
       .trim()
-    if (!full || full === 'España') return null
+    
+    console.log(`[GEOCODE_PRECISE] Customer: ${customer.name}`)
+    console.log(`[GEOCODE_PRECISE] Raw address: "${customer.address}"`)
+    console.log(`[GEOCODE_PRECISE] Resolved city: "${resolvedCity}"`)
+    console.log(`[GEOCODE_PRECISE] Resolved province: "${resolvedProvince}"`)
+    console.log(`[GEOCODE_PRECISE] Full query: "${full}"`)
+    
+    if (!full || full === 'España') {
+      console.warn('[GEOCODE_PRECISE] Empty or invalid query, skipping')
+      return null
+    }
+    
     try {
-      console.log('[GEOCODE_PRECISE] Query:', full)
       const resp = await fetch('/api/geocode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address: full })
       })
-      if (!resp.ok) return null
+      
+      console.log(`[GEOCODE_PRECISE] API response status: ${resp.status}`)
+      
+      if (!resp.ok) {
+        const errorText = await resp.text()
+        console.error(`[GEOCODE_PRECISE] API error ${resp.status}: ${errorText}`)
+        return null
+      }
+      
       const result = await resp.json()
+      console.log(`[GEOCODE_PRECISE] API result:`, result)
+      
       if (result && typeof result.lat === 'number' && typeof result.lng === 'number') {
+        console.log(`[GEOCODE_PRECISE] SUCCESS for ${customer.name}: lat=${result.lat}, lng=${result.lng}`)
         return { lat: result.lat, lng: result.lng }
+      } else {
+        console.warn(`[GEOCODE_PRECISE] Invalid result format:`, result)
       }
     } catch (e) {
-      console.warn('[GEOCODE_PRECISE] failed', e)
+      console.error('[GEOCODE_PRECISE] Exception:', e)
     }
     return null
   }
@@ -400,27 +423,35 @@ export default function Maps() {
       
       for (const c of filteredCustomers) {
         try {
-          // 只有當客戶有地址信息時才嘗試精確地理編碼
+          // 嘗試精確地理編碼，無論是否有地址都試試看
+          console.log(`[PRECISE_LOCATE] Processing ${c.name}`)
+          console.log(`[PRECISE_LOCATE] Customer data:`, {
+            id: c.id,
+            name: c.name,
+            address: c.address,
+            city: c.city,
+            province: c.province,
+            notes: c.notes?.substring(0, 100)
+          })
+          
+          let coords = null
+          
+          // 如果有地址，優先使用精確地理編碼
           if (c.address && c.address.trim()) {
-            console.log(`[PRECISE_LOCATE] Geocoding ${c.name} with address: ${c.address}`)
-            const coords = await geocodeCustomerPrecise(c)
-            if (coords) {
-              newCoords[c.id] = coords
-              console.log(`[PRECISE_LOCATE] Success for ${c.name}:`, coords)
-            } else {
-              console.warn(`[PRECISE_LOCATE] Failed to geocode precise address for ${c.name}`)
-              // 回退到一般地理編碼
-              const fallbackCoords = await geocodeCustomer(c)
-              if (fallbackCoords) {
-                newCoords[c.id] = fallbackCoords
-              }
-            }
+            coords = await geocodeCustomerPrecise(c)
+          }
+          
+          // 如果精確地理編碼失敗，使用一般地理編碼
+          if (!coords) {
+            console.log(`[PRECISE_LOCATE] Falling back to general geocoding for ${c.name}`)
+            coords = await geocodeCustomer(c)
+          }
+          
+          if (coords) {
+            newCoords[c.id] = coords
+            console.log(`[PRECISE_LOCATE] Final coordinates for ${c.name}:`, coords)
           } else {
-            console.log(`[PRECISE_LOCATE] No address for ${c.name}, using fallback geocoding`)
-            const coords = await geocodeCustomer(c)
-            if (coords) {
-              newCoords[c.id] = coords
-            }
+            console.warn(`[PRECISE_LOCATE] No coordinates found for ${c.name}`)
           }
           // 延遲避免 API 限流
           await new Promise(r => setTimeout(r, 200))
