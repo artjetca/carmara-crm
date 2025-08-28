@@ -22,7 +22,15 @@ export default function Maps() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [coordsById, setCoordsById] = useState<Record<string, { lat: number; lng: number }>>({})
+  // 從 localStorage 載入已保存的座標，避免重複地理編碼
+  const [coordsById, setCoordsById] = useState<Record<string, { lat: number; lng: number }>>(() => {
+    try {
+      const saved = localStorage.getItem('carmara-customer-coords')
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [fittingAll, setFittingAll] = useState(false)
   const mapRef = useRef<LeafletMap | null>(null)
@@ -41,6 +49,24 @@ export default function Maps() {
       )
     }
   }, [user?.id])
+
+  // 自動執行精準地理編碼當客戶數據載入完成
+  useEffect(() => {
+    if (customers.length > 0 && !locatingAllPrecise) {
+      // 檢查是否有客戶缺少座標
+      const needsGeocoding = customers.some(c => 
+        !coordsById[c.id] && (c.address || c.city || c.province)
+      )
+      
+      if (needsGeocoding) {
+        console.log('[AUTO_GEOCODE] Starting automatic precise geocoding for new customers')
+        // 延遲一下讓頁面完全載入
+        setTimeout(() => {
+          preciseLocate()
+        }, 1000)
+      }
+    }
+  }, [customers, coordsById])
 
   const loadCustomers = async () => {
     if (!user?.id) {
@@ -485,7 +511,16 @@ export default function Maps() {
       
       // 批量更新所有坐標
       if (Object.keys(newCoords).length > 0) {
-        setCoordsById(prev => ({ ...prev, ...newCoords }))
+        setCoordsById(prev => {
+          const updated = { ...prev, ...newCoords }
+          // 保存到 localStorage
+          try {
+            localStorage.setItem('carmara-customer-coords', JSON.stringify(updated))
+          } catch (e) {
+            console.warn('[PRECISE_LOCATE] Failed to save coordinates to localStorage:', e)
+          }
+          return updated
+        })
         console.log(`[PRECISE_LOCATE] Updated coordinates for ${Object.keys(newCoords).length} customers`)
       }
       
