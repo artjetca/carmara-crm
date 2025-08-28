@@ -210,12 +210,22 @@ export default function Maps() {
       const result = await resp.json()
       console.log(`[GEOCODE_PRECISE] API result:`, result)
       
+      // 處理 API 返回格式 {success: true, data: {lat: number, lng: number}}
+      if (result && result.success && result.data) {
+        const coords = result.data
+        if (typeof coords.lat === 'number' && typeof coords.lng === 'number') {
+          console.log(`[GEOCODE_PRECISE] SUCCESS for ${customer.name}: lat=${coords.lat}, lng=${coords.lng}`)
+          return { lat: coords.lat, lng: coords.lng }
+        }
+      }
+      
+      // 也支持直接返回座標的格式
       if (result && typeof result.lat === 'number' && typeof result.lng === 'number') {
         console.log(`[GEOCODE_PRECISE] SUCCESS for ${customer.name}: lat=${result.lat}, lng=${result.lng}`)
         return { lat: result.lat, lng: result.lng }
-      } else {
-        console.warn(`[GEOCODE_PRECISE] Invalid result format:`, result)
       }
+      
+      console.warn(`[GEOCODE_PRECISE] Invalid result format:`, result)
     } catch (e) {
       console.error('[GEOCODE_PRECISE] Exception:', e)
     }
@@ -341,8 +351,21 @@ export default function Maps() {
         if (resp.ok) {
           const result = await resp.json()
           console.log(`[GEOCODE] API response for ${customer.name}:`, result)
-          if (result.lat && result.lng && typeof result.lat === 'number' && typeof result.lng === 'number') {
-            const coords = { lat: result.lat, lng: result.lng }
+          
+          // 處理 API 返回格式 {success: true, data: {lat: number, lng: number}}
+          let coords = null
+          if (result && result.success && result.data) {
+            const data = result.data
+            if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+              coords = { lat: data.lat, lng: data.lng }
+            }
+          }
+          // 也支持直接返回座標的格式
+          else if (result && typeof result.lat === 'number' && typeof result.lng === 'number') {
+            coords = { lat: result.lat, lng: result.lng }
+          }
+          
+          if (coords) {
             geocodeCache.current.set(cacheKey, coords)
             console.log(`[GEOCODE] API SUCCESS for ${customer.name}:`, coords)
             return coords
