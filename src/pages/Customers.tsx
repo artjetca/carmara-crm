@@ -328,7 +328,11 @@ export default function Customers() {
       }
 
       // 更新前端列表（包含 num 等欄位）
-      setCustomers(customers.map(c => (c.id === editingCustomer.id ? { ...c, ...updateData } as Customer : c)))
+      const updatedCustomer = { ...editingCustomer, ...updateData }
+      console.log('Frontend update - original customer:', editingCustomer)
+      console.log('Frontend update - updateData:', updateData)
+      console.log('Frontend update - final customer:', updatedCustomer)
+      setCustomers(customers.map(c => (c.id === editingCustomer.id ? updatedCustomer as Customer : c)))
       setEditingCustomer(null)
       setEditData({})
       setEditProvince('')
