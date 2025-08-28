@@ -988,18 +988,19 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t.communications.customer} *
+                Cliente *
               </label>
               <select
                 required
                 value={formData.customer_id}
                 onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                size={Math.min(modalFilteredCustomers.length + 1, 10)}
               >
-                <option value="">{t.communications.selectCustomer}</option>
+                <option value="">✓ Seleccionar cliente</option>
                 {modalFilteredCustomers.map(customer => (
                   <option key={customer.id} value={customer.id}>
-                    {customer.name} - {customer.company}
+                    {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}
                   </option>
                 ))}
               </select>
