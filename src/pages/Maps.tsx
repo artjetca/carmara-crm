@@ -352,9 +352,9 @@ export default function Maps() {
   const defaultCenter: LatLngExpression = useMemo(() => {
     if (filteredCustomers.length > 0) {
       const c = filteredCustomers[0]
-      const lat = c.latitude ?? coordsById[c.id]?.lat
-      const lng = c.longitude ?? coordsById[c.id]?.lng
-      if (lat && lng) return [lat, lng]
+      const lat = (typeof c.latitude === 'number' ? c.latitude : coordsById[c.id]?.lat)
+      const lng = (typeof c.longitude === 'number' ? c.longitude : coordsById[c.id]?.lng)
+      if (typeof lat === 'number' && typeof lng === 'number') return [lat, lng]
     }
     return [36.7, -6.3]
   }, [filteredCustomers, coordsById])
@@ -471,7 +471,7 @@ export default function Maps() {
   // 計算標記位置，包含硬編碼座標
   const markerPositions = useMemo(() => {
     try {
-      return filteredCustomers
+      const arr = filteredCustomers
         .map(c => {
           if (!c || !c.id) return null
           
@@ -500,6 +500,18 @@ export default function Maps() {
           return { c, pos }
         })
         .filter(item => item && item.pos) as { c: Customer; pos: { lat: number; lng: number } }[]
+
+      // 調試：輸出標記統計與示例
+      try {
+        const byKey: Record<string, number> = {}
+        arr.forEach(({ c, pos }) => {
+          const key = `${pos.lat.toFixed(3)},${pos.lng.toFixed(3)}`
+          byKey[key] = (byKey[key] || 0) + 1
+        })
+        console.log('[MARKER_POSITIONS] total markers:', arr.length, 'unique coords:', Object.keys(byKey).length, byKey)
+      } catch {}
+
+      return arr
     } catch (error) {
       console.error('[MARKER_POSITIONS] Error calculating marker positions:', error)
       return []
@@ -689,6 +701,8 @@ export default function Maps() {
 
               <MapContainer
                 style={{ height: '100%', width: '100%' }}
+                center={defaultCenter as any}
+                zoom={9}
                 ref={mapRef}
               >
                 <MapInit center={defaultCenter} />
