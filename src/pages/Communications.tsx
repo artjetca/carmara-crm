@@ -975,11 +975,15 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                     setSelectedCity(e.target.value)
                     setFormData({ ...formData, customer_id: '' })
                   }}
-                  disabled={!selectedProvince}
+                  disabled={false}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Todas</option>
-                  {(selectedProvince ? municipiosByProvince[selectedProvince] || [] : []).map(city => (
+                  {selectedProvince ? (municipiosByProvince[selectedProvince] || []).map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  )) : 
+                  // Si no hay provincia seleccionada, mostrar todas las ciudades de clientes
+                  Array.from(new Set(customers.map(c => deriveCity(c)).filter(city => city.length > 0))).sort().map(city => (
                     <option key={city} value={city}>{city}</option>
                   ))}
                 </select>
