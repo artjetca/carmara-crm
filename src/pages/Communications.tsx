@@ -210,31 +210,7 @@ export default function Communications() {
     }
   }
 
-  // 省份和城市數據
-  const provinces = ['Cádiz', 'Huelva']
-  const municipiosByProvince: Record<string, string[]> = {
-    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
-    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
-  }
-
-  // Obtener todas las ciudades únicas de los clientes existentes
-  const customerCities = Array.from(new Set(
-    customers.map(c => displayCity(c)).filter(city => city.length > 0)
-  )).sort()
-  
-  // Combinar ciudades predefinidas con ciudades de clientes
-  const predefinedCities = selectedProvince ? municipiosByProvince[selectedProvince] || [] : []
-  const allCities = Array.from(new Set([...predefinedCities, ...customerCities])).sort()
-  const availableCities = selectedProvince 
-    ? allCities.filter(city => {
-        // Si hay provincia seleccionada, mostrar ciudades predefinidas + ciudades de clientes de esa provincia
-        const clientsInProvince = customers.filter(c => displayProvince(c) === selectedProvince)
-        const citiesInProvince = clientsInProvince.map(c => displayCity(c)).filter(city => city.length > 0)
-        return predefinedCities.includes(city) || citiesInProvince.includes(city)
-      })
-    : allCities
-
-  // 輔助函數
+  // Helpers (must be declared before first use)
   const isProvinceName = (v?: string) => {
     const s = String(v || '').trim().toLowerCase()
     return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
@@ -267,6 +243,32 @@ export default function Communications() {
     }
     return ''
   }
+
+  // 省份和城市數據
+  const provinces = ['Cádiz', 'Huelva']
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
+    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+  }
+
+  // Obtener todas las ciudades únicas de los clientes existentes
+  const customerCities = Array.from(new Set(
+    customers.map(c => displayCity(c)).filter(city => city.length > 0)
+  )).sort()
+  
+  // Combinar ciudades predefinidas con ciudades de clientes
+  const predefinedCities = selectedProvince ? municipiosByProvince[selectedProvince] || [] : []
+  const allCities = Array.from(new Set([...predefinedCities, ...customerCities])).sort()
+  const availableCities = selectedProvince 
+    ? allCities.filter(city => {
+        // Si hay provincia seleccionada, mostrar ciudades predefinidas + ciudades de clientes de esa provincia
+        const clientsInProvince = customers.filter(c => displayProvince(c) === selectedProvince)
+        const citiesInProvince = clientsInProvince.map(c => displayCity(c)).filter(city => city.length > 0)
+        return predefinedCities.includes(city) || citiesInProvince.includes(city)
+      })
+    : allCities
+
+  // 輔助函數（moved above before first usage）
 
   const filteredCustomers = customers.filter(customer => {
     const matchesProvince = !selectedProvince || displayProvince(customer) === selectedProvince
@@ -403,7 +405,7 @@ export default function Communications() {
                     setSelectedCustomer('')
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={!selectedProvince}
+                  disabled={false}
                 >
                   <option value="">Todas</option>
                   {availableCities.map(city => (
