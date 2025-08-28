@@ -912,38 +912,41 @@ export default function Maps() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="h-96 relative">
               {/* Botón de centrar en mi ubicación */}
-              <div className="absolute z-[1000] right-3 top-3 flex gap-2">
+              <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={fitToAll}
                   title="Ver todos"
                   disabled={fittingAll}
                   aria-busy={fittingAll}
-                  className={`inline-flex items-center space-x-2 px-3 py-2 rounded-md shadow border transition-colors ${fittingAll ? 'bg-gray-100 cursor-not-allowed' : 'bg-white/90 backdrop-blur hover:bg-white'}`}
+                  className={`inline-flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md shadow border transition-colors ${fittingAll ? 'bg-gray-100 cursor-not-allowed' : 'bg-white/90 backdrop-blur hover:bg-white'}`}
                 >
                   {fittingAll && (
                     <span className="inline-block h-3 w-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin" />
                   )}
-                  <span className="text-xs text-gray-700">{fittingAll ? 'Localizando…' : 'Ver todos'}</span>
+                  <span className="text-xs text-gray-700 hidden sm:inline">{fittingAll ? 'Localizando…' : 'Ver todos'}</span>
+                  <span className="text-xs text-gray-700 sm:hidden">{fittingAll ? 'Loc…' : 'Todos'}</span>
                 </button>
                 <button
                   onClick={preciseLocate}
                   title="Localización precisa"
                   disabled={locatingAllPrecise}
                   aria-busy={locatingAllPrecise}
-                  className={`inline-flex items-center space-x-2 px-3 py-2 rounded-md shadow border transition-colors ${locatingAllPrecise ? 'bg-gray-100 cursor-not-allowed' : 'bg-white/90 backdrop-blur hover:bg-white'}`}
+                  className={`inline-flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md shadow border transition-colors ${locatingAllPrecise ? 'bg-gray-100 cursor-not-allowed' : 'bg-white/90 backdrop-blur hover:bg-white'}`}
                 >
                   {locatingAllPrecise && (
                     <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
                   )}
-                  <span className="text-xs text-gray-700">{locatingAllPrecise ? 'Geocodificando…' : 'Localización precisa'}</span>
+                  <span className="text-xs text-gray-700 hidden sm:inline">{locatingAllPrecise ? 'Geocodificando…' : 'Localización precisa'}</span>
+                  <span className="text-xs text-gray-700 sm:hidden">{locatingAllPrecise ? 'Geo…' : 'Precisa'}</span>
                 </button>
                 <button
                   onClick={locateMe}
                   title="Mi ubicación"
-                  className="inline-flex items-center space-x-1 px-3 py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
+                  className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
                 >
                   <LocateFixed className="w-4 h-4 text-blue-600" />
-                  <span className="text-xs text-gray-700">Mi ubicación</span>
+                  <span className="text-xs text-gray-700 hidden sm:inline">Mi ubicación</span>
+                  <span className="text-xs text-gray-700 sm:hidden">Mi pos.</span>
                 </button>
               </div>
 
@@ -968,7 +971,18 @@ export default function Maps() {
                       }
                     }}
                     eventHandlers={{ 
-                      click: () => setSelectedCustomer(c),
+                      click: (e) => {
+                        setSelectedCustomer(c)
+                        // En móvil, abrir popup automáticamente
+                        if (window.innerWidth <= 768) {
+                          setTimeout(() => {
+                            const marker = e.target
+                            if (marker && marker.openPopup) {
+                              marker.openPopup()
+                            }
+                          }, 100)
+                        }
+                      },
                       add: (e) => {
                         // 為標記添加 data-customer-id 屬性，方便從左側點擊時找到
                         const marker = e.target
