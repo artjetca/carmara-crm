@@ -520,14 +520,28 @@ export default function Customers() {
   const displayCity = (customer: Customer): string => {
     if (!customer) return ''
     try {
-      // 从notes中解析城市
+      // 优先从notes中解析城市
       if (customer.notes) {
         const m = customer.notes.match(/Ciudad:\s*([^\n]+)/i)
         if (m) return m[1].trim()
       }
-      // 如果city字段不是省份名称，则显示city
+      
+      // 检查city字段
       const city = String(customer.city || '').trim()
-      if (city && !isProvinceName(city)) return city
+      if (city) {
+        // 如果city是省份名称，且有对应的province字段，则显示城市名称
+        if (isProvinceName(city)) {
+          const province = (customer as any).province || ''
+          // 如果province和city相同（如Huelva/Huelva），显示城市名称
+          if (province === city) {
+            return city
+          }
+          // 否则不显示（避免重复）
+          return ''
+        }
+        // 如果city不是省份名称，直接显示
+        return city
+      }
       return ''
     } catch (error) {
       console.error('[DISPLAY_CITY] Error processing customer:', customer, error)
@@ -795,12 +809,9 @@ export default function Customers() {
             </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredAndSortedCustomers.map((customer, index) => {
-                  const isProvinceInCityField = customer.city === 'Cádiz' || customer.city === 'Huelva'
-                  const provincia = isProvinceInCityField
-        ? (customer.city || '')
-        : ((customer.province || '') || (extractProvince(customer.notes) || ''))
-                  const municipioFromNotes = extractMunicipality(customer.notes)
-                  const municipio = (!isProvinceInCityField ? (customer.city || '') : '') || municipioFromNotes
+                  // 使用統一的顯示邏輯
+                  const provincia = displayProvince(customer)
+                  const municipio = displayCity(customer)
                   const contrato = (customer as any).contrato || ''
                   const cleanNotes = stripLocationTags(customer.notes as string)
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
