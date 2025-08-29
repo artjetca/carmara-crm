@@ -84,15 +84,9 @@ export default function Customers() {
         ? (c.city || '')
         : ((c.province || '') || (extractProvince(c.notes) || ''))
       const municipioFromNotes = extractMunicipality(c.notes)
-      const municipio = municipioFromNotes || (!isProvinceInCityField ? (c.city || '') : '')
+      const municipio = (!isProvinceInCityField ? (c.city || '') : '') || municipioFromNotes
       const contrato = (c as any).contrato || ''
-      // 清理notes，移除省市資訊
-      const cleanNotes = ((c.notes as string) || '').split('\n')
-        .filter((line: string) => {
-          const trimmed = line.trim().toLowerCase()
-          return !trimmed.startsWith('provincia:') && !trimmed.startsWith('ciudad:')
-        })
-        .join('\n').trim()
+      const cleanNotes = stripLocationTags(c.notes as string)
       
       // 從地址或notes中提取郵遞區號
       const postalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
@@ -713,7 +707,7 @@ export default function Customers() {
         ? (customer.city || '')
         : ((customer.province || '') || (extractProvince(customer.notes) || ''))
                   const municipioFromNotes = extractMunicipality(customer.notes)
-                  const municipio = municipioFromNotes || (!isProvinceInCityField ? (customer.city || '') : '')
+                  const municipio = (!isProvinceInCityField ? (customer.city || '') : '') || municipioFromNotes
                   const contrato = (customer as any).contrato || ''
                   const cleanNotes = stripLocationTags(customer.notes as string)
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
