@@ -562,8 +562,7 @@ export default function Customers() {
     ],
   }
   
-  // Municipios disponibles según provincia seleccionada
-  const availableMunicipios = editProvince ? (municipiosByProvince[editProvince] || []) : []
+  // Municipios disponibles según provincia seleccionada (moved to modal scope)
 
   // 是否全選目前可見清單
   const allVisibleSelected = filteredAndSortedCustomers.length > 0 && filteredAndSortedCustomers.every(c => selectedIds.has(c.id))
@@ -918,7 +917,7 @@ export default function Customers() {
                   onChange={e => handleMunicipioChange(e.target.value)}
                 >
                   <option value="">-</option>
-                  {availableMunicipios.map(m => (
+                  {(editProvince ? (municipiosByProvince[editProvince] || []) : []).map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
