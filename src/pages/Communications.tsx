@@ -248,8 +248,23 @@ export default function Communications() {
   // 省份和城市數據
   const provinces = ['Cádiz', 'Huelva']
   const municipiosByProvince: Record<string, string[]> = {
-    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
-    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+    'Cádiz': [
+      'Alcalá de los Gazules', 'Alcalá del Valle', 'Algar', 'Algeciras', 'Algodonales', 'Arcos de la Frontera',
+      'Barbate', 'Los Barrios', 'Benalup-Casas Viejas', 'Benaocaz', 'Bornos', 'El Bosque', 'Cádiz',
+      'Castellar de la Frontera', 'Chiclana de la Frontera', 'Chipiona', 'Conil de la Frontera', 'Espera',
+      'El Gastor', 'Grazalema', 'Jerez de la Frontera', 'Jimena de la Frontera', 'La Línea de la Concepción',
+      'Medina Sidonia', 'Olvera', 'Paterna de Rivera', 'Prado del Rey', 'El Puerto de Santa María',
+      'Puerto Real', 'Puerto Serrano', 'Rota', 'San Fernando', 'San José del Valle', 'Sanlúcar de Barrameda',
+      'San Martín del Tesorillo', 'San Roque', 'Setenil de las Bodegas', 'Tarifa', 'Torre Alháquime',
+      'Trebujena', 'Ubrique', 'Vejer de la Frontera', 'Villaluenga del Rosario', 'Villamartín', 'Zahara'
+    ],
+    'Huelva': [
+      'Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya',
+      'Palos de la Frontera', 'Bollullos Par del Condado', 'Aljaraque', 'El Almendro', 'Aracena', 'Aroche',
+      'Bonares', 'Chucena', 'Corrales', 'Cortegana', 'Cumbres Mayores', 'Galaroza', 'Hinojales',
+      'Lucena del Puerto', 'Manzanilla', 'Mazagón', 'Nerva', 'El Repilado', 'San Juan del Puerto',
+      'Trigueros', 'Villalba del Alcor', 'Villanueva de los Castillejos'
+    ]
   }
 
   // Obtener todas las ciudades únicas de los clientes existentes
@@ -877,8 +892,23 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   // 本地 Province/City 常數（與 Visits 一致）
   const provinces = ['Cádiz', 'Huelva']
   const municipiosByProvince: Record<string, string[]> = {
-    'Cádiz': ['Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María', 'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción', 'Puerto Real', 'Barbate'],
-    'Huelva': ['Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya', 'Palos de la Frontera', 'Bollullos Par del Condado']
+    'Cádiz': [
+      'Alcalá de los Gazules', 'Alcalá del Valle', 'Algar', 'Algeciras', 'Algodonales', 'Arcos de la Frontera',
+      'Barbate', 'Los Barrios', 'Benalup-Casas Viejas', 'Benaocaz', 'Bornos', 'El Bosque', 'Cádiz',
+      'Castellar de la Frontera', 'Chiclana de la Frontera', 'Chipiona', 'Conil de la Frontera', 'Espera',
+      'El Gastor', 'Grazalema', 'Jerez de la Frontera', 'Jimena de la Frontera', 'La Línea de la Concepción',
+      'Medina Sidonia', 'Olvera', 'Paterna de Rivera', 'Prado del Rey', 'El Puerto de Santa María',
+      'Puerto Real', 'Puerto Serrano', 'Rota', 'San Fernando', 'San José del Valle', 'Sanlúcar de Barrameda',
+      'San Martín del Tesorillo', 'San Roque', 'Setenil de las Bodegas', 'Tarifa', 'Torre Alháquime',
+      'Trebujena', 'Ubrique', 'Vejer de la Frontera', 'Villaluenga del Rosario', 'Villamartín', 'Zahara'
+    ],
+    'Huelva': [
+      'Huelva', 'Lepe', 'Almonte', 'Moguer', 'Ayamonte', 'Isla Cristina', 'Valverde del Camino', 'Cartaya',
+      'Palos de la Frontera', 'Bollullos Par del Condado', 'Aljaraque', 'El Almendro', 'Aracena', 'Aroche',
+      'Bonares', 'Chucena', 'Corrales', 'Cortegana', 'Cumbres Mayores', 'Galaroza', 'Hinojales',
+      'Lucena del Puerto', 'Manzanilla', 'Mazagón', 'Nerva', 'El Repilado', 'San Juan del Puerto',
+      'Trigueros', 'Villalba del Alcor', 'Villanueva de los Castillejos'
+    ]
   }
 
   // 本地輔助：從 notes/欄位推導省市

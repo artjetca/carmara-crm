@@ -566,8 +566,26 @@ export default function Maps() {
     const map = useMap()
     useEffect(() => {
       if (!positions.length) return
-      const bounds = L.latLngBounds(positions.map(p => L.latLng(p.lat, p.lng)))
-      map.fitBounds(bounds.pad(0.2))
+      try {
+        // Validate positions before creating bounds
+        const validPositions = positions.filter(p => 
+          typeof p.lat === 'number' && 
+          typeof p.lng === 'number' && 
+          !isNaN(p.lat) && 
+          !isNaN(p.lng) &&
+          p.lat >= -90 && p.lat <= 90 &&
+          p.lng >= -180 && p.lng <= 180
+        )
+        
+        if (validPositions.length === 0) return
+        
+        const bounds = L.latLngBounds(validPositions.map(p => L.latLng(p.lat, p.lng)))
+        if (bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.2))
+        }
+      } catch (error) {
+        console.warn('[FIT_BOUNDS] Error fitting bounds:', error)
+      }
     }, [positions])
     return null
   }
@@ -646,9 +664,32 @@ export default function Maps() {
         return
       }
       
-      const bounds = L.latLngBounds(allPositions.map(p => L.latLng(p.lat, p.lng)))
-      console.log(`[FIT_TO_ALL] Fitting map to bounds with ${allPositions.length} positions`)
-      mapRef.current.fitBounds(bounds.pad(0.1))
+      try {
+        // Validate positions before creating bounds
+        const validPositions = allPositions.filter(p => 
+          typeof p.lat === 'number' && 
+          typeof p.lng === 'number' && 
+          !isNaN(p.lat) && 
+          !isNaN(p.lng) &&
+          p.lat >= -90 && p.lat <= 90 &&
+          p.lng >= -180 && p.lng <= 180
+        )
+        
+        if (validPositions.length === 0) {
+          console.warn(`[FIT_TO_ALL] No valid positions found`)
+          return
+        }
+        
+        const bounds = L.latLngBounds(validPositions.map(p => L.latLng(p.lat, p.lng)))
+        if (bounds.isValid()) {
+          console.log(`[FIT_TO_ALL] Fitting map to bounds with ${validPositions.length} positions`)
+          mapRef.current.fitBounds(bounds.pad(0.1))
+        } else {
+          console.warn(`[FIT_TO_ALL] Invalid bounds created`)
+        }
+      } catch (error) {
+        console.error(`[FIT_TO_ALL] Error fitting bounds:`, error)
+      }
     } finally {
       setFittingAll(false)
     }
