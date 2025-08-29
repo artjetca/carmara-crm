@@ -71,7 +71,7 @@ export default function Customers() {
   // 导出当前筛选结果为 CSV
   const handleExportClick = () => {
     const rows = filteredAndSortedCustomers
-    const header = ['num','nombre','empresa','teléfono','email','dirección','C.P','ciudad','provincia','contrato','notas']
+    const header = ['numero','nombre','empresa','teléfono','email','dirección','C.P','ciudad','provincia','contrato','notas']
 
     const csvEscape = (v: any) => {
       const s = v === null || v === undefined ? '' : String(v)
@@ -81,9 +81,12 @@ export default function Customers() {
     const lines = [header.join(',')]
 
     rows.forEach((c, index) => {
-      // Use displayProvince and displayCity functions for consistent logic
-      const provincia = displayProvince(c)
-      const municipio = displayCity(c)
+      const isProvinceInCityField = c.city === 'Cádiz' || c.city === 'Huelva'
+      const provincia = isProvinceInCityField
+        ? (c.city || '')
+        : ((c.province || '') || (extractProvince(c.notes) || ''))
+      const municipioFromNotes = extractMunicipality(c.notes)
+      const municipio = (!isProvinceInCityField ? (c.city || '') : '') || municipioFromNotes
       const contrato = (c as any).contrato || ''
       const cleanNotes = stripLocationTags(c.notes as string)
       
@@ -91,15 +94,15 @@ export default function Customers() {
       const postalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
       
       const line = [
-        csvEscape((c as any).num || ''), // use canonical num field
+        csvEscape(((c as any).numero ?? (c as any).num) || ''), // número (prefer numero for import)
         csvEscape(c.name),
         csvEscape(c.company || ''),
         csvEscape(c.phone || c.mobile_phone || ''),
         csvEscape(c.email || ''),
         csvEscape(c.address || ''),
         csvEscape(postalCode),
-        csvEscape(municipio), // actual municipality/city name
-        csvEscape(provincia), // actual province name
+        csvEscape(municipio), // ciudad => municipio 以便后续可无损导入
+        csvEscape(provincia),
         csvEscape(contrato),
         csvEscape(cleanNotes)
       ].join(',')
@@ -210,8 +213,9 @@ export default function Customers() {
       city: c.city,
       notes: cleanNotes as any,
       contrato: (c as any).contrato || '',
-      // 初始化 Número：使用 num 欄位
-      num: (c as any).num || '',
+      // 初始化 Número：優先使用 num，否則 fallback 到 numero
+      ...(typeof (c as any).num !== 'undefined' ? { num: (c as any).num } : {}),
+      ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
     })
     
     // 初始化省/市選擇 - 修復邏輯
@@ -797,7 +801,7 @@ export default function Customers() {
                   const contrato = (customer as any).contrato || ''
                   const cleanNotes = stripLocationTags(customer.notes as string)
                   const postalCode = (customer as any).postal_code || extractPostalCode(customer.address) || extractPostalCode(cleanNotes) || ''
-                  const customerNum = (customer as any).num || ''
+                  const customerNum = ((customer as any).numero ?? (customer as any).num) || ''
                   
                   return (
                     <tr key={customer.id} className={`hover:bg-gray-50 ${isHighlighted(customer) ? 'bg-yellow-50' : ''}`}>
@@ -1049,7 +1053,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
     city: '',
     contrato: '',
     notes: '',
-    num: ''
+    numero: ''
   })
   const [addProvince, setAddProvince] = useState<string>('')
   const [addMunicipio, setAddMunicipio] = useState<string>('')
@@ -1133,8 +1137,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id,
-        // send as num field
-        num: formData.num || null
+        // send as num; backend will dual-write to num/numero
+        num: formData.numero || null
       }
 
       const response = await fetch('/api/customers', {
@@ -1186,8 +1190,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
             <label className="block text-sm text-gray-700 mb-1">Número</label>
             <input
               className="w-full px-3 py-2 border rounded"
-              value={formData.num}
-              onChange={e => handleChange('num', e.target.value)}
+              value={formData.numero}
+              onChange={e => handleChange('numero', e.target.value)}
               placeholder="Ingrese número del cliente"
             />
           </div>
@@ -1246,7 +1250,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
             <label className="block text-sm text-gray-700 mb-1">Contrato</label>
             <input
               className="w-full px-3 py-2 border rounded"
-              value={formData.contrato}
+              value={(formData as any).contrato}
               onChange={e => handleChange('contrato', e.target.value)}
             />
           </div>
