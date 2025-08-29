@@ -613,7 +613,7 @@ export default function Customers() {
               onChange={(e) => setSelectedCity(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">{t.customers.allCities}</option>
+              <option value="">{t.customers.allProvinces}</option>
               {cities.map(city => (
                 <option key={city} value={city}>{city}</option>
               ))}
