@@ -173,8 +173,8 @@ export default function Maps() {
     if (!c) return ''
     try {
       // 優先使用資料表中的 province 欄位
-      if (c.province && String(c.province).trim().length > 0) {
-        const can = toCanonicalProvince(c.province)
+      if ((c as any).province && String((c as any).province).trim().length > 0) {
+        const can = toCanonicalProvince((c as any).province)
         if (can) return can
       }
       // 從 notes 中解析省份

@@ -218,11 +218,38 @@ export default function Customers() {
       ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
     })
     
-    // 初始化省/市選擇 - 優先使用 province 欄位
-    const prov = (c as any).province || (c.city === 'Cádiz' || c.city === 'Huelva' ? c.city : extractProvince(c.notes))
-    const muni = extractMunicipality(c.notes) || ((c.city !== 'Cádiz' && c.city !== 'Huelva') ? (c.city || '') : '')
-    setEditProvince(prov || '')
-    setEditMunicipio(muni || '')
+    // 初始化省/市選擇 - 修復邏輯
+    let prov = ''
+    let muni = ''
+    
+    // 優先使用 province 欄位
+    if ((c as any).province) {
+      prov = (c as any).province
+      // 如果 city 不是省份名，則作為市政區
+      if (c.city && c.city !== 'Cádiz' && c.city !== 'Huelva') {
+        muni = c.city
+      }
+    } else {
+      // 沒有 province 欄位時，從 city 和 notes 推斷
+      const extractedProv = extractProvince(c.notes)
+      const extractedMuni = extractMunicipality(c.notes)
+      
+      if (extractedProv) {
+        prov = extractedProv
+        muni = extractedMuni || (c.city && c.city !== extractedProv ? c.city : '')
+      } else if (c.city === 'Cádiz' || c.city === 'Huelva') {
+        // city 是省份名時
+        prov = c.city
+        muni = extractedMuni || ''
+      } else if (c.city) {
+        // city 不是省份名，嘗試從 notes 推斷省份
+        muni = c.city
+        prov = extractedProv || ''
+      }
+    }
+    
+    setEditProvince(prov)
+    setEditMunicipio(muni)
   }
 
   const handleEditChange = (
