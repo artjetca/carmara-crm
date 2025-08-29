@@ -216,8 +216,8 @@ export default function Customers() {
       ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
     })
     
-    // 初始化省/市選擇
-    const prov = (c.city === 'Cádiz' || c.city === 'Huelva') ? c.city : extractProvince(c.notes)
+    // 初始化省/市選擇 - 優先使用 province 欄位
+    const prov = (c as any).province || (c.city === 'Cádiz' || c.city === 'Huelva' ? c.city : extractProvince(c.notes))
     const muni = extractMunicipality(c.notes) || ((c.city !== 'Cádiz' && c.city !== 'Huelva') ? (c.city || '') : '')
     setEditProvince(prov || '')
     setEditMunicipio(muni || '')
@@ -252,10 +252,11 @@ export default function Customers() {
       const hasMunicipio = Boolean(editMunicipio && editMunicipio.trim())
       if (hasProvince) {
         updateData.province = editProvince.trim()
-        if (/^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
-          updateData.city = editProvince.trim()
-        } else if (hasMunicipio) {
+        // 如果有選擇城市，使用城市；否則使用省份
+        if (hasMunicipio) {
           updateData.city = editMunicipio.trim()
+        } else if (/^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
+          updateData.city = editProvince.trim()
         }
       } else if (hasMunicipio) {
         updateData.city = editMunicipio.trim()
