@@ -959,6 +959,10 @@ export default function Customers() {
                   onChange={e => handleMunicipioChange(e.target.value)}
                 >
                   <option value="">-</option>
+                  {/* 如果省份是 Cádiz 或 Huelva，首先顯示省份本身作為城市選項 */}
+                  {(editProvince === 'Cádiz' || editProvince === 'Huelva') && (
+                    <option key={editProvince} value={editProvince}>{editProvince}</option>
+                  )}
                   {(editProvince ? (municipiosByProvince[editProvince] || []) : []).map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
