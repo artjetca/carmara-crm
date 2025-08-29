@@ -78,14 +78,14 @@ exports.handler = async (event, context) => {
     // Handle POST request - create new customer
     if (event.httpMethod === 'POST') {
       const requestBody = JSON.parse(event.body || '{}');
-      const numeroIncoming = Object.prototype.hasOwnProperty.call(requestBody, 'num')
-        ? requestBody.num
-        : (Object.prototype.hasOwnProperty.call(requestBody, 'numero') ? requestBody.numero : undefined);
+      // Map legacy fields to num for backward compatibility
+      const numeroIncoming = requestBody.num || requestBody.numero || requestBody.customer_number || undefined;
 
-      // Avoid inserting num/numero directly to prevent schema cache errors
+      // Prepare insert body (num will be handled separately)
       const insertBody = { ...requestBody };
       delete insertBody.num;
       delete insertBody.numero;
+      delete insertBody.customer_number;
       // 城市處理：若值為省份名稱則正規化，否則保留原城市（允許任意 municipio）
       if (Object.prototype.hasOwnProperty.call(insertBody, 'city')) {
         const norm = String(insertBody.city || '')
@@ -149,45 +149,20 @@ exports.handler = async (event, context) => {
 
       const warnings = [];
       if (created && created.id && typeof numeroIncoming !== 'undefined' && numeroIncoming !== null) {
-        // Try write to num first
-        const tryNum = await admin
+        // Update num field directly (no fallback needed after migration)
+        const { error: numError } = await admin
           .from('customers')
           .update({ num: numeroIncoming })
           .eq('id', created.id);
-        if (tryNum.error) {
-          const msg = (tryNum.error.message || '').toLowerCase();
-          const isMissingNum = msg.includes("'num' column") || (msg.includes('num') && msg.includes('schema'));
-          if (isMissingNum) {
-            const tryNumero = await admin
-              .from('customers')
-              .update({ numero: numeroIncoming })
-              .eq('id', created.id);
-            if (tryNumero.error) {
-              const m2 = (tryNumero.error.message || '').toLowerCase();
-              const isMissingNumero = m2.includes("'numero' column") || (m2.includes('numero') && m2.includes('schema'));
-              if (isMissingNumero) {
-                warnings.push('Número 未持久化：schema cache 未暴露 num/numero，其他欄位已保存');
-              } else {
-                return {
-                  statusCode: 500,
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                  },
-                  body: JSON.stringify({ success: false, error: tryNumero.error.message })
-                };
-              }
-            }
-          } else {
-            return {
-              statusCode: 500,
-              headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-              },
-              body: JSON.stringify({ success: false, error: tryNum.error.message })
-            };
-          }
+        if (numError) {
+          return {
+            statusCode: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({ success: false, error: numError.message })
+          };
         }
       }
 
@@ -260,9 +235,17 @@ exports.handler = async (event, context) => {
         };
       }
 
+      // Map legacy fields to num for backward compatibility
+      if (updateData.numero && !updateData.num) {
+        updateData.num = updateData.numero;
+      }
+      if (updateData.customer_number && !updateData.num) {
+        updateData.num = updateData.customer_number;
+      }
+
       const normalFields = { ...updateData };
       delete normalFields.num;
-      delete normalFields.numero; // 避免與特殊處理重複
+      delete normalFields.numero;
       delete normalFields.customer_number;
       delete normalFields.postal_code;
 
@@ -304,46 +287,21 @@ exports.handler = async (event, context) => {
         }
       }
 
-      // 單獨處理 Número：先嘗試 num，若欄位不存在則改寫 numero
+      // Handle num field update directly (no fallback needed after migration)
       if (Object.prototype.hasOwnProperty.call(updateData, 'num')) {
-        const tryNum = await admin
+        const { error: numError } = await admin
           .from('customers')
           .update({ num: updateData.num })
           .eq('id', id);
-        if (tryNum.error) {
-          const msg = (tryNum.error.message || '').toLowerCase();
-          const isMissingNum = msg.includes("'num' column") || (msg.includes('num') && msg.includes('schema'));
-          if (isMissingNum) {
-            const tryNumero = await admin
-              .from('customers')
-              .update({ numero: updateData.num })
-              .eq('id', id);
-            if (tryNumero.error) {
-              const m2 = (tryNumero.error.message || '').toLowerCase();
-              const isMissingNumero = m2.includes("'numero' column") || (m2.includes('numero') && m2.includes('schema'));
-              if (isMissingNumero) {
-                warnings.push('Número 未持久化：schema cache 未暴露 num/numero，其他欄位已保存');
-              } else {
-                return {
-                  statusCode: 500,
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                  },
-                  body: JSON.stringify({ success: false, error: tryNumero.error.message })
-                };
-              }
-            }
-          } else {
-            return {
-              statusCode: 500,
-              headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-              },
-              body: JSON.stringify({ success: false, error: tryNum.error.message })
-            };
-          }
+        if (numError) {
+          return {
+            statusCode: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({ success: false, error: numError.message })
+          };
         }
       }
 
