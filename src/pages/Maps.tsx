@@ -20,7 +20,7 @@ export default function Maps() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCity, setSelectedCity] = useState('')
+  const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   // 從 localStorage 載入已保存的座標，避免重複地理編碼
   const [coordsById, setCoordsById] = useState<Record<string, { lat: number; lng: number }>>(() => {
@@ -50,23 +50,21 @@ export default function Maps() {
     }
   }, [user?.id])
 
-  // 自動執行精準地理編碼當客戶數據載入完成
-  useEffect(() => {
-    if (customers.length > 0 && !locatingAllPrecise) {
-      // 檢查是否有客戶缺少座標
-      const needsGeocoding = customers.some(c => 
-        !coordsById[c.id] && (c.address || c.city || c.province)
-      )
-      
-      if (needsGeocoding) {
-        console.log('[AUTO_GEOCODE] Starting automatic precise geocoding for new customers')
-        // 延遲一下讓頁面完全載入
-        setTimeout(() => {
-          preciseLocate()
-        }, 1000)
-      }
-    }
-  }, [customers, coordsById])
+  // 移除自動執行精準地理編碼，改為手動觸發
+  // useEffect(() => {
+  //   if (customers.length > 0 && !locatingAllPrecise) {
+  //     const needsGeocoding = customers.some(c => 
+  //       !coordsById[c.id] && (c.address || c.city || c.province)
+  //     )
+  //     
+  //     if (needsGeocoding) {
+  //       console.log('[AUTO_GEOCODE] Starting automatic precise geocoding for new customers')
+  //       setTimeout(() => {
+  //         preciseLocate()
+  //       }, 1000)
+  //     }
+  //   }
+  // }, [customers, coordsById])
 
   const loadCustomers = async () => {
     if (!user?.id) {
@@ -113,22 +111,22 @@ export default function Maps() {
           customer.city?.toLowerCase().includes(q)
         )
         
-        // 如果沒有選擇城市或選擇的是空字串，顯示所有客戶
-        if (!selectedCity || selectedCity === '') {
+        // 如果沒有選擇省份或選擇的是空字串，顯示所有客戶
+        if (!selectedProvince || selectedProvince === '') {
           return matchesSearch
         }
         
         // 檢查省份是否匹配
         const customerProvince = displayProvince(customer)
-        const matchesCity = customerProvince === selectedCity
+        const matchesProvince = customerProvince === selectedProvince
         
-        return matchesSearch && matchesCity
+        return matchesSearch && matchesProvince
       })
     } catch (error) {
       console.error('[FILTER] Error filtering customers:', error)
       return []
     }
-  }, [customers, searchTerm, selectedCity])
+  }, [customers, searchTerm, selectedProvince])
 
   // Solo mostrar provincias Cádiz y Huelva en el filtro
   const cities = ['Cádiz', 'Huelva']
@@ -846,13 +844,13 @@ export default function Maps() {
           </div>
           <div className="sm:w-48">
             <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
+              value={selectedProvince}
+              onChange={(e) => setSelectedProvince(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">{t.maps.allCities}</option>
-              {cities.map(city => (
-                <option key={city} value={city as string}>{city}</option>
+              {cities.map(province => (
+                <option key={province} value={province as string}>{province}</option>
               ))}
             </select>
           </div>
