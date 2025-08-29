@@ -226,7 +226,8 @@ export default function Communications() {
     if (!c) return ''
     const cityFromNotes = extractCityForDisplay(c.notes)
     if (cityFromNotes) return cityFromNotes
-    if (c.city && !isProvinceName(c.city)) return c.city
+    const city = String(c.city || '').trim()
+    if (city && !isProvinceName(city)) return city
     return ''
   }
 
@@ -916,7 +917,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     const fromNotes = extractFromNotes(c.notes, 'Ciudad')
     if (fromNotes) return fromNotes
     const city = String(c.city || '').trim()
-    if (city && !isProvinceName(city)) return city
+    if (city) return city
     return ''
   }
 
@@ -1000,13 +1001,20 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Todas</option>
-                  {selectedProvince ? (municipiosByProvince[selectedProvince] || []).map(city => (
-                    <option key={city} value={city}>{city}</option>
-                  )) : 
-                  // Si no hay provincia seleccionada, mostrar todas las ciudades de clientes
-                  Array.from(new Set(customers.map(c => deriveCity(c)).filter(city => city.length > 0))).sort().map(city => (
-                    <option key={city} value={city}>{city}</option>
-                  ))}
+                  {selectedProvince ? (
+                    // Mostrar ciudades predefinidas + ciudades de clientes de esa provincia
+                    Array.from(new Set([
+                      ...(municipiosByProvince[selectedProvince] || []),
+                      ...customers.filter(c => deriveProvince(c) === selectedProvince).map(c => deriveCity(c)).filter(city => city.length > 0)
+                    ])).sort().map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))
+                  ) : (
+                    // Si no hay provincia seleccionada, mostrar todas las ciudades de clientes
+                    Array.from(new Set(customers.map(c => deriveCity(c)).filter(city => city.length > 0))).sort().map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
