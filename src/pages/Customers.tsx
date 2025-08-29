@@ -252,16 +252,19 @@ export default function Customers() {
       // 計算 city 與 province 欄位
       const hasProvince = Boolean(editProvince && editProvince.trim())
       const hasMunicipio = Boolean(editMunicipio && editMunicipio.trim())
+      
       if (hasProvince) {
         updateData.province = editProvince.trim()
-        // 如果有選擇城市，使用城市；否則使用省份
-        if (hasMunicipio) {
-          updateData.city = editMunicipio.trim()
-        } else if (/^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
-          updateData.city = editProvince.trim()
-        }
-      } else if (hasMunicipio) {
+      }
+      
+      // 設定 city 欄位 - 優先使用選擇的市政區
+      if (hasMunicipio) {
         updateData.city = editMunicipio.trim()
+      } else if (hasProvince && /^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
+        // 如果沒有選擇市政區，但省份是 Cádiz 或 Huelva，使用省份名作為城市
+        updateData.city = editProvince.trim()
+      } else {
+        updateData.city = null
       }
 
       // 不再自動把 省/市 寫進 notes，僅保留使用者輸入
