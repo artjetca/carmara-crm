@@ -17,6 +17,8 @@ export default function Customers() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [editData, setEditData] = useState<Partial<Customer>>({})
+  const [editProvince, setEditProvince] = useState<string>('')
+  const [editMunicipio, setEditMunicipio] = useState<string>('')
   const headerCheckboxRef = useRef<HTMLInputElement>(null)
   const t = translations
 
@@ -311,10 +313,6 @@ export default function Customers() {
     setEditProvince('')
     setEditMunicipio('')
   }
-
-  // 編輯用 省/市 狀態
-  const [editProvince, setEditProvince] = useState<string>('')
-  const [editMunicipio, setEditMunicipio] = useState<string>('')
 
   // 排序狀態
   const [sortField, setSortField] = useState<keyof Customer | ''>('')
