@@ -98,35 +98,6 @@ export default function Maps() {
     }
   }
 
-  const filteredCustomers = useMemo(() => {
-    try {
-      return customers.filter(customer => {
-        if (!customer) return false
-        
-        const q = searchTerm.toLowerCase()
-        const matchesSearch = (
-          customer.name?.toLowerCase().includes(q) ||
-          customer.company?.toLowerCase().includes(q) ||
-          customer.city?.toLowerCase().includes(q)
-        )
-        
-        // 如果沒有選擇省份或選擇的是空字串，顯示所有客戶
-        if (!selectedProvince || selectedProvince === '') {
-          return matchesSearch
-        }
-        
-        // 檢查省份是否匹配
-        const customerProvince = displayProvince(customer)
-        const matchesProvince = toCanonicalProvince(customerProvince) === toCanonicalProvince(selectedProvince)
-        
-        return matchesSearch && matchesProvince
-      })
-    } catch (error) {
-      console.error('[FILTER] Error filtering customers:', error)
-      return []
-    }
-  }, [customers, searchTerm, selectedProvince])
-
   // Solo mostrar provincias Cádiz y Huelva en el filtro
   const provinces = ['Cádiz', 'Huelva']
 
@@ -195,6 +166,35 @@ export default function Maps() {
       return ''
     }
   }
+
+  const filteredCustomers = useMemo(() => {
+    try {
+      return customers.filter(customer => {
+        if (!customer) return false
+        
+        const q = searchTerm.toLowerCase()
+        const matchesSearch = (
+          customer.name?.toLowerCase().includes(q) ||
+          customer.company?.toLowerCase().includes(q) ||
+          customer.city?.toLowerCase().includes(q)
+        )
+        
+        // 如果沒有選擇省份或選擇的是空字串，顯示所有客戶
+        if (!selectedProvince || selectedProvince === '') {
+          return matchesSearch
+        }
+        
+        // 檢查省份是否匹配
+        const customerProvince = displayProvince(customer)
+        const matchesProvince = toCanonicalProvince(customerProvince) === toCanonicalProvince(selectedProvince)
+        
+        return matchesSearch && matchesProvince
+      })
+    } catch (error) {
+      console.error('[FILTER] Error filtering customers:', error)
+      return []
+    }
+  }, [customers, searchTerm, selectedProvince])
 
   const getAddress = (c: Customer) => {
     // 以解析後城市為優先，若無則回退到 city，再回退 province
