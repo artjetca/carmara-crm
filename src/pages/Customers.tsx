@@ -446,20 +446,39 @@ export default function Customers() {
     return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
   }
 
+  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz" 或 "Huelva"
+  const toCanonicalProvince = (v?: string): string => {
+    const s = String(v || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // 去除重音符號
+    if (s === 'huelva') return 'Huelva'
+    if (s === 'cadiz') return 'Cádiz'
+    return ''
+  }
+
   const displayProvince = (customer: Customer): string => {
     if (!customer) return ''
     try {
       // 优先使用数据表中的province字段
       if ((customer as any).province && String((customer as any).province).trim().length > 0) {
-        return String((customer as any).province).trim()
+        const can = toCanonicalProvince((customer as any).province)
+        if (can) return can
       }
       // 从notes中解析省份
       if (customer.notes) {
         const m = customer.notes.match(/Provincia:\s*([^\n]+)/i)
-        if (m) return m[1].trim()
+        if (m) {
+          const can = toCanonicalProvince(m[1])
+          if (can) return can
+        }
       }
       // 最后才检查city是否为省份名称
-      if (customer.city && isProvinceName(customer.city)) return customer.city
+      if (customer.city && isProvinceName(customer.city)) {
+        const can = toCanonicalProvince(customer.city)
+        if (can) return can
+      }
       return ''
     } catch (error) {
       console.error('[DISPLAY_PROVINCE] Error processing customer:', customer, error)
@@ -492,7 +511,7 @@ export default function Customers() {
                            customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
       
       // 使用省份筛选逻辑而不是城市筛选
-      const matchesProvince = !selectedCity || displayProvince(customer) === selectedCity
+      const matchesProvince = !selectedCity || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedCity)
       return matchesSearch && matchesProvince
     })
     .sort((a, b) => {

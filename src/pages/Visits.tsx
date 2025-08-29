@@ -103,6 +103,18 @@ export default function Visits() {
 
   const isProvinceName = (s?: string) => /^(huelva|c(a|á)diz)$/i.test(String(s || '').trim())
 
+  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz" 或 "Huelva"
+  const toCanonicalProvince = (v?: string): string => {
+    const s = String(v || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+    if (s === 'huelva') return 'Huelva'
+    if (s === 'cadiz') return 'Cádiz'
+    return ''
+  }
+
   const displayCity = (customer?: Customer): string => {
     if (!customer) return ''
     const fromNotes = extractCityForDisplay(customer.notes)
@@ -211,18 +223,25 @@ export default function Visits() {
     if (!c) return ''
     // 先使用資料表中的 province 欄位
     if (c.province && String(c.province).trim().length > 0) {
-      return String(c.province).trim()
+      const can = toCanonicalProvince(c.province)
+      if (can) return can
     }
-    if (c.city && isProvinceNameFilter(c.city)) return c.city
+    if (c.city && isProvinceNameFilter(c.city)) {
+      const can = toCanonicalProvince(c.city)
+      if (can) return can
+    }
     if (c.notes) {
       const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
-      if (m) return m[1].trim()
+      if (m) {
+        const can = toCanonicalProvince(m[1])
+        if (can) return can
+      }
     }
     return ''
   }
 
   const filteredCustomers = customers.filter(customer => {
-    const matchesProvince = !selectedProvince || displayProvince(customer) === selectedProvince
+    const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
     const matchesCity = !selectedCity || displayCity(customer) === selectedCity
     return matchesProvince && matchesCity
   })
@@ -242,7 +261,7 @@ export default function Visits() {
       const customerProvince = displayProvince(customer)
       const customerCity = displayCity(customer)
       
-      const matchesProvince = !selectedProvince || customerProvince === selectedProvince
+      const matchesProvince = !selectedProvince || toCanonicalProvince(customerProvince) === toCanonicalProvince(selectedProvince)
       const matchesCity = !selectedCity || customerCity === selectedCity
       
       if (!matchesProvince || !matchesCity) return false
@@ -705,6 +724,17 @@ function VisitModal({ visit, customers, onClose, onSave }: VisitModalProps) {
 
   // 從客戶資料提取省份與城市
   const normalizeCity = (c?: string) => (c || '').trim()
+  // 省份名稱標準化（Modal 內部使用）：統一為 "Cádiz" 或 "Huelva"
+  const toCanonicalProvince = (v?: string): string => {
+    const s = String(v || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+    if (s === 'huelva') return 'Huelva'
+    if (s === 'cadiz') return 'Cádiz'
+    return ''
+  }
   
   // 從 notes 中提取省份資訊
   const extractProvinceFromNotes = (notes?: string): string => {
@@ -733,12 +763,16 @@ function VisitModal({ visit, customers, onClose, onSave }: VisitModalProps) {
   const deriveProvince = (customer: Customer) => {
     // 1. 優先使用 province 欄位
     if (customer.province && customer.province.trim().length > 0) {
-      return customer.province.trim()
+      const can = toCanonicalProvince(customer.province)
+      if (can) return can
     }
     
     // 2. 從 notes 中提取 "Provincia: xxx"
     const provinceFromNotes = extractProvinceFromNotes(customer.notes)
-    if (provinceFromNotes) return provinceFromNotes
+    if (provinceFromNotes) {
+      const can = toCanonicalProvince(provinceFromNotes)
+      if (can) return can
+    }
     
     // 3. 根據 city 欄位推斷（Huelva 是省也是市）
     const city = normalizeCity(customer.city)

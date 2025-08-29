@@ -118,7 +118,7 @@ export default function Maps() {
         
         // 檢查省份是否匹配
         const customerProvince = displayProvince(customer)
-        const matchesProvince = customerProvince === selectedProvince
+        const matchesProvince = toCanonicalProvince(customerProvince) === toCanonicalProvince(selectedProvince)
         
         return matchesSearch && matchesProvince
       })
@@ -135,6 +135,18 @@ export default function Maps() {
   const isProvinceName = (v?: string) => {
     const s = String(v || '').trim().toLowerCase()
     return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+  }
+
+  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz" 或 "Huelva"
+  const toCanonicalProvince = (v?: string): string => {
+    const s = String(v || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // 去除重音符號
+    if (s === 'huelva') return 'Huelva'
+    if (s === 'cadiz') return 'Cádiz'
+    return ''
   }
 
   const extractCityForDisplay = (notes?: string): string => {
@@ -162,15 +174,22 @@ export default function Maps() {
     try {
       // 優先使用資料表中的 province 欄位
       if (c.province && String(c.province).trim().length > 0) {
-        return String(c.province).trim()
+        const can = toCanonicalProvince(c.province)
+        if (can) return can
       }
       // 從 notes 中解析省份
       if (c.notes) {
         const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
-        if (m) return m[1].trim()
+        if (m) {
+          const can = toCanonicalProvince(m[1])
+          if (can) return can
+        }
       }
       // 最後才檢查 city 是否為省份名稱
-      if (c.city && isProvinceName(c.city)) return c.city
+      if (c.city && isProvinceName(c.city)) {
+        const can = toCanonicalProvince(c.city)
+        if (can) return can
+      }
       return ''
     } catch (error) {
       console.error('[DISPLAY_PROVINCE] Error processing customer:', c, error)
