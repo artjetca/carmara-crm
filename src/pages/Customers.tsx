@@ -216,6 +216,7 @@ export default function Customers() {
       address: c.address,
       city: c.city,
       notes: cleanNotes as any,
+      contrato: (c as any).contrato || '',
       // 初始化 Número：優先使用 num，否則 fallback 到 numero
       ...(typeof (c as any).num !== 'undefined' ? { num: (c as any).num } : {}),
       ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
@@ -229,7 +230,7 @@ export default function Customers() {
   }
 
   const handleEditChange = (
-    field: keyof Customer,
+    field: keyof Customer | 'contrato' | 'notes' | 'num',
     value: string
   ) => {
     setEditData(prev => ({ ...prev, [field]: value }))
