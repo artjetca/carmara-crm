@@ -70,6 +70,19 @@ export default function DataImport() {
     return null
   }
 
+  // 规范化省份，与后端逻辑保持一致
+  const toCanonicalProvince = (input?: string): string | null => {
+    if (!input) return null
+    const v = input
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // 去除重音
+    if (v === 'cadiz') return 'Cádiz'
+    if (v === 'huelva') return 'Huelva'
+    return null
+  }
+
   // 清洗并验证西班牙电话，仅允许以6/7/8/9开头的9位数字
   const sanitizePhone = (input?: string): string | null => {
     if (!input) return null
@@ -421,68 +434,57 @@ export default function DataImport() {
             notesToSave.push(`Ciudad: ${customer.city}`)
           }
           
-          // Provincia 保存到 notes（数据库没有专用列）
-          if (customer.provincia) {
+          // 处理 province 字段 - 现在数据库有专用列
+          const normalizedProvince = customer.provincia ? toCanonicalProvince(customer.provincia) : null
+          
+          // 只有无法标准化的省份才保存到 notes
+          if (customer.provincia && !normalizedProvince) {
             notesToSave.push(`Provincia: ${customer.provincia}`)
           }
 
           const finalNotes = notesToSave.join(' | ')
 
-          // 插入所有字段到对应的列（处理 schema cache 缺失 num 列的情况）
-          const basePayload: any = {
+          // 使用 API 端点而不是直接 Supabase 调用，确保后端标准化逻辑生效
+          const payload: any = {
             name: customer.name,
             company: customer.company || null,
-            phone: sanitizePhone(customer.phone) || null,
+            phone: customer.phone || null, // 让后端处理电话号码清理
             email: customer.email || null,
             address: customer.address || null,
             postal_code: customer.postal_code || null,
-            city: normalizeCity(customer.city) || null,
+            city: customer.city || null, // 让后端处理城市标准化
+            province: normalizedProvince,
             contrato: customer.contrato || null,
             notes: finalNotes || null,
-            created_by: user?.id || null
+            created_by: user?.id || null,
+            num: customer.num || null
           }
 
-          // 优先带上 num；若后端 schema cache 尚未刷新，会在错误中提示，届时去掉 num 重试
-          let payload: any = { ...basePayload, num: customer.num || null }
-          let { error, data: insertData } = await supabase
-            .from('customers')
-            .insert(payload)
-            .select()
+          // 使用 API 端点插入，确保后端标准化和双写逻辑
+          const response = await fetch('/api/customers', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+          })
 
-          if (
-            error && (
-              (error as any).code === 'PGRST204' && /'num' column/i.test(error.message || '') ||
-              /could not find the 'num' column/i.test(error.message || '') ||
-              /'num' column/i.test(error.details || '')
-            )
-          ) {
-            console.warn("'num' column not available in schema cache yet. Retrying insert without 'num'.")
-            payload = { ...basePayload }
-            const retry = await supabase
-              .from('customers')
-              .insert(payload)
-              .select()
-            error = retry.error as any
-            insertData = retry.data as any
+          let error = null
+          let insertData = null
+          
+          if (!response.ok) {
+            const result = await response.json()
+            error = { message: result.error || `HTTP ${response.status}` }
+          } else {
+            const result = await response.json()
+            if (result.success) {
+              insertData = result.data
+            } else {
+              error = { message: result.error || 'API call failed' }
+            }
           }
 
-          // 若依旧报错，且提示 postal_code 列不存在，则再去掉 postal_code 重试
-          if (
-            error && (
-              (error as any).code === 'PGRST204' && /postal_code/i.test(error.message || '') ||
-              /could not find the 'postal_code' column/i.test(error.message || '') ||
-              /'postal_code' column/i.test(error.details || '')
-            )
-          ) {
-            console.warn("'postal_code' column not available in schema cache yet. Retrying insert without 'postal_code'.")
-            const { postal_code, ...withoutPostal } = payload
-            const retry2 = await supabase
-              .from('customers')
-              .insert(withoutPostal)
-              .select()
-            error = retry2.error as any
-            insertData = retry2.data as any
-          }
+          // API 端点已经处理了所有重试逻辑，无需额外处理
 
           if (error) {
             console.error('Insert error:', error)

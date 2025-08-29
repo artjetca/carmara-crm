@@ -276,21 +276,24 @@ export default function Customers() {
         updateData.num = (editData as any).num || null
       }
 
-      // 計算 city 與 province 欄位
+      // 計算 city 與 province 欄位 - 修復 Huelva/Cádiz 同名問題
       const hasProvince = Boolean(editProvince && editProvince.trim())
       const hasMunicipio = Boolean(editMunicipio && editMunicipio.trim())
       
       if (hasProvince) {
         updateData.province = editProvince.trim()
-      }
-      
-      // 設定 city 欄位 - 優先使用選擇的市政區
-      if (hasMunicipio) {
-        updateData.city = editMunicipio.trim()
-      } else if (hasProvince && /^(Cádiz|Huelva)$/i.test(editProvince.trim())) {
-        // 如果沒有選擇市政區，但省份是 Cádiz 或 Huelva，使用省份名作為城市
-        updateData.city = editProvince.trim()
+        
+        if (hasMunicipio) {
+          // 有選擇市政區時，city = 市政區名稱
+          updateData.city = editMunicipio.trim()
+        } else if (editProvince === 'Cádiz' || editProvince === 'Huelva') {
+          // 沒有選擇市政區，但省份是 Cádiz 或 Huelva 時，city = 省份名稱
+          updateData.city = editProvince.trim()
+        } else {
+          updateData.city = null
+        }
       } else {
+        updateData.province = null
         updateData.city = null
       }
 
