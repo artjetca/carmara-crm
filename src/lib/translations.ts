@@ -116,7 +116,7 @@ export const translations = {
     lastContact: 'Último Contacto',
     totalVisits: 'Total de Visitas',
     filterByCity: 'Filtrar por Ciudad',
-    allCities: 'Todas las Ciudades',
+    allProvinces: 'Todas las Provincias',
     loadError: 'Error al cargar los clientes',
     editCustomer: 'Editar Cliente',
     addCustomer: 'Agregar Cliente',
@@ -210,7 +210,7 @@ export const translations = {
     quickActions: 'Acciones Rápidas',
     scheduleVisit: 'Programar Visita',
     logCall: 'Registrar Llamada',
-    allCities: 'Todas las Ciudades',
+    allProvinces: 'Todas las Provincias',
     openInMaps: 'Abrir en Mapas',
     email: 'Correo Electrónico'
   },

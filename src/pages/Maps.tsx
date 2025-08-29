@@ -129,7 +129,7 @@ export default function Maps() {
   }, [customers, searchTerm, selectedProvince])
 
   // Solo mostrar provincias Cádiz y Huelva en el filtro
-  const cities = ['Cádiz', 'Huelva']
+  const provinces = ['Cádiz', 'Huelva']
 
   // 與 Visits 頁面一致的城市顯示與解析規則
   const isProvinceName = (v?: string) => {
@@ -850,8 +850,8 @@ export default function Maps() {
               onChange={(e) => setSelectedProvince(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">{t.maps.allCities}</option>
-              {cities.map(province => (
+              <option value="">{t.maps.allProvinces}</option>
+              {provinces.map(province => (
                 <option key={province} value={province as string}>{province}</option>
               ))}
             </select>
