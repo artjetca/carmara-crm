@@ -89,9 +89,8 @@ export default function Maps() {
       }
 
       let rows = result.data || []
-      // 過濾只顯示當前用戶創建的客戶
-      const userCustomers = rows.filter((customer: any) => customer.created_by === user.id)
-      setCustomers(userCustomers)
+      // 顯示所有客戶，不過濾用戶
+      setCustomers(rows)
     } catch (error) {
       console.error('Error loading customers:', error)
     } finally {

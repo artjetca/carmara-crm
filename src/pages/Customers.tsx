@@ -225,8 +225,11 @@ export default function Customers() {
     // 優先使用 province 欄位
     if ((c as any).province) {
       prov = (c as any).province
-      // 如果 city 不是省份名，則作為市政區
-      if (c.city && c.city !== 'Cádiz' && c.city !== 'Huelva') {
+      // 如果 city 是省份名且與 province 相同，則設為城市選項
+      if (c.city && (c.city === 'Cádiz' || c.city === 'Huelva') && c.city === prov) {
+        muni = c.city
+      } else if (c.city && c.city !== 'Cádiz' && c.city !== 'Huelva') {
+        // 如果 city 不是省份名，則作為市政區
         muni = c.city
       }
     } else {
