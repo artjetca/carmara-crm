@@ -440,13 +440,60 @@ export default function Customers() {
     }
   }
 
+  // 与地图页面一致的省份显示逻辑
+  const isProvinceName = (v?: string) => {
+    const s = String(v || '').trim().toLowerCase()
+    return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+  }
+
+  const displayProvince = (customer: Customer): string => {
+    if (!customer) return ''
+    try {
+      // 优先使用数据表中的province字段
+      if ((customer as any).province && String((customer as any).province).trim().length > 0) {
+        return String((customer as any).province).trim()
+      }
+      // 从notes中解析省份
+      if (customer.notes) {
+        const m = customer.notes.match(/Provincia:\s*([^\n]+)/i)
+        if (m) return m[1].trim()
+      }
+      // 最后才检查city是否为省份名称
+      if (customer.city && isProvinceName(customer.city)) return customer.city
+      return ''
+    } catch (error) {
+      console.error('[DISPLAY_PROVINCE] Error processing customer:', customer, error)
+      return ''
+    }
+  }
+
+  const displayCity = (customer: Customer): string => {
+    if (!customer) return ''
+    try {
+      // 从notes中解析城市
+      if (customer.notes) {
+        const m = customer.notes.match(/Ciudad:\s*([^\n]+)/i)
+        if (m) return m[1].trim()
+      }
+      // 如果city字段不是省份名称，则显示city
+      const city = String(customer.city || '').trim()
+      if (city && !isProvinceName(city)) return city
+      return ''
+    } catch (error) {
+      console.error('[DISPLAY_CITY] Error processing customer:', customer, error)
+      return ''
+    }
+  }
+
   const filteredAndSortedCustomers = customers
     .filter(customer => {
       const matchesSearch = customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            customer.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesCity = !selectedCity || customer.city === selectedCity
-      return matchesSearch && matchesCity
+      
+      // 使用省份筛选逻辑而不是城市筛选
+      const matchesProvince = !selectedCity || displayProvince(customer) === selectedCity
+      return matchesSearch && matchesProvince
     })
     .sort((a, b) => {
       if (!sortField) return 0
@@ -459,7 +506,8 @@ export default function Customers() {
       return 0
     })
 
-  const cities = Array.from(new Set(customers.map(c => c.city).filter(Boolean)))
+  // 使用省份列表而不是城市列表进行筛选
+  const cities = ['Cádiz', 'Huelva']
   
   // Provincias disponibles (solo Cádiz y Huelva por ahora)
   const provinces = ['Cádiz', 'Huelva']
