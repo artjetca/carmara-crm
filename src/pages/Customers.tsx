@@ -333,19 +333,14 @@ export default function Customers() {
 
   const handleProvinceChange = (prov: string) => {
     setEditProvince(prov)
-    // 調整 city 欄位：若是 Cádiz/Huelva，city = 省；否則保持現值或由 municipio 決定
-    if (prov === 'Cádiz' || prov === 'Huelva') {
-      setEditData(prev => ({ ...prev, city: prov }))
-    } else {
-      setEditData(prev => ({ ...prev, city: editMunicipio }))
-    }
+    // 重置城市選擇，讓用戶重新選擇
+    setEditMunicipio('')
   }
 
   const handleMunicipioChange = (muni: string) => {
     setEditMunicipio(muni)
-    // 若省是 Cádiz/Huelva，保持 city=省；否則 city=municipio
-    const cityValue = (editProvince === 'Cádiz' || editProvince === 'Huelva') ? editProvince : muni
-    setEditData(prev => ({ ...prev, city: cityValue }))
+    // 直接設置選擇的城市
+    setEditData(prev => ({ ...prev, city: muni }))
   }
 
   // 新增客戶按鈕

@@ -160,15 +160,17 @@ export default function Maps() {
   const displayProvince = (c?: Customer): string => {
     if (!c) return ''
     try {
-      // 先使用資料表中的 province 欄位
+      // 優先使用資料表中的 province 欄位
       if (c.province && String(c.province).trim().length > 0) {
         return String(c.province).trim()
       }
-      if (c.city && isProvinceName(c.city)) return c.city
+      // 從 notes 中解析省份
       if (c.notes) {
         const m = c.notes.match(/Provincia:\s*([^\n]+)/i)
         if (m) return m[1].trim()
       }
+      // 最後才檢查 city 是否為省份名稱
+      if (c.city && isProvinceName(c.city)) return c.city
       return ''
     } catch (error) {
       console.error('[DISPLAY_PROVINCE] Error processing customer:', c, error)
