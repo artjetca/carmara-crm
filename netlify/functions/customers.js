@@ -86,12 +86,16 @@ exports.handler = async (event, context) => {
       const insertBody = { ...requestBody };
       delete insertBody.num;
       delete insertBody.numero;
-      // 僅允許 city 為 'Cádiz' 或 'Huelva'，否則設為 null 以避免 CHECK 限制
+      // 城市處理：若值為省份名稱則正規化，否則保留原城市（允許任意 municipio）
       if (Object.prototype.hasOwnProperty.call(insertBody, 'city')) {
-        const cityVal = insertBody.city;
-        if (cityVal !== 'Cádiz' && cityVal !== 'Huelva') {
-          insertBody.city = null;
-        }
+        const norm = String(insertBody.city || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        if (norm === 'huelva') insertBody.city = 'Huelva'
+        else if (norm === 'cadiz') insertBody.city = 'Cádiz'
+        // 其他城市名稱（municipios）直接保留
       }
       // 依據資料庫約束清理電話欄位：9位數且以6-9開頭，其餘設為 null
       const sanitizePhone = (val) => {
@@ -220,12 +224,16 @@ exports.handler = async (event, context) => {
       const requestBody = JSON.parse(event.body || '{}');
       const { id, ...updateData } = requestBody;
 
-      // 清理 city：只接受 'Cádiz' 或 'Huelva'，否則改為 null
+      // 城市處理：若值為省份名稱則正規化，否則保留原城市（允許任意 municipio）
       if (Object.prototype.hasOwnProperty.call(updateData, 'city')) {
-        const c = updateData.city;
-        if (c !== 'Cádiz' && c !== 'Huelva') {
-          updateData.city = null;
-        }
+        const norm = String(updateData.city || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        if (norm === 'huelva') updateData.city = 'Huelva'
+        else if (norm === 'cadiz') updateData.city = 'Cádiz'
+        // 其他城市名稱（municipios）直接保留
       }
       // 清理電話欄位以符合 CHECK 限制
       const sanitizePhoneU = (val) => {
