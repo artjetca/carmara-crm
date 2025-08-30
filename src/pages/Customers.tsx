@@ -10,7 +10,9 @@ export default function Customers() {
   const { customers, setCustomers, importHighlightSince, setCurrentPage, clearImportHighlight } = useStore()
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
+  const [selectedCustomerType, setSelectedCustomerType] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -477,10 +479,10 @@ export default function Customers() {
   // 与地图页面一致的省份显示逻辑
   const isProvinceName = (v?: string) => {
     const s = String(v || '').trim().toLowerCase()
-    return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+    return s === 'huelva' || s === 'cádiz' || s === 'cadiz' || s === 'ceuta'
   }
 
-  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz" 或 "Huelva"
+  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz"、"Huelva" 或 "Ceuta"
   const toCanonicalProvince = (v?: string): string => {
     const s = String(v || '')
       .trim()
@@ -489,6 +491,7 @@ export default function Customers() {
       .replace(/[\u0300-\u036f]/g, '') // 去除重音符號
     if (s === 'huelva') return 'Huelva'
     if (s === 'cadiz') return 'Cádiz'
+    if (s === 'ceuta') return 'Ceuta'
     return ''
   }
 
@@ -552,15 +555,46 @@ export default function Customers() {
     }
   }
 
+  // 获取所有可用的城市选项
+  const getAllCities = () => {
+    const allCities = new Set<string>()
+    
+    // 添加省份作为城市选项（对于Cádiz, Huelva, Ceuta）
+    provinces.forEach(province => {
+      allCities.add(province)
+    })
+    
+    // 添加所有市政区
+    Object.values(municipiosByProvince).forEach(cities => {
+      cities.forEach(city => allCities.add(city))
+    })
+    
+    return Array.from(allCities).sort()
+  }
+
   const filteredAndSortedCustomers = customers
     .filter(customer => {
       const matchesSearch = customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            customer.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
       
-      // 使用省份筛选逻辑而不是城市筛选
-      const matchesProvince = !selectedCity || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedCity)
-      return matchesSearch && matchesProvince
+      // 省份筛选
+      const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
+      
+      // 城市筛选
+      const customerCity = displayCity(customer)
+      const customerProvince = displayProvince(customer)
+      const matchesCity = !selectedCity || 
+                         customerCity === selectedCity || 
+                         customerProvince === selectedCity
+      
+      // 客戶狀態篩選 - 基於 SIN FACTURACION
+      const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
+      const matchesCustomerType = !selectedCustomerType || 
+                                 (selectedCustomerType === 'formal' && !hasSinFacturacion) ||
+                                 (selectedCustomerType === 'potential' && hasSinFacturacion)
+      
+      return matchesSearch && matchesProvince && matchesCity && matchesCustomerType
     })
     .sort((a, b) => {
       if (!sortField) return 0
@@ -573,11 +607,11 @@ export default function Customers() {
       return 0
     })
 
-  // 使用省份列表而不是城市列表进行筛选
-  const cities = ['Cádiz', 'Huelva']
+  // 获取所有可用城市
+  const allCities = getAllCities()
   
-  // Provincias disponibles (solo Cádiz y Huelva por ahora)
-  const provinces = ['Cádiz', 'Huelva']
+  // Provincias disponibles
+  const provinces = ['Cádiz', 'Huelva', 'Ceuta']
   
   // Municipios por provincia - listas completas
   const municipiosByProvince: Record<string, string[]> = {
@@ -608,6 +642,9 @@ export default function Customers() {
       'Villablanca', 'Villalba del Alcor', 'Villanueva de las Cruces', 'Villanueva de los Castillejos',
       'Villarrasa', 'Zalamea la Real', 'Zufre'
     ],
+    'Ceuta': [
+      'Ceuta'
+    ]
   }
   
   // Municipios disponibles según provincia seleccionada (moved to modal scope)
@@ -708,30 +745,77 @@ export default function Customers() {
 
       {/* Filtros */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder={t.customers.searchPlaceholder}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Filtros de Clientes</h2>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={t.customers.searchPlaceholder}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="sm:w-48">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cliente</label>
+              <select
+                value={selectedCustomerType}
+                onChange={(e) => setSelectedCustomerType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Todos los Clientes</option>
+                <optgroup label="── Clasificación ──">
+                  <option value="formal">✓ Clientes Formales (CON FACTURACIÓN)</option>
+                  <option value="potential">⏳ Clientes Potenciales (SIN FACTURACIÓN)</option>
+                </optgroup>
+              </select>
             </div>
           </div>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-4">
           <div className="sm:w-48">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+            <select
+              value={selectedProvince}
+              onChange={(e) => setSelectedProvince(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">{t.customers.allProvinces}</option>
+              {provinces.map(province => (
+                <option key={province} value={province}>{province}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:w-48">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
             <select
               value={selectedCity}
               onChange={(e) => setSelectedCity(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">{t.customers.allProvinces}</option>
-              {cities.map(city => (
+              <option value="">Todas las Ciudades</option>
+              {allCities.map(city => (
                 <option key={city} value={city}>{city}</option>
               ))}
             </select>
+          </div>
+          <div className="sm:w-48 flex items-end">
+            <button
+              onClick={() => {
+                setSearchTerm('')
+                setSelectedProvince('')
+                setSelectedCity('')
+                setSelectedCustomerType('')
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              Limpiar Filtros
+            </button>
           </div>
         </div>
       </div>
@@ -799,6 +883,7 @@ export default function Customers() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Provincia</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contrato</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notas</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo de Cliente</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <input
                     ref={headerCheckboxRef}
@@ -854,6 +939,20 @@ export default function Customers() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 max-w-xs truncate">
                         {cleanNotes || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {(() => {
+                          const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
+                          return hasSinFacturacion ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              SIN FACTURACIÓN
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              CON FACTURACIÓN
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <input
@@ -962,8 +1061,7 @@ export default function Customers() {
                   onChange={e => handleMunicipioChange(e.target.value)}
                 >
                   <option value="">-</option>
-                  {/* 如果省份是 Cádiz 或 Huelva，首先顯示省份本身作為城市選項 */}
-                  {(editProvince === 'Cádiz' || editProvince === 'Huelva') && (
+                  {(editProvince === 'Cádiz' || editProvince === 'Huelva' || editProvince === 'Ceuta') && (
                     <option key={editProvince} value={editProvince}>{editProvince}</option>
                   )}
                   {(editProvince ? (municipiosByProvince[editProvince] || []) : []).map(m => (
@@ -1080,8 +1178,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
   const [addMunicipio, setAddMunicipio] = useState<string>('')
   const t = translations
 
-  // Provincias disponibles (solo Cádiz y Huelva)
-  const provinces = ['Cádiz', 'Huelva']
+  // Provincias disponibles
+  const provinces = ['Cádiz', 'Huelva', 'Ceuta']
   
   // Municipios por provincia
   const municipiosByProvince: Record<string, string[]> = {
@@ -1112,6 +1210,9 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
       'Villablanca', 'Villalba del Alcor', 'Villanueva de las Cruces', 'Villanueva de los Castillejos',
       'Villarrasa', 'Zalamea la Real', 'Zufre'
     ],
+    'Ceuta': [
+      'Ceuta'
+    ]
   }
   
   // Municipios disponibles según provincia seleccionada
@@ -1123,8 +1224,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
 
   const handleProvinceChange = (prov: string) => {
     setAddProvince(prov)
-    // Ajustar city: si es Cádiz/Huelva, city = provincia; sino mantener municipio
-    if (prov === 'Cádiz' || prov === 'Huelva') {
+    // Ajustar city: si es Cádiz/Huelva/Ceuta, city = provincia; sino mantener municipio
+    if (prov === 'Cádiz' || prov === 'Huelva' || prov === 'Ceuta') {
       setFormData(prev => ({ ...prev, city: prov }))
     } else {
       setFormData(prev => ({ ...prev, city: addMunicipio }))
@@ -1133,8 +1234,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
 
   const handleMunicipioChange = (muni: string) => {
     setAddMunicipio(muni)
-    // Si provincia es Cádiz/Huelva, mantener city=provincia; sino city=municipio
-    const cityValue = (addProvince === 'Cádiz' || addProvince === 'Huelva') ? addProvince : muni
+    // Si provincia es Cádiz/Huelva/Ceuta, mantener city=provincia; sino city=municipio
+    const cityValue = (addProvince === 'Cádiz' || addProvince === 'Huelva' || addProvince === 'Ceuta') ? addProvince : muni
     setFormData(prev => ({ ...prev, city: cityValue }))
   }
 
