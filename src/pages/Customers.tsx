@@ -12,7 +12,6 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
-  const [selectedCustomerType, setSelectedCustomerType] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -206,17 +205,6 @@ export default function Customers() {
     // 分離用戶的notes和省市資訊
     const cleanNotes = stripLocationTags(c.notes as string)
     
-    // 根據現有資料推導 customer_type
-    let derivedCustomerType: 'formal' | 'potential' = 'formal'
-    if (c.customer_type) {
-      derivedCustomerType = c.customer_type
-    } else {
-      // 從 contrato 欄位推導
-      const contrato = (c as any).contrato || ''
-      const hasSinFacturacion = contrato.toLowerCase().includes('sin facturacion')
-      derivedCustomerType = hasSinFacturacion ? 'potential' : 'formal'
-    }
-    
     setEditData({
       name: c.name,
       company: c.company,
@@ -226,7 +214,6 @@ export default function Customers() {
       city: c.city,
       notes: cleanNotes as any,
       contrato: (c as any).contrato || '',
-      customer_type: derivedCustomerType,
       // 初始化 Número：優先使用 num，否則 fallback 到 numero
       ...(typeof (c as any).num !== 'undefined' ? { num: (c as any).num } : {}),
       ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
@@ -270,7 +257,7 @@ export default function Customers() {
   }
 
   const handleEditChange = (
-    field: keyof Customer | 'contrato' | 'notes' | 'num' | 'customer_type',
+    field: keyof Customer | 'contrato' | 'notes' | 'num',
     value: string
   ) => {
     setEditData(prev => ({ ...prev, [field]: value }))
@@ -323,10 +310,6 @@ export default function Customers() {
         updateData.contrato = (editData as any).contrato
       }
 
-      // 添加 customer_type 欄位
-      if ((editData as any).customer_type !== undefined) {
-        updateData.customer_type = (editData as any).customer_type
-      }
 
       console.log('Updating customer via API with data:', updateData)
 
@@ -575,28 +558,6 @@ export default function Customers() {
     }
   }
 
-  const renderCustomerType = (customer: Customer) => {
-    // Use customer_type field if available, fallback to contrato parsing
-    let customerType: 'formal' | 'potential' = 'formal'
-    
-    if (customer.customer_type) {
-      customerType = customer.customer_type
-    } else {
-      // Fallback: derive from contrato field
-      const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
-      customerType = hasSinFacturacion ? 'potential' : 'formal'
-    }
-    
-    return customerType === 'potential' ? (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-        SIN FACTURACIÓN
-      </span>
-    ) : (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-        CON FACTURACIÓN
-      </span>
-    )
-  }
 
   // Provincias disponibles - 移到前面定義
   const provinces = ['Cádiz', 'Huelva', 'Ceuta']
@@ -673,18 +634,8 @@ export default function Customers() {
                          customerProvince === selectedCity ||
                          customerCityRaw === selectedCity
       
-      // 客戶狀態篩選 - 使用 customer_type 欄位，contrato 為後備
-      let customerType: 'formal' | 'potential' = 'formal'
-      if (customer.customer_type) {
-        customerType = customer.customer_type
-      } else {
-        // Fallback: derive from contrato field
-        const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
-        customerType = hasSinFacturacion ? 'potential' : 'formal'
-      }
-      const matchesCustomerType = !selectedCustomerType || selectedCustomerType === customerType
       
-      return matchesSearch && matchesProvince && matchesCity && matchesCustomerType
+      return matchesSearch && matchesProvince && matchesCity
     })
     .sort((a, b) => {
       if (!sortField) return 0
@@ -811,20 +762,6 @@ export default function Customers() {
                 />
               </div>
             </div>
-            <div className="sm:w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cliente</label>
-              <select
-                value={selectedCustomerType}
-                onChange={(e) => setSelectedCustomerType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Todos los Clientes</option>
-                <optgroup label="── Clasificación ──">
-                  <option value="formal">✓ Clientes Formales (CON FACTURACIÓN)</option>
-                  <option value="potential">⏳ Clientes Potenciales (SIN FACTURACIÓN)</option>
-                </optgroup>
-              </select>
-            </div>
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
@@ -860,7 +797,6 @@ export default function Customers() {
                 setSearchTerm('')
                 setSelectedProvince('')
                 setSelectedCity('')
-                setSelectedCustomerType('')
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
@@ -984,14 +920,9 @@ export default function Customers() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {provincia || '-'}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{(customer as any).contrato || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.notes || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {contrato || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 max-w-xs truncate">
-                        {cleanNotes || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {renderCustomerType(customer)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <input
@@ -1117,37 +1048,6 @@ export default function Customers() {
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm text-gray-700 mb-2">Tipo de Cliente</label>
-                <div className="flex items-center space-x-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="customerType"
-                      value="formal"
-                      checked={(editData as any).customer_type === 'formal'}
-                      onChange={() => handleEditChange('customer_type' as any, 'formal')}
-                      className="mr-2"
-                    />
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      ✓ CON FACTURACIÓN
-                    </span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="customerType"
-                      value="potential"
-                      checked={(editData as any).customer_type === 'potential'}
-                      onChange={() => handleEditChange('customer_type' as any, 'potential')}
-                      className="mr-2"
-                    />
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      ⏳ SIN FACTURACIÓN
-                    </span>
-                  </label>
-                </div>
-              </div>
-              <div className="sm:col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Notas</label>
                 <textarea
                   className="w-full px-3 py-2 border rounded"
@@ -1242,8 +1142,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
     city: '',
     contrato: '',
     notes: '',
-    numero: '',
-    customer_type: 'formal'
+    numero: ''
   })
   const [addProvince, setAddProvince] = useState<string>('')
   const [addMunicipio, setAddMunicipio] = useState<string>('')
@@ -1330,7 +1229,6 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id,
-        customer_type: formData.customer_type,
         // send as num; backend will dual-write to num/numero
         num: formData.numero || null
       }
@@ -1447,37 +1345,6 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               value={(formData as any).contrato}
               onChange={e => handleChange('contrato', e.target.value)}
             />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-sm text-gray-700 mb-2">Tipo de Cliente</label>
-            <div className="flex items-center space-x-4">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="addCustomerType"
-                  value="formal"
-                  checked={formData.customer_type === 'formal'}
-                  onChange={() => handleChange('customer_type', 'formal')}
-                  className="mr-2"
-                />
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  ✓ CON FACTURACIÓN
-                </span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="addCustomerType"
-                  value="potential"
-                  checked={formData.customer_type === 'potential'}
-                  onChange={() => handleChange('customer_type', 'potential')}
-                  className="mr-2"
-                />
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                  ⏳ SIN FACTURACIÓN
-                </span>
-              </label>
-            </div>
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Notas</label>
