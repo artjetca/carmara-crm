@@ -228,8 +228,11 @@ export default function Customers() {
     // 優先使用 province 欄位
     if ((c as any).province) {
       prov = (c as any).province
-      // 如果有 city 欄位，直接使用作為市政區選擇
-      if (c.city) {
+      // 如果 city 是省份名且與 province 相同，則設為城市選項
+      if (c.city && (c.city === 'Cádiz' || c.city === 'Huelva' || c.city === 'Ceuta') && c.city === prov) {
+        muni = c.city
+      } else if (c.city && c.city !== 'Cádiz' && c.city !== 'Huelva' && c.city !== 'Ceuta') {
+        // 如果 city 不是省份名，則作為市政區
         muni = c.city
       }
     } else {
@@ -243,18 +246,11 @@ export default function Customers() {
       } else if (c.city === 'Cádiz' || c.city === 'Huelva' || c.city === 'Ceuta') {
         // city 是省份名時
         prov = c.city
-        muni = extractedMuni || c.city // 省份名也可以作為城市
+        muni = c.city // 修復：當 city 是省份名時，muni 也應該是相同值
       } else if (c.city) {
         // city 不是省份名，嘗試從 notes 推斷省份
         muni = c.city
-        // 根據市政區推斷省份
-        if (municipiosByProvince['Huelva'].includes(c.city)) {
-          prov = 'Huelva'
-        } else if (municipiosByProvince['Cádiz'].includes(c.city)) {
-          prov = 'Cádiz'
-        } else if (municipiosByProvince['Ceuta'].includes(c.city)) {
-          prov = 'Ceuta'
-        }
+        prov = extractedProv || ''
       }
     }
     
@@ -316,10 +312,10 @@ export default function Customers() {
         updateData.contrato = (editData as any).contrato
       }
 
-      // 添加 customer_type 欄位
-      if ((editData as any).customer_type !== undefined) {
-        updateData.customer_type = (editData as any).customer_type
-      }
+      // 添加 customer_type 欄位 - 暫時註解直到 schema 更新
+      // if ((editData as any).customer_type !== undefined) {
+      //   updateData.customer_type = (editData as any).customer_type
+      // }
 
       console.log('Updating customer via API with data:', updateData)
 
@@ -385,8 +381,11 @@ export default function Customers() {
 
   const handleMunicipioChange = (muni: string) => {
     setEditMunicipio(muni)
-    // 設置選擇的城市到 editData
-    handleEditChange('city', muni)
+    // 修復城市持久化問題：確保正確設置 city 值
+    const cityValue = (editProvince === 'Cádiz' || editProvince === 'Huelva' || editProvince === 'Ceuta') 
+      ? (muni || editProvince) 
+      : muni
+    setEditData(prev => ({ ...prev, city: cityValue }))
   }
 
   // 新增客戶按鈕
@@ -1320,7 +1319,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id,
-        customer_type: formData.customer_type,
+        // customer_type: formData.customer_type, // 暫時註解直到 schema 更新
         // send as num; backend will dual-write to num/numero
         num: formData.numero || null
       }

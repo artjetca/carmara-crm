@@ -126,12 +126,12 @@ exports.handler = async (event, context) => {
         return null
       }
       
-      // 處理 customer_type：淨化 -> 推導 -> 預設值
-      let finalCustomerType = sanitizeCustomerType(insertBody.customer_type)
-      if (!finalCustomerType) {
-        finalCustomerType = deriveCustomerTypeFromContrato(insertBody.contrato) || 'formal'
-      }
-      insertBody.customer_type = finalCustomerType
+      // 處理 customer_type：淨化 -> 推導 -> 預設值 (暫時註解直到 schema 更新)
+      // let finalCustomerType = sanitizeCustomerType(insertBody.customer_type)
+      // if (!finalCustomerType) {
+      //   finalCustomerType = deriveCustomerTypeFromContrato(insertBody.contrato) || 'formal'
+      // }
+      // insertBody.customer_type = finalCustomerType
       if (Object.prototype.hasOwnProperty.call(insertBody, 'phone')) {
         insertBody.phone = sanitizePhone(insertBody.phone);
       }
@@ -292,14 +292,14 @@ exports.handler = async (event, context) => {
         return null
       }
       
-      // 處理 customer_type：淨化 -> 推導（若需要）
-      if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
-        let finalCustomerType = sanitizeCustomerTypeU(updateData.customer_type)
-        if (!finalCustomerType && updateData.contrato) {
-          finalCustomerType = deriveCustomerTypeFromContratoU(updateData.contrato)
-        }
-        updateData.customer_type = finalCustomerType
-      }
+      // 處理 customer_type：淨化 -> 推導（若需要）(暫時註解直到 schema 更新)
+      // if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
+      //   let finalCustomerType = sanitizeCustomerTypeU(updateData.customer_type)
+      //   if (!finalCustomerType && updateData.contrato) {
+      //     finalCustomerType = deriveCustomerTypeFromContratoU(updateData.contrato)
+      //   }
+      //   updateData.customer_type = finalCustomerType
+      // }
       if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) {
         updateData.phone = sanitizePhoneU(updateData.phone);
       }
