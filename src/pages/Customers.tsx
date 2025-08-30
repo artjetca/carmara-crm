@@ -323,10 +323,10 @@ export default function Customers() {
         updateData.contrato = (editData as any).contrato
       }
 
-      // 添加 customer_type 欄位 - 暫時註解直到 schema 更新
-      // if ((editData as any).customer_type !== undefined) {
-      //   updateData.customer_type = (editData as any).customer_type
-      // }
+      // 添加 customer_type 欄位
+      if ((editData as any).customer_type !== undefined) {
+        updateData.customer_type = (editData as any).customer_type
+      }
 
       console.log('Updating customer via API with data:', updateData)
 
@@ -1343,7 +1343,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id,
-        // customer_type: formData.customer_type, // 暫時註解直到 schema 更新
+        customer_type: formData.customer_type,
         // send as num; backend will dual-write to num/numero
         num: formData.numero || null
       }

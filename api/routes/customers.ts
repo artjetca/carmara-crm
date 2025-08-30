@@ -106,14 +106,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     if (Object.prototype.hasOwnProperty.call(body, 'phone')) body.phone = sanitizePhone(body.phone)
     if (Object.prototype.hasOwnProperty.call(body, 'mobile_phone')) body.mobile_phone = sanitizePhone(body.mobile_phone)
 
-    // Customer type: sanitize or derive from contrato; default to 'formal' on create (暫時註解直到 schema 更新)
-    // if (Object.prototype.hasOwnProperty.call(body, 'customer_type')) {
-    //   body.customer_type = sanitizeCustomerType(body.customer_type)
-    // }
-    // if (!body.customer_type) {
-    //   const derived = deriveCustomerTypeFromContrato((body as any).contrato)
-    //   body.customer_type = derived || 'formal'
-    // }
+    // Customer type: sanitize or derive from contrato; default to 'formal' on create
+    if (Object.prototype.hasOwnProperty.call(body, 'customer_type')) {
+      body.customer_type = sanitizeCustomerType(body.customer_type)
+    }
+    if (!body.customer_type) {
+      const derived = deriveCustomerTypeFromContrato((body as any).contrato)
+      body.customer_type = derived || 'formal'
+    }
 
     let { data: created, error } = await admin.from('customers').insert(body).select('*').single()
     if (error) {
@@ -177,13 +177,13 @@ async function updateHandler(req: Request, res: Response): Promise<void> {
     if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) updateData.phone = sanitizePhone(updateData.phone)
     if (Object.prototype.hasOwnProperty.call(updateData, 'mobile_phone')) updateData.mobile_phone = sanitizePhone(updateData.mobile_phone)
 
-    // Customer type sanitize/derive on update (暫時註解直到 schema 更新)
-    // if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
-    //   updateData.customer_type = sanitizeCustomerType(updateData.customer_type)
-    // } else if (Object.prototype.hasOwnProperty.call(updateData, 'contrato')) {
-    //   const derived = deriveCustomerTypeFromContrato(updateData.contrato)
-    //   if (derived) updateData.customer_type = derived
-    // }
+    // Customer type sanitize/derive on update
+    if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
+      updateData.customer_type = sanitizeCustomerType(updateData.customer_type)
+    } else if (Object.prototype.hasOwnProperty.call(updateData, 'contrato')) {
+      const derived = deriveCustomerTypeFromContrato(updateData.contrato)
+      if (derived) updateData.customer_type = derived
+    }
 
     const normalFields: any = { ...updateData }
     delete normalFields.num
