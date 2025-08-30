@@ -638,10 +638,12 @@ export default function Customers() {
       const customerCity = displayCity(customer)
       const customerProvince = displayProvince(customer)
       const customerCityRaw = String(customer.city || '').trim()
+      const municipioFromNotes = extractMunicipality(customer.notes)
       const matchesCity = !selectedCity || 
                          customerCity === selectedCity || 
                          customerProvince === selectedCity ||
-                         customerCityRaw === selectedCity
+                         customerCityRaw === selectedCity ||
+                         municipioFromNotes === selectedCity
       
       // 客戶狀態篩選 - 基於 SIN FACTURACION
       const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
@@ -1094,6 +1096,8 @@ export default function Customers() {
                         const currentContrato = (editData as any).contrato || ''
                         const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
                         handleEditChange('contrato' as any, cleanContrato)
+                        // 同時更新 tipo_cliente 欄位
+                        handleEditChange('tipo_cliente' as any, 'CON FACTURACIÓN')
                       }}
                       className="mr-2"
                     />
@@ -1112,6 +1116,8 @@ export default function Customers() {
                         const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
                         const newContrato = cleanContrato ? `${cleanContrato} SIN FACTURACIÓN` : 'SIN FACTURACIÓN'
                         handleEditChange('contrato' as any, newContrato)
+                        // 同時更新 tipo_cliente 欄位
+                        handleEditChange('tipo_cliente' as any, 'SIN FACTURACIÓN')
                       }}
                       className="mr-2"
                     />
