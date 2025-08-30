@@ -555,6 +555,19 @@ export default function Customers() {
     }
   }
 
+  const renderCustomerType = (customer: Customer) => {
+    const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
+    return hasSinFacturacion ? (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+        SIN FACTURACIÓN
+      </span>
+    ) : (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+        CON FACTURACIÓN
+      </span>
+    )
+  }
+
   // 获取所有可用的城市选项
   const getAllCities = () => {
     const allCities = new Set<string>()
@@ -941,18 +954,7 @@ export default function Customers() {
                         {cleanNotes || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {(() => {
-                          const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
-                          return hasSinFacturacion ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                              SIN FACTURACIÓN
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              CON FACTURACIÓN
-                            </span>
-                          )
-                        })()}
+                        {renderCustomerType(customer)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <input
