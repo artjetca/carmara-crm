@@ -634,12 +634,14 @@ export default function Customers() {
       // 省份筛选
       const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
       
-      // 城市筛选
+      // 城市筛选 - 修复筛选逻辑
       const customerCity = displayCity(customer)
       const customerProvince = displayProvince(customer)
+      const customerCityRaw = String(customer.city || '').trim()
       const matchesCity = !selectedCity || 
                          customerCity === selectedCity || 
-                         customerProvince === selectedCity
+                         customerProvince === selectedCity ||
+                         customerCityRaw === selectedCity
       
       // 客戶狀態篩選 - 基於 SIN FACTURACION
       const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
@@ -1078,6 +1080,46 @@ export default function Customers() {
                   value={(editData as any).contrato || ''}
                   onChange={e => handleEditChange('contrato' as any, e.target.value)}
                 />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm text-gray-700 mb-2">Tipo de Cliente</label>
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="customerType"
+                      value="formal"
+                      checked={!((editData as any).contrato && (editData as any).contrato.trim().toLowerCase().includes('sin facturacion'))}
+                      onChange={() => {
+                        const currentContrato = (editData as any).contrato || ''
+                        const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
+                        handleEditChange('contrato' as any, cleanContrato)
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      ✓ CON FACTURACIÓN
+                    </span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="customerType"
+                      value="potential"
+                      checked={Boolean((editData as any).contrato && (editData as any).contrato.trim().toLowerCase().includes('sin facturacion'))}
+                      onChange={() => {
+                        const currentContrato = (editData as any).contrato || ''
+                        const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
+                        const newContrato = cleanContrato ? `${cleanContrato} SIN FACTURACIÓN` : 'SIN FACTURACIÓN'
+                        handleEditChange('contrato' as any, newContrato)
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      ⏳ SIN FACTURACIÓN
+                    </span>
+                  </label>
+                </div>
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Notas</label>
