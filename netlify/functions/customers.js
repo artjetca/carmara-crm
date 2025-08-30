@@ -104,6 +104,34 @@ exports.handler = async (event, context) => {
         if (digits.length === 0) return null;
         return /^[6789][0-9]{8}$/.test(digits) ? digits : null;
       };
+      
+      // 客戶類型處理
+      const sanitizeCustomerType = (val) => {
+        if (val === undefined || val === null) return null
+        const s = String(val).trim().toLowerCase()
+        if (s === 'formal') return 'formal'
+        if (s === 'potential') return 'potential'
+        return null
+      }
+      
+      const deriveCustomerTypeFromContrato = (val) => {
+        if (val === undefined || val === null) return null
+        const s = String(val)
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        if (s.includes('sin facturacion')) return 'potential'
+        if (s.length > 0) return 'formal'
+        return null
+      }
+      
+      // 處理 customer_type：淨化 -> 推導 -> 預設值
+      let finalCustomerType = sanitizeCustomerType(insertBody.customer_type)
+      if (!finalCustomerType) {
+        finalCustomerType = deriveCustomerTypeFromContrato(insertBody.contrato) || 'formal'
+      }
+      insertBody.customer_type = finalCustomerType
       if (Object.prototype.hasOwnProperty.call(insertBody, 'phone')) {
         insertBody.phone = sanitizePhone(insertBody.phone);
       }
@@ -242,6 +270,36 @@ exports.handler = async (event, context) => {
         if (digits.length === 0) return null;
         return /^[6789][0-9]{8}$/.test(digits) ? digits : null;
       };
+      
+      // 客戶類型處理
+      const sanitizeCustomerTypeU = (val) => {
+        if (val === undefined || val === null) return null
+        const s = String(val).trim().toLowerCase()
+        if (s === 'formal') return 'formal'
+        if (s === 'potential') return 'potential'
+        return null
+      }
+      
+      const deriveCustomerTypeFromContratoU = (val) => {
+        if (val === undefined || val === null) return null
+        const s = String(val)
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+        if (s.includes('sin facturacion')) return 'potential'
+        if (s.length > 0) return 'formal'
+        return null
+      }
+      
+      // 處理 customer_type：淨化 -> 推導（若需要）
+      if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
+        let finalCustomerType = sanitizeCustomerTypeU(updateData.customer_type)
+        if (!finalCustomerType && updateData.contrato) {
+          finalCustomerType = deriveCustomerTypeFromContratoU(updateData.contrato)
+        }
+        updateData.customer_type = finalCustomerType
+      }
       if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) {
         updateData.phone = sanitizePhoneU(updateData.phone);
       }

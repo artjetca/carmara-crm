@@ -33,6 +33,7 @@ export interface Customer {
   distance?: number
   business_hours?: string
   contrato?: string
+  customer_type?: 'formal' | 'potential'
   num?: string
   notes?: string
   created_at: string

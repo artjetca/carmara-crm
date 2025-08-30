@@ -39,6 +39,26 @@ const sanitizePhone = (val: any): string | null => {
   return /^[6789][0-9]{8}$/.test(digits) ? digits : null
 }
 
+// Customer type helpers
+const sanitizeCustomerType = (val: any): 'formal' | 'potential' | null => {
+  if (val === undefined || val === null) return null
+  const s = String(val).trim().toLowerCase()
+  if (s === 'formal') return 'formal'
+  if (s === 'potential') return 'potential'
+  return null
+}
+const deriveCustomerTypeFromContrato = (val: any): 'formal' | 'potential' | null => {
+  if (val === undefined || val === null) return null
+  const s = String(val)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  if (s.includes('sin facturacion')) return 'potential'
+  if (s.length > 0) return 'formal'
+  return null
+}
+
 // GET /api/customers -> list
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -85,6 +105,15 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     }
     if (Object.prototype.hasOwnProperty.call(body, 'phone')) body.phone = sanitizePhone(body.phone)
     if (Object.prototype.hasOwnProperty.call(body, 'mobile_phone')) body.mobile_phone = sanitizePhone(body.mobile_phone)
+
+    // Customer type: sanitize or derive from contrato; default to 'formal' on create
+    if (Object.prototype.hasOwnProperty.call(body, 'customer_type')) {
+      body.customer_type = sanitizeCustomerType(body.customer_type)
+    }
+    if (!body.customer_type) {
+      const derived = deriveCustomerTypeFromContrato((body as any).contrato)
+      body.customer_type = derived || 'formal'
+    }
 
     let { data: created, error } = await admin.from('customers').insert(body).select('*').single()
     if (error) {
@@ -147,6 +176,14 @@ async function updateHandler(req: Request, res: Response): Promise<void> {
     // Phone constraints
     if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) updateData.phone = sanitizePhone(updateData.phone)
     if (Object.prototype.hasOwnProperty.call(updateData, 'mobile_phone')) updateData.mobile_phone = sanitizePhone(updateData.mobile_phone)
+
+    // Customer type sanitize/derive on update
+    if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
+      updateData.customer_type = sanitizeCustomerType(updateData.customer_type)
+    } else if (Object.prototype.hasOwnProperty.call(updateData, 'contrato')) {
+      const derived = deriveCustomerTypeFromContrato(updateData.contrato)
+      if (derived) updateData.customer_type = derived
+    }
 
     const normalFields: any = { ...updateData }
     delete normalFields.num
