@@ -206,6 +206,17 @@ export default function Customers() {
     // 分離用戶的notes和省市資訊
     const cleanNotes = stripLocationTags(c.notes as string)
     
+    // 根據現有資料推導 customer_type
+    let derivedCustomerType: 'formal' | 'potential' = 'formal'
+    if (c.customer_type) {
+      derivedCustomerType = c.customer_type
+    } else {
+      // 從 contrato 欄位推導
+      const contrato = (c as any).contrato || ''
+      const hasSinFacturacion = contrato.toLowerCase().includes('sin facturacion')
+      derivedCustomerType = hasSinFacturacion ? 'potential' : 'formal'
+    }
+    
     setEditData({
       name: c.name,
       company: c.company,
@@ -215,7 +226,7 @@ export default function Customers() {
       city: c.city,
       notes: cleanNotes as any,
       contrato: (c as any).contrato || '',
-      customer_type: c.customer_type || 'formal',
+      customer_type: derivedCustomerType,
       // 初始化 Número：優先使用 num，否則 fallback 到 numero
       ...(typeof (c as any).num !== 'undefined' ? { num: (c as any).num } : {}),
       ...((typeof (c as any).num === 'undefined' && typeof (c as any).numero !== 'undefined') ? { num: (c as any).numero } : {}),
@@ -1114,7 +1125,13 @@ export default function Customers() {
                       name="customerType"
                       value="formal"
                       checked={(editData as any).customer_type === 'formal'}
-                      onChange={() => handleEditChange('customer_type' as any, 'formal')}
+                      onChange={() => {
+                        handleEditChange('customer_type' as any, 'formal')
+                        // 同時更新 contrato 欄位以保持同步
+                        const currentContrato = (editData as any).contrato || ''
+                        const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
+                        handleEditChange('contrato' as any, cleanContrato)
+                      }}
                       className="mr-2"
                     />
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -1127,7 +1144,14 @@ export default function Customers() {
                       name="customerType"
                       value="potential"
                       checked={(editData as any).customer_type === 'potential'}
-                      onChange={() => handleEditChange('customer_type' as any, 'potential')}
+                      onChange={() => {
+                        handleEditChange('customer_type' as any, 'potential')
+                        // 同時更新 contrato 欄位以保持同步
+                        const currentContrato = (editData as any).contrato || ''
+                        const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
+                        const newContrato = cleanContrato ? `${cleanContrato} SIN FACTURACIÓN` : 'SIN FACTURACIÓN'
+                        handleEditChange('contrato' as any, newContrato)
+                      }}
                       className="mr-2"
                     />
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
