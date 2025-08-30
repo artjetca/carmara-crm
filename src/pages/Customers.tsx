@@ -1125,13 +1125,7 @@ export default function Customers() {
                       name="customerType"
                       value="formal"
                       checked={(editData as any).customer_type === 'formal'}
-                      onChange={() => {
-                        handleEditChange('customer_type' as any, 'formal')
-                        // 同時更新 contrato 欄位以保持同步
-                        const currentContrato = (editData as any).contrato || ''
-                        const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
-                        handleEditChange('contrato' as any, cleanContrato)
-                      }}
+                      onChange={() => handleEditChange('customer_type' as any, 'formal')}
                       className="mr-2"
                     />
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -1144,14 +1138,7 @@ export default function Customers() {
                       name="customerType"
                       value="potential"
                       checked={(editData as any).customer_type === 'potential'}
-                      onChange={() => {
-                        handleEditChange('customer_type' as any, 'potential')
-                        // 同時更新 contrato 欄位以保持同步
-                        const currentContrato = (editData as any).contrato || ''
-                        const cleanContrato = currentContrato.replace(/sin facturacion/gi, '').trim()
-                        const newContrato = cleanContrato ? `${cleanContrato} SIN FACTURACIÓN` : 'SIN FACTURACIÓN'
-                        handleEditChange('contrato' as any, newContrato)
-                      }}
+                      onChange={() => handleEditChange('customer_type' as any, 'potential')}
                       className="mr-2"
                     />
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
