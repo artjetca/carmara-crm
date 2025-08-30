@@ -568,62 +568,7 @@ export default function Customers() {
     )
   }
 
-  // 获取所有可用的城市选项
-  const getAllCities = () => {
-    const allCities = new Set<string>()
-    
-    // 添加省份作为城市选项（对于Cádiz, Huelva, Ceuta）
-    provinces.forEach(province => {
-      allCities.add(province)
-    })
-    
-    // 添加所有市政区
-    Object.values(municipiosByProvince).forEach(cities => {
-      cities.forEach(city => allCities.add(city))
-    })
-    
-    return Array.from(allCities).sort()
-  }
-
-  const filteredAndSortedCustomers = customers
-    .filter(customer => {
-      const matchesSearch = customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           customer.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      
-      // 省份筛选
-      const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
-      
-      // 城市筛选
-      const customerCity = displayCity(customer)
-      const customerProvince = displayProvince(customer)
-      const matchesCity = !selectedCity || 
-                         customerCity === selectedCity || 
-                         customerProvince === selectedCity
-      
-      // 客戶狀態篩選 - 基於 SIN FACTURACION
-      const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
-      const matchesCustomerType = !selectedCustomerType || 
-                                 (selectedCustomerType === 'formal' && !hasSinFacturacion) ||
-                                 (selectedCustomerType === 'potential' && hasSinFacturacion)
-      
-      return matchesSearch && matchesProvince && matchesCity && matchesCustomerType
-    })
-    .sort((a, b) => {
-      if (!sortField) return 0
-      
-      const aValue = (a[sortField] || '').toString().toLowerCase()
-      const bValue = (b[sortField] || '').toString().toLowerCase()
-      
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-
-  // 获取所有可用城市
-  const allCities = getAllCities()
-  
-  // Provincias disponibles
+  // Provincias disponibles - 移到前面定義
   const provinces = ['Cádiz', 'Huelva', 'Ceuta']
   
   // Municipios por provincia - listas completas
@@ -659,6 +604,61 @@ export default function Customers() {
       'Ceuta'
     ]
   }
+
+  // 获取所有可用的城市选项
+  const getAllCities = () => {
+    const allCities = new Set<string>()
+    
+    // 添加省份作为城市选项（对于Cádiz, Huelva, Ceuta）
+    provinces.forEach(province => {
+      allCities.add(province)
+    })
+    
+    // 添加所有市政区
+    Object.values(municipiosByProvince).forEach(cities => {
+      cities.forEach(city => allCities.add(city))
+    })
+    
+    return Array.from(allCities).sort()
+  }
+
+  // 获取所有可用城市
+  const allCities = getAllCities()
+
+  const filteredAndSortedCustomers = customers
+    .filter(customer => {
+      const matchesSearch = customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           customer.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      
+      // 省份筛选
+      const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
+      
+      // 城市筛选
+      const customerCity = displayCity(customer)
+      const customerProvince = displayProvince(customer)
+      const matchesCity = !selectedCity || 
+                         customerCity === selectedCity || 
+                         customerProvince === selectedCity
+      
+      // 客戶狀態篩選 - 基於 SIN FACTURACION
+      const hasSinFacturacion = Boolean((customer as any).contrato && (customer as any).contrato.trim().toLowerCase().includes('sin facturacion'))
+      const matchesCustomerType = !selectedCustomerType || 
+                                 (selectedCustomerType === 'formal' && !hasSinFacturacion) ||
+                                 (selectedCustomerType === 'potential' && hasSinFacturacion)
+      
+      return matchesSearch && matchesProvince && matchesCity && matchesCustomerType
+    })
+    .sort((a, b) => {
+      if (!sortField) return 0
+      
+      const aValue = (a[sortField] || '').toString().toLowerCase()
+      const bValue = (b[sortField] || '').toString().toLowerCase()
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
   
   // Municipios disponibles según provincia seleccionada (moved to modal scope)
 
