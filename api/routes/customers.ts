@@ -149,7 +149,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
     const final = await admin.from('customers').select('*').eq('id', created!.id).single()
     if (final.error) { res.status(500).json({ success: false, error: final.error.message }); return }
-    res.status(201).json({ success: true, data: final.data, warnings })
+    const updatedCustomer = final.data
+    res.status(201).json({ success: true, data: updatedCustomer, warnings })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e?.message || 'Unexpected server error' })
   }
@@ -177,12 +178,17 @@ async function updateHandler(req: Request, res: Response): Promise<void> {
     if (Object.prototype.hasOwnProperty.call(updateData, 'phone')) updateData.phone = sanitizePhone(updateData.phone)
     if (Object.prototype.hasOwnProperty.call(updateData, 'mobile_phone')) updateData.mobile_phone = sanitizePhone(updateData.mobile_phone)
 
-    // Customer type sanitize/derive on update
-    if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type')) {
-      updateData.customer_type = sanitizeCustomerType(updateData.customer_type)
-    } else if (Object.prototype.hasOwnProperty.call(updateData, 'contrato')) {
+    // Customer type sanitize/derive on update - handle schema cache gracefully
+    const sanitizedCustomerType = Object.prototype.hasOwnProperty.call(updateData, 'customer_type')
+      ? sanitizeCustomerType(updateData.customer_type)
+      : null
+    if (!sanitizedCustomerType && Object.prototype.hasOwnProperty.call(updateData, 'contrato')) {
       const derived = deriveCustomerTypeFromContrato(updateData.contrato)
-      if (derived) updateData.customer_type = derived
+      if (derived) {
+        updateData.customer_type = derived
+      }
+    } else if (sanitizedCustomerType) {
+      updateData.customer_type = sanitizedCustomerType
     }
 
     const normalFields: any = { ...updateData }
@@ -190,6 +196,7 @@ async function updateHandler(req: Request, res: Response): Promise<void> {
     delete normalFields.numero
     delete normalFields.customer_number
     delete normalFields.postal_code
+    delete normalFields.customer_type // Handle separately to avoid schema cache issues
 
     if (Object.keys(normalFields).length > 0) {
       const up = await admin.from('customers').update(normalFields).eq('id', id)
@@ -200,6 +207,26 @@ async function updateHandler(req: Request, res: Response): Promise<void> {
     if (Object.prototype.hasOwnProperty.call(updateData, 'postal_code')) {
       const pc = await admin.from('customers').update({ postal_code: updateData.postal_code }).eq('id', id)
       if (pc.error) { res.status(500).json({ success: false, error: pc.error.message }); return }
+    }
+
+    const warnings = []
+    
+    // Handle customer_type separately to avoid schema cache issues
+    if (Object.prototype.hasOwnProperty.call(updateData, 'customer_type') && updateData.customer_type) {
+      const { error: ctErr } = await admin
+        .from('customers')
+        .update({ customer_type: updateData.customer_type })
+        .eq('id', id)
+      if (ctErr) {
+        const msg = (ctErr.message || '').toLowerCase()
+        const isMissingCustomerType = msg.includes("'customer_type' column") || (msg.includes('customer_type') && msg.includes('schema'))
+        if (isMissingCustomerType) {
+          warnings.push('customer_type 未持久化：schema cache 未暴露 customer_type 欄位，其他欄位已保存')
+        } else {
+          res.status(500).json({ success: false, error: ctErr.message })
+          return
+        }
+      }
     }
 
     // Dual write número
@@ -214,12 +241,25 @@ async function updateHandler(req: Request, res: Response): Promise<void> {
             const m2 = (tryNumero.error.message || '').toLowerCase()
             const missingNumero = m2.includes("'numero' column") || (m2.includes('numero') && m2.includes('schema'))
             if (!missingNumero) { res.status(500).json({ success: false, error: tryNumero.error.message }); return }
+            else warnings.push('Número 未持久化：schema cache 未暴露 num/numero，其他欄位已保存')
           }
         } else { res.status(500).json({ success: false, error: tryNum.error.message }); return }
       }
     }
 
-    res.json({ success: true })
+    // Get updated customer data
+    const { data: finalCustomer, error: selectError } = await admin
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (selectError) {
+      res.status(500).json({ success: false, error: selectError.message })
+      return
+    }
+
+    res.json({ success: true, data: finalCustomer, warnings })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e?.message || 'Unexpected server error' })
   }
