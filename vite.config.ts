@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
 import 'dotenv/config'
 
-// Always proxy to backend on 3034 to match current server port
-const apiPort = '3034'
+// Always proxy to backend on 3035 to match current server port
+const apiPort = '3035'
 
 // https://vite.dev/config/
 export default defineConfig({

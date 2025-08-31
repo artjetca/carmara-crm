@@ -795,7 +795,17 @@ export default function Visits() {
                     referrerPolicy="no-referrer-when-downgrade"
                     src={routeCustomers.length === 1 
                       ? `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(getAddress(routeCustomers[0]))}&language=es`
-                      : `https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(getAddress(routeCustomers[0]))}&destination=${encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))}&waypoints=${routeCustomers.slice(1, -1).map(c => encodeURIComponent(getAddress(c))).join('|')}&mode=driving&language=es`}
+: (() => {
+                          const origin = encodeURIComponent(getAddress(routeCustomers[0]))
+                          const destination = encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))
+                          const waypointsList = routeCustomers.slice(1, -1)
+                          let url = `https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${origin}&destination=${destination}&mode=driving&language=es`
+                          if (waypointsList.length > 0) {
+                            const waypoints = waypointsList.map(c => encodeURIComponent(getAddress(c))).join('|')
+                            url += `&waypoints=${waypoints}`
+                          }
+                          return url
+                        })()}
                   />
                   {/* My Location button on map */}
                   <button
