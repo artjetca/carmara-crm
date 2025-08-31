@@ -97,12 +97,36 @@ export default function Visits() {
     }
   }
 
+  // Icon for "My Location" marker
+  const createMyLocationIcon = () => {
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'>
+  <defs>
+    <filter id='shadow' x='-20%' y='-20%' width='140%' height='140%'>
+      <feDropShadow dx='0' dy='1' stdDeviation='1' flood-color='rgba(0,0,0,0.25)'/>
+    </filter>
+  </defs>
+  <circle cx='10' cy='10' r='8' fill='#2563EB' filter='url(#shadow)' />
+  <circle cx='10' cy='10' r='3' fill='#FFFFFF' />
+  <circle cx='10' cy='10' r='2' fill='#2563EB' />
+</svg>`
+    const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
+    const g = (window as any).google
+    return {
+      url,
+      scaledSize: new g.maps.Size(20, 20),
+      anchor: new g.maps.Point(10, 10),
+    }
+  }
+
   // Google Maps JS API refs/state
   const mapRef = useRef<HTMLDivElement | null>(null)
   const mapInstanceRef = useRef<any>(null)
   const directionsServiceRef = useRef<any>(null)
   const directionsRendererRef = useRef<any>(null)
   const markersRef = useRef<any[]>([])
+  const myLocationMarkerRef = useRef<any>(null)
+  const myLocationInfoRef = useRef<any>(null)
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -297,6 +321,18 @@ export default function Visits() {
         }
         markersRef.current.forEach(m => m.setMap(null))
         markersRef.current = []
+        if (myLocationMarkerRef.current) {
+          try { myLocationMarkerRef.current.setMap(null) } catch {}
+          myLocationMarkerRef.current = null
+        }
+        if (myLocationInfoRef.current) {
+          try { myLocationInfoRef.current.close() } catch {}
+          myLocationInfoRef.current = null
+        }
+        try {
+          mapInstanceRef.current.setCenter({ lat: 36.7213, lng: -4.4214 })
+          mapInstanceRef.current.setZoom(9)
+        } catch {}
       } catch {}
     }
   }, [routeCustomers.length])
@@ -674,9 +710,54 @@ export default function Visits() {
 
       const options: PositionOptions = { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
       navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
+        async ({ coords }) => {
           const { latitude, longitude } = coords
-          alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+          // If map is not available (e.g., no route -> map not rendered), fallback to alert
+          let google: any = null
+          try { google = await ensureGoogleMapsLoaded() } catch {}
+          const map = mapInstanceRef.current
+          if (!map || !mapRef.current || !google) {
+            alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+            return
+          }
+
+          // Clear previous my-location marker/info
+          try {
+            if (myLocationMarkerRef.current) {
+              myLocationMarkerRef.current.setMap(null)
+              myLocationMarkerRef.current = null
+            }
+          } catch {}
+          try {
+            if (myLocationInfoRef.current) {
+              myLocationInfoRef.current.close()
+              myLocationInfoRef.current = null
+            }
+          } catch {}
+
+          const position = { lat: latitude, lng: longitude }
+          const marker = new google.maps.Marker({
+            position,
+            map,
+            icon: createMyLocationIcon(),
+            zIndex: 9999,
+            title: 'Mi Ubicación'
+          })
+          const infoHtml = `
+            <div class="text-[13px]">
+              <div class="font-semibold text-gray-900">Mi ubicación</div>
+              <div class="text-xs text-gray-600">${latitude.toFixed(6)}, ${longitude.toFixed(6)}</div>
+            </div>`
+          const info = new google.maps.InfoWindow({ content: infoHtml })
+          info.open({ anchor: marker, map })
+          myLocationMarkerRef.current = marker
+          myLocationInfoRef.current = info
+
+          try {
+            map.panTo(position)
+            const currentZoom = map.getZoom?.() ?? 0
+            if (!currentZoom || currentZoom < 13) map.setZoom(13)
+          } catch {}
         },
         (error) => {
           console.error('Error getting location:', error)
@@ -1295,33 +1376,6 @@ export default function Visits() {
                       <ExternalLink className="w-3 h-3" />
                       <span>Navegar</span>
                     </button>
-                  </div>
-                  {/* Lista de paradas con nombre y teléfono */}
-                  <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-xs max-h-[60%] overflow-y-auto">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">Paradas</h4>
-                    <div className="space-y-2">
-                      {routeCustomers.map((c, i) => (
-                        <div key={c.id} className="flex items-start space-x-2">
-                          <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <span className="text-blue-600 font-medium text-xs">{i + 1}</span>
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium text-gray-900 truncate">
-                              {(c.phone || c.mobile_phone) ? (
-                                <a href={telHref(c.phone || c.mobile_phone)} onClick={(e) => e.stopPropagation()} className="hover:underline">{c.name}</a>
-                              ) : (
-                                c.name
-                              )}
-                            </div>
-                            {(c.phone || c.mobile_phone) && (
-                              <a href={telHref(c.phone || c.mobile_phone)} onClick={(e) => e.stopPropagation()} className="text-[11px] text-blue-600 truncate hover:underline">
-                                {c.phone || c.mobile_phone}
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 </div>
               ))}
