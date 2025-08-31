@@ -588,25 +588,30 @@ export default function Customers() {
     ]
   }
 
-  // 获取所有可用的城市选项
-  const getAllCities = () => {
+  // 获取根据选择省份过滤的城市选项
+  const getFilteredCities = () => {
     const allCities = new Set<string>()
     
-    // 添加省份作为城市选项（对于Cádiz, Huelva, Ceuta）
-    provinces.forEach(province => {
-      allCities.add(province)
-    })
-    
-    // 添加所有市政区
-    Object.values(municipiosByProvince).forEach(cities => {
-      cities.forEach(city => allCities.add(city))
-    })
+    if (selectedProvince) {
+      // 如果选择了省份，只显示该省份的城市
+      allCities.add(selectedProvince) // 添加省份本身作为选项
+      const provinceCities = municipiosByProvince[selectedProvince] || []
+      provinceCities.forEach(city => allCities.add(city))
+    } else {
+      // 如果没有选择省份，显示所有城市
+      provinces.forEach(province => {
+        allCities.add(province)
+      })
+      Object.values(municipiosByProvince).forEach(cities => {
+        cities.forEach(city => allCities.add(city))
+      })
+    }
     
     return Array.from(allCities).sort()
   }
 
-  // 获取所有可用城市
-  const allCities = getAllCities()
+  // 获取可用城市（根据选择的省份过滤）
+  const allCities = getFilteredCities()
 
   const filteredAndSortedCustomers = customers
     .filter(customer => {
@@ -775,9 +780,18 @@ export default function Customers() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Todas las Ciudades</option>
-                {allCities.map(city => (
-                  <option key={city} value={city}>{city}</option>
-                ))}
+                {selectedProvince ? (
+                  <>
+                    <option key={selectedProvince} value={selectedProvince}>{selectedProvince}</option>
+                    {(municipiosByProvince[selectedProvince] || []).map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </>
+                ) : (
+                  allCities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))
+                )}
               </select>
             </div>
             <div className="lg:w-32 flex items-end">
