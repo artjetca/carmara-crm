@@ -593,15 +593,11 @@ export default function Customers() {
     const allCities = new Set<string>()
     
     if (selectedProvince) {
-      // 如果选择了省份，只显示该省份的城市
-      allCities.add(selectedProvince) // 添加省份本身作为选项
+      // 如果选择了省份，只显示该省份下的城市（不重複顯示省份名稱）
       const provinceCities = municipiosByProvince[selectedProvince] || []
       provinceCities.forEach(city => allCities.add(city))
     } else {
       // 如果没有选择省份，显示所有城市
-      provinces.forEach(province => {
-        allCities.add(province)
-      })
       Object.values(municipiosByProvince).forEach(cities => {
         cities.forEach(city => allCities.add(city))
       })
@@ -622,13 +618,13 @@ export default function Customers() {
       // 省份筛选
       const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
       
-      // 城市筛选 - 修复大小写敏感问题
+      // 城市篩選 - 嚴格只匹配實際城市名稱
       const customerCity = displayCity(customer)
-      const customerProvince = displayProvince(customer)
       const customerCityRaw = String(customer.city || '').trim()
+      
+      // 只匹配實際的城市，不管是否與省份同名
       const matchesCity = !selectedCity || 
-                         customerCity.toLowerCase() === selectedCity.toLowerCase() || 
-                         customerProvince.toLowerCase() === selectedCity.toLowerCase() ||
+                         customerCity.toLowerCase() === selectedCity.toLowerCase() ||
                          customerCityRaw.toLowerCase() === selectedCity.toLowerCase()
       
       
@@ -873,7 +869,6 @@ export default function Customers() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Provincia</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contrato</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notas</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo de Cliente</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <input
                     ref={headerCheckboxRef}
@@ -926,8 +921,6 @@ export default function Customers() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{(customer as any).contrato || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.notes || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <input
                           type="checkbox"
@@ -1037,11 +1030,8 @@ export default function Customers() {
                   <option value="">-</option>
                   {editProvince && (
                     <>
-                      {(editProvince === 'Cádiz' || editProvince === 'Huelva' || editProvince === 'Ceuta') && (
-                        <option key={editProvince} value={editProvince}>{editProvince}</option>
-                      )}
                       {(municipiosByProvince[editProvince] || []).map(m => (
-                        <option key={m} value={m} selected={m.toLowerCase() === editMunicipio.toLowerCase()}>{m}</option>
+                        <option key={m} value={m}>{m}</option>
                       ))}
                     </>
                   )}
@@ -1344,10 +1334,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               <option value="">-</option>
               {addProvince && (
                 <>
-                  {(addProvince === 'Cádiz' || addProvince === 'Huelva' || addProvince === 'Ceuta') && (
-                    <option key={addProvince} value={addProvince}>{addProvince}</option>
-                  )}
-                  {availableMunicipios.map(m => (
+                  {(municipiosByProvince[addProvince] || []).map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </>
