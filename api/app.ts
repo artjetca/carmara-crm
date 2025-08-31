@@ -29,27 +29,16 @@ app.get('/api/health', (req: Request, res: Response): void => {
 /**
  * API Routes (loaded with better error handling for Vercel)
  */
-try {
-  // Use require for better Vercel compatibility
-  const authRoutes = require('./routes/auth').default || require('./routes/auth');
-  app.use('/api/auth', authRoutes);
-} catch (e: any) {
-  console.error('[routes] failed to init /api/auth:', e?.message || e);
-}
+// Import routes
+import authRoutes from './routes/auth.js'
+import customersRoutes from './routes/customers.js'
+import geocodeRoutes from './routes/geocode.js'
+import distanceRoutes from './routes/distance.js'
 
-try {
-  const customersRoutes = require('./routes/customers').default || require('./routes/customers');
-  app.use('/api/customers', customersRoutes);
-} catch (e: any) {
-  console.error('[routes] failed to init /api/customers:', e?.message || e);
-}
-
-try {
-  const geocodeRoutes = require('./routes/geocode').default || require('./routes/geocode');
-  app.use('/api/geocode', geocodeRoutes);
-} catch (e: any) {
-  console.error('[routes] failed to init /api/geocode:', e?.message || e);
-}
+app.use('/api/auth', authRoutes)
+app.use('/api/customers', customersRoutes)
+app.use('/api/geocode', geocodeRoutes)
+app.use('/api/distance', distanceRoutes)
 
 /**
  * error handler middleware

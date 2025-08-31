@@ -1,22 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
-import { Customer } from '../lib/supabase'
+import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
 import {
   Plus,
   MapPin,
   User,
+  Phone,
+  Mail,
   Navigation,
   ExternalLink,
+  Clock,
   Trash2,
   GripVertical,
   Search,
   Route,
-  X,
-  ArrowUp,
-  ArrowDown,
-  Clock,
-  Car
+  X
 } from 'lucide-react'
 
 interface RouteCustomer extends Customer {
@@ -25,7 +24,7 @@ interface RouteCustomer extends Customer {
   duration?: number // minutes
 }
 
-export default function Visits() {
+export default function RoutePlanning() {
   const { user } = useAuth()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [routeCustomers, setRouteCustomers] = useState<RouteCustomer[]>([])
@@ -162,103 +161,32 @@ export default function Visits() {
     })
   }, [customers, routeCustomers, searchTerm, selectedProvince, selectedCity])
 
-  // 計算路線距離和時間
-  const calculateRouteDistanceAndTime = async (route: RouteCustomer[]) => {
-    if (route.length < 2) {
-      setTotalDistance(0)
-      setTotalDuration(0)
-      return
-    }
-
-    try {
-      const waypoints = route.map(customer => getAddress(customer))
-
-      const response = await fetch('/api/distance/calculate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ waypoints })
-      })
-
-      const result = await response.json()
-
-      if (result.success && result.data) {
-        const { segments, totalDistance: totDist, totalDuration: totTime } = result.data
-
-        // 更新每個客戶的距離和時間信息
-        segments.forEach((segment: any, index: number) => {
-          if (index < route.length - 1) {
-            route[index + 1].distance = segment.distance
-            route[index + 1].duration = segment.duration
-          }
-        })
-
-        setTotalDistance(totDist)
-        setTotalDuration(totTime)
-        
-        // 更新路線客戶數據
-        setRouteCustomers([...route])
-      } else {
-        console.warn('Distance calculation failed:', result.error)
-      }
-    } catch (error) {
-      console.error('Error calculating route distance and time:', error)
-    }
-  }
-
   // 添加客戶到路線
-  const addCustomerToRoute = async (customer: Customer) => {
+  const addCustomerToRoute = (customer: Customer) => {
     const routeCustomer: RouteCustomer = {
       ...customer,
       order: routeCustomers.length + 1
     }
-    const newRoute = [...routeCustomers, routeCustomer]
-    setRouteCustomers(newRoute)
-    
-    // 計算新路線的距離和時間
-    await calculateRouteDistanceAndTime(newRoute)
+    setRouteCustomers([...routeCustomers, routeCustomer])
   }
 
   // 從路線移除客戶
-  const removeFromRoute = async (customerId: string) => {
+  const removeFromRoute = (customerId: string) => {
     const newRoute = routeCustomers
       .filter(rc => rc.id !== customerId)
       .map((rc, index) => ({ ...rc, order: index + 1 }))
     setRouteCustomers(newRoute)
-    
-    // 重新計算距離和時間
-    await calculateRouteDistanceAndTime(newRoute)
   }
 
-  // 向上移動客戶
-  const moveUp = async (index: number) => {
-    if (index === 0) return
-    const newRoute = [...routeCustomers]
-    const temp = newRoute[index]
-    newRoute[index] = newRoute[index - 1]
-    newRoute[index - 1] = temp
-    // 重新分配順序
-    const reorderedRoute = newRoute.map((rc, idx) => ({ ...rc, order: idx + 1 }))
-    setRouteCustomers(reorderedRoute)
+  // 重新排序路線
+  const reorderRoute = (startIndex: number, endIndex: number) => {
+    const result = Array.from(routeCustomers)
+    const [removed] = result.splice(startIndex, 1)
+    result.splice(endIndex, 0, removed)
     
-    // 重新計算距離和時間
-    await calculateRouteDistanceAndTime(reorderedRoute)
-  }
-
-  // 向下移動客戶
-  const moveDown = async (index: number) => {
-    if (index === routeCustomers.length - 1) return
-    const newRoute = [...routeCustomers]
-    const temp = newRoute[index]
-    newRoute[index] = newRoute[index + 1]
-    newRoute[index + 1] = temp
-    // 重新分配順序
-    const reorderedRoute = newRoute.map((rc, idx) => ({ ...rc, order: idx + 1 }))
+    // 重新分配順序號碼
+    const reorderedRoute = result.map((rc, index) => ({ ...rc, order: index + 1 }))
     setRouteCustomers(reorderedRoute)
-    
-    // 重新計算距離和時間
-    await calculateRouteDistanceAndTime(reorderedRoute)
   }
 
   // 清空路線
@@ -266,6 +194,12 @@ export default function Visits() {
     setRouteCustomers([])
     setTotalDistance(0)
     setTotalDuration(0)
+  }
+
+  // 優化路線順序 (簡單版本 - 可後續改善)
+  const optimizeRoute = () => {
+    // TODO: 實作路線優化算法
+    console.log('Route optimization - to be implemented')
   }
 
   // 開啟 Google Maps 導航
@@ -474,27 +408,10 @@ export default function Visits() {
                   {routeCustomers.map((customer, index) => (
                     <div key={customer.id} className="p-4">
                       <div className="flex items-start space-x-3">
-                        <div className="flex flex-col items-center space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <GripVertical className="w-4 h-4 text-gray-400 cursor-move" />
                           <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                             <span className="text-blue-600 font-medium text-xs">{index + 1}</span>
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                            <button
-                              onClick={() => moveUp(index)}
-                              disabled={index === 0}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                              title="Subir"
-                            >
-                              <ArrowUp className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => moveDown(index)}
-                              disabled={index === routeCustomers.length - 1}
-                              className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                              title="Bajar"
-                            >
-                              <ArrowDown className="w-3 h-3" />
-                            </button>
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
@@ -506,9 +423,8 @@ export default function Visits() {
                           </div>
                           {customer.distance && customer.duration && (
                             <div className="flex items-center mt-1 space-x-2 text-xs text-gray-500">
-                              <Car className="w-3 h-3" />
                               <span>{customer.distance.toFixed(1)} km</span>
-                              <Clock className="w-3 h-3" />
+                              <span>•</span>
                               <span>{customer.duration} min</span>
                             </div>
                           )}
@@ -573,36 +489,19 @@ export default function Visits() {
                   </div>
                 </div>
               ) : (
-                <div className="h-full relative">
-                  <iframe
-                    className="w-full h-full border-0"
-                    loading="lazy"
-                    allowFullScreen
-                    referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(getAddress(routeCustomers[0]))}&destination=${encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))}&waypoints=${routeCustomers.slice(1, -1).map(c => encodeURIComponent(getAddress(c))).join('|')}&mode=driving`}
-                  />
-                  <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-xs">
-                    <h3 className="font-medium text-gray-900 mb-2">Ruta Actual</h3>
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <div className="flex justify-between">
-                        <span>Paradas:</span>
-                        <span className="font-medium">{routeCustomers.length}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Distancia:</span>
-                        <span className="font-medium">{totalDistance.toFixed(1)} km</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Tiempo:</span>
-                        <span className="font-medium">{Math.floor(totalDuration / 60)}h {totalDuration % 60}min</span>
-                      </div>
-                    </div>
+                <div className="h-full bg-gray-100 flex items-center justify-center">
+                  <div className="text-center">
+                    <MapPin className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Mapa de Google Maps</h3>
+                    <p className="text-gray-600 mb-4">
+                      Ruta con {routeCustomers.length} paradas planificadas
+                    </p>
                     <button
                       onClick={startNavigation}
-                      className="w-full mt-2 inline-flex items-center justify-center space-x-1 px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                      className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>Navegar</span>
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Abrir en Google Maps</span>
                     </button>
                   </div>
                 </div>
