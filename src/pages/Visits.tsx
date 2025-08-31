@@ -777,7 +777,7 @@ export default function Visits() {
               <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
               <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
             </div>
-            <div className="h-[1100px] relative">
+            <div className="h-[700px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
