@@ -361,7 +361,16 @@ export default function Visits() {
     const fromNotes = extractCityForDisplay(customer.notes)
     if (fromNotes) return fromNotes
     const city = String(customer.city || '').trim()
-    if (city && !isProvinceName(city)) return city
+    if (city) {
+      if (isProvinceName(city)) {
+        const province = (customer as any).province || ''
+        if (province === city) {
+          return city
+        }
+        return ''
+      }
+      return city
+    }
     return ''
   }
 
@@ -452,10 +461,12 @@ export default function Visits() {
       const matchesProvince = !selectedProvince || customerProvince === selectedProvince
 
       const customerCity = displayCity(customer)
-      const cityEqual = !!selectedCity && !!customerCity && customerCity.toLowerCase() === selectedCity.toLowerCase()
-      const selectedIsCapital = !!selectedCity && /^(huelva|c(a|á)diz|ceuta)$/i.test(selectedCity.trim())
-      const provinceEqual = !!selectedCity && !!customerProvince && selectedIsCapital && customerProvince.toLowerCase() === selectedCity.toLowerCase()
-      const matchesCity = !selectedCity || cityEqual || provinceEqual
+      const customerCityRaw = String(customer.city || '').trim()
+      // 僅當選擇了具體城市時，嚴格匹配該城市名稱，允許與省同名的城市（與 Customers.tsx 一致）
+      const matchesCity = !selectedCity || (
+        (!!customerCity && customerCity.toLowerCase() === selectedCity.toLowerCase()) ||
+        (!!customerCityRaw && customerCityRaw.toLowerCase() === selectedCity.toLowerCase())
+      )
 
       return matchesSearch && matchesProvince && matchesCity
     })
@@ -646,20 +657,40 @@ export default function Visits() {
   }, [])
 
   // 獲取當前位置 - 只顯示位置，不自動加入路線
-  const getCurrentLocation = () => {
-    if (navigator.geolocation) {
+  const getCurrentLocation = async () => {
+    try {
+      if (!('geolocation' in navigator)) {
+        alert('Geolocalización no disponible en este navegador')
+        return
+      }
+      // Comprobar permiso si el navegador lo soporta
+      try {
+        const perm = (navigator as any).permissions && await (navigator as any).permissions.query({ name: 'geolocation' as any })
+        if (perm && perm.state === 'denied') {
+          alert('Permiso de ubicación denegado. Habilítalo en la configuración del navegador para este sitio y vuelve a intentarlo.')
+          return
+        }
+      } catch {}
+
+      const options: PositionOptions = { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords
+        ({ coords }) => {
+          const { latitude, longitude } = coords
           alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
         },
         (error) => {
           console.error('Error getting location:', error)
-          alert('No se pudo obtener la ubicación actual')
-        }
+          let msg = 'No se pudo obtener la ubicación actual'
+          if (error.code === 1) msg = 'Permiso de ubicación denegado. Activa el permiso en el navegador y vuelve a intentarlo.'
+          else if (error.code === 2) msg = 'Ubicación no disponible. Verifica el GPS o los servicios de ubicación del dispositivo.'
+          else if (error.code === 3) msg = 'La solicitud de ubicación ha excedido el tiempo de espera. Inténtalo de nuevo.'
+          alert(msg)
+        },
+        options
       )
-    } else {
-      alert('Geolocalización no disponible en este navegador')
+    } catch (e) {
+      console.error('Error getting location:', e)
+      alert('No se pudo obtener la ubicación actual')
     }
   }
 
