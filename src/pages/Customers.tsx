@@ -748,8 +748,8 @@ export default function Customers() {
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Filtros de Clientes</h2>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="lg:flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -762,46 +762,44 @@ export default function Customers() {
                 />
               </div>
             </div>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="sm:w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
-            <select
-              value={selectedProvince}
-              onChange={(e) => setSelectedProvince(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">{t.customers.allProvinces}</option>
-              {provinces.map(province => (
-                <option key={province} value={province}>{province}</option>
-              ))}
-            </select>
-          </div>
-          <div className="sm:w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Todas las Ciudades</option>
-              {allCities.map(city => (
-                <option key={city} value={city}>{city}</option>
-              ))}
-            </select>
-          </div>
-          <div className="sm:w-48 flex items-end">
-            <button
-              onClick={() => {
-                setSearchTerm('')
-                setSelectedProvince('')
-                setSelectedCity('')
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              Limpiar Filtros
-            </button>
+            <div className="lg:w-48">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+              <select
+                value={selectedProvince}
+                onChange={(e) => setSelectedProvince(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">{t.customers.allProvinces}</option>
+                {provinces.map(province => (
+                  <option key={province} value={province}>{province}</option>
+                ))}
+              </select>
+            </div>
+            <div className="lg:w-48">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+              <select
+                value={selectedCity}
+                onChange={(e) => setSelectedCity(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Todas las Ciudades</option>
+                {allCities.map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </div>
+            <div className="lg:w-32 flex items-end">
+              <button
+                onClick={() => {
+                  setSearchTerm('')
+                  setSelectedProvince('')
+                  setSelectedCity('')
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                Limpiar Filtros
+              </button>
+            </div>
           </div>
         </div>
       </div>
