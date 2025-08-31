@@ -226,13 +226,8 @@ export default function Customers() {
     // 優先使用 province 欄位
     if ((c as any).province) {
       prov = (c as any).province
-      // 如果 city 是省份名且與 province 相同，則設為城市選項
-      if (c.city && (c.city === 'Cádiz' || c.city === 'Huelva' || c.city === 'Ceuta') && c.city === prov) {
-        muni = c.city
-      } else if (c.city && c.city !== 'Cádiz' && c.city !== 'Huelva' && c.city !== 'Ceuta') {
-        // 如果 city 不是省份名，則作為市政區
-        muni = c.city
-      }
+      // 直接使用 city 作為市政區，無論是否為省份名
+      muni = c.city || ''
     } else {
       // 沒有 province 欄位時，從 city 和 notes 推斷
       const extractedProv = extractProvince(c.notes)
@@ -240,15 +235,15 @@ export default function Customers() {
       
       if (extractedProv) {
         prov = extractedProv
-        muni = extractedMuni || (c.city && c.city !== extractedProv ? c.city : '')
+        muni = extractedMuni || c.city || ''
       } else if (c.city === 'Cádiz' || c.city === 'Huelva' || c.city === 'Ceuta') {
         // city 是省份名時
         prov = c.city
-        muni = c.city // 修復：當 city 是省份名時，muni 也應該是相同值
-      } else if (c.city) {
-        // city 不是省份名，嘗試從 notes 推斷省份
         muni = c.city
-        prov = extractedProv || ''
+      } else if (c.city) {
+        // city 不是省份名，從 notes 推斷省份或使用 Huelva 作為預設
+        muni = c.city
+        prov = extractedProv || 'Huelva' // 預設為 Huelva 省份
       }
     }
     
