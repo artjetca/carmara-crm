@@ -226,7 +226,6 @@ export default function Customers() {
     // 優先使用 province 欄位
     if ((c as any).province) {
       prov = (c as any).province
-      // 直接使用 city 作為市政區，無論是否為省份名
       muni = c.city || ''
     } else {
       // 沒有 province 欄位時，從 city 和 notes 推斷
@@ -241,9 +240,17 @@ export default function Customers() {
         prov = c.city
         muni = c.city
       } else if (c.city) {
-        // city 不是省份名，從 notes 推斷省份或使用 Huelva 作為預設
+        // city 不是省份名，需要找到對應的省份
         muni = c.city
-        prov = extractedProv || 'Huelva' // 預設為 Huelva 省份
+        // 查找城市屬於哪個省份
+        let foundProvince = ''
+        for (const [provinceName, cities] of Object.entries(municipiosByProvince)) {
+          if (cities.includes(c.city)) {
+            foundProvince = provinceName
+            break
+          }
+        }
+        prov = foundProvince || extractedProv || 'Huelva' // 預設為 Huelva 省份
       }
     }
     
