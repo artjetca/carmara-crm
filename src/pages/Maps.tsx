@@ -990,6 +990,18 @@ export default function Maps() {
               ))}
             </select>
           </div>
+          <div className="lg:w-32 flex items-end">
+            <button
+              onClick={() => {
+                setSearchTerm('')
+                setSelectedProvince('')
+                setSelectedCity('')
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              Limpiar Filtros
+            </button>
+          </div>
         </div>
       </div>
 
