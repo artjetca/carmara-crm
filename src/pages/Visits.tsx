@@ -191,21 +191,27 @@ export default function Visits() {
         return address
       })
 
+      console.log('[RoutePlanning] Sending request with waypoints:', waypoints)
+
       // 使用本地 Express API
       const response = await fetch('/api/distance/calculate', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({ waypoints })
       })
 
+      console.log('[RoutePlanning] Response status:', response.status)
+      
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorText = await response.text()
+        console.error('[RoutePlanning] API error response:', errorText)
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
       const result = await response.json()
-      console.log('[RoutePlanning] Distance API response:', result)
+      console.log('[RoutePlanning] Distance calculation result:', result)
 
       if (result.success && result.data) {
         const { segments, totalDistance: totDist, totalDuration: totTime } = result.data
@@ -352,38 +358,13 @@ export default function Visits() {
     setSavedRoutes(saved)
   }, [])
 
-  // 獲取當前位置
+  // 獲取當前位置 - 只顯示位置，不自動加入路線
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords
-          const locationCustomer: RouteCustomer = {
-            id: 'current-location',
-            name: 'Mi Ubicación',
-            company: 'Ubicación Actual',
-            address: `${latitude}, ${longitude}`,
-            city: 'Ubicación GPS',
-            province: '',
-            phone: '',
-            email: '',
-            notes: '',
-            contrato: '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            created_by: user?.id || '',
-            order: 1
-          }
-          
-          // 如果路線為空，添加當前位置作為起點
-          if (routeCustomers.length === 0) {
-            setRouteCustomers([locationCustomer])
-          } else {
-            // 否則將當前位置插入為第一個位置
-            const newRoute = [locationCustomer, ...routeCustomers.map((rc, idx) => ({ ...rc, order: idx + 2 }))]
-            setRouteCustomers(newRoute)
-            calculateRouteDistanceAndTime(newRoute)
-          }
+          alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
         },
         (error) => {
           console.error('Error getting location:', error)
