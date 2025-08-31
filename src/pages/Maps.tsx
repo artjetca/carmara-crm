@@ -999,15 +999,15 @@ export default function Maps() {
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              Limpiar Filtros
+              Limpiar
             </button>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Lista de clientes */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">{t.maps.customerList}</h2>
@@ -1050,13 +1050,76 @@ export default function Maps() {
               )}
             </div>
           </div>
+
+          {/* Customer details panel - moved to bottom */}
+          {selectedCustomer && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-gray-900">Detalles del Cliente</h3>
+                <button
+                  onClick={() => setSelectedCustomer(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-4">
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="font-medium text-gray-900">{selectedCustomer.name}</h4>
+                    {selectedCustomer.company && (
+                      <p className="text-sm text-gray-600">{selectedCustomer.company}</p>
+                    )}
+                  </div>
+                  
+                  {selectedCustomer.phone && (
+                    <div className="flex items-center space-x-2">
+                      <Phone className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-700">{selectedCustomer.phone}</span>
+                    </div>
+                  )}
+                  
+                  {selectedCustomer.email && (
+                    <div className="flex items-center space-x-2">
+                      <Mail className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-700">{selectedCustomer.email}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                    <span className="text-sm text-gray-700">{getAddress(selectedCustomer)}</span>
+                  </div>
+                  
+                  <div className="pt-3 border-t border-gray-200 space-y-2">
+                    <button
+                      onClick={() => openInGoogleMaps(selectedCustomer)}
+                      className="w-full inline-flex items-center justify-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Abrir en Mapas</span>
+                    </button>
+                    <button
+                      onClick={() => getDirections(selectedCustomer)}
+                      className="w-full inline-flex items-center justify-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>Obtener Direcciones</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Mapa y detalles */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* Mapa expandido */}
+        <div className="lg:col-span-3">
           {/* Mapa interactivo */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-96 relative">
+            <div className="h-[600px] relative">
               {/* Botón de centrar en mi ubicación */}
               <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2">
                 <button
