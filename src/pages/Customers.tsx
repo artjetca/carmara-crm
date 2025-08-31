@@ -351,16 +351,6 @@ export default function Customers() {
   const [sortField, setSortField] = useState<keyof Customer | ''>('')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
-  // 工具：在 notes 中插入/更新 指定鍵值行，例如 "Provincia: X"
-  const upsertNoteLine = (notes: string | null | undefined, key: 'Provincia' | 'Ciudad', value: string): string => {
-    const base = (notes || '').split('\n')
-    const idx = base.findIndex(line => line.trim().toLowerCase().startsWith(key.toLowerCase() + ':'))
-    const line = `${key}: ${value}`
-    if (idx >= 0) base[idx] = line
-    else base.push(line)
-    // 去除首尾空白行
-    return base.filter(l => l.trim().length > 0).join('\n')
-  }
 
   const handleProvinceChange = (prov: string) => {
     setEditProvince(prov)
@@ -1024,12 +1014,16 @@ export default function Customers() {
                   onChange={e => handleMunicipioChange(e.target.value)}
                 >
                   <option value="">-</option>
-                  {(editProvince === 'Cádiz' || editProvince === 'Huelva' || editProvince === 'Ceuta') && (
-                    <option key={editProvince} value={editProvince}>{editProvince}</option>
+                  {editProvince && (
+                    <>
+                      {(editProvince === 'Cádiz' || editProvince === 'Huelva' || editProvince === 'Ceuta') && (
+                        <option key={editProvince} value={editProvince}>{editProvince}</option>
+                      )}
+                      {(municipiosByProvince[editProvince] || []).map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </>
                   )}
-                  {(editProvince ? (municipiosByProvince[editProvince] || []) : []).map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
                 </select>
               </div>
               <div>
@@ -1218,7 +1212,8 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
         phone: formData.phone || null,
         email: formData.email || null,
         address: formData.address || null,
-        city: formData.city || null,
+        city: addMunicipio || addProvince || null,
+        province: addProvince || null,
         contrato: formData.contrato || null,
         notes: finalNotes || null,
         created_by: user.id,
@@ -1326,9 +1321,16 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               onChange={e => handleMunicipioChange(e.target.value)}
             >
               <option value="">-</option>
-              {availableMunicipios.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
+              {addProvince && (
+                <>
+                  {(addProvince === 'Cádiz' || addProvince === 'Huelva' || addProvince === 'Ceuta') && (
+                    <option key={addProvince} value={addProvince}>{addProvince}</option>
+                  )}
+                  {availableMunicipios.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
           <div>
