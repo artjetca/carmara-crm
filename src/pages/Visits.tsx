@@ -53,6 +53,50 @@ export default function Visits() {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
 
+  // Helpers for tel: links and safe HTML in InfoWindow
+  const sanitizePhone = (phone?: string) => String(phone || '').replace(/\D+/g, '')
+  const telHref = (phone?: string) => {
+    const digits = sanitizePhone(phone)
+    return digits ? `tel:${digits}` : ''
+  }
+  const escapeHtml = (str?: string) =>
+    String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+
+  const buildGoogleMapsSearchUrl = (customer: Customer) => {
+    const q = getAddress(customer)
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
+  }
+  const buildGoogleMapsDirectionsUrl = (customer: Customer) => {
+    const dest = getAddress(customer)
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`
+  }
+
+  // Build a custom numbered SVG marker icon to avoid default label outlines
+  const createNumberedMarkerIcon = (n: number) => {
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'>
+  <defs>
+    <filter id='shadow' x='-20%' y='-20%' width='140%' height='140%'>
+      <feDropShadow dx='0' dy='1' stdDeviation='1' flood-color='rgba(0,0,0,0.25)'/>
+    </filter>
+  </defs>
+  <circle cx='17' cy='17' r='14' fill='#2563EB' filter='url(#shadow)' />
+  <text x='17' y='21' text-anchor='middle' font-family='system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif' font-size='14' font-weight='700' fill='#FFFFFF'>${n}</text>
+</svg>`
+    const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
+    const g = (window as any).google
+    return {
+      url,
+      scaledSize: new g.maps.Size(34, 34),
+      anchor: new g.maps.Point(17, 17),
+    }
+  }
+
   // Google Maps JS API refs/state
   const mapRef = useRef<HTMLDivElement | null>(null)
   const mapInstanceRef = useRef<any>(null)
@@ -102,8 +146,24 @@ export default function Visits() {
         }
         if (!directionsServiceRef.current) directionsServiceRef.current = new google.maps.DirectionsService()
         if (!directionsRendererRef.current) {
-          directionsRendererRef.current = new google.maps.DirectionsRenderer({ suppressMarkers: true })
+          directionsRendererRef.current = new google.maps.DirectionsRenderer({
+            suppressMarkers: true,
+            polylineOptions: {
+              strokeColor: '#2563EB',
+              strokeOpacity: 0.9,
+              strokeWeight: 5
+            }
+          })
           directionsRendererRef.current.setMap(mapInstanceRef.current)
+        } else {
+          // Ensure polyline styling is applied even if renderer already exists
+          directionsRendererRef.current.setOptions({
+            polylineOptions: {
+              strokeColor: '#2563EB',
+              strokeOpacity: 0.9,
+              strokeWeight: 5
+            }
+          })
         }
 
         // If only one stop, skip directions and just drop a marker
@@ -123,12 +183,28 @@ export default function Visits() {
             const marker = new (window as any).google.maps.Marker({
               position,
               map,
-              label: '1',
+              icon: createNumberedMarkerIcon(1),
               title: `${single.name}${single.phone ? ' • ' + single.phone : ''}`
             })
-            const info = new (window as any).google.maps.InfoWindow({
-              content: `<div style=\"font-size:12px\"><strong>1. ${single.name}</strong><br/>${single.phone ? single.phone : ''}</div>`
-            })
+            const infoHtml = `
+              <div class="space-y-3 text-[13px]">
+                <div class="border-b border-gray-200 pb-2">
+                  <div class="font-semibold text-gray-900">1. ${escapeHtml(single.name)}</div>
+                  ${single.company ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(single.company)}</div>` : ''}
+                </div>
+                <div class="space-y-2">
+                  ${single.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(single.address)}</div>` : ''}
+                  <div class="text-xs text-gray-500">${escapeHtml(displayCity(single) || single.city || single.province || '')}</div>
+                  ${(single.phone || (single as any).mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(single.phone || (single as any).mobile_phone)}</div>` : ''}
+                  ${single.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(single.email)}</div>` : ''}
+                </div>
+                <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+                  ${(single.phone || (single as any).mobile_phone) ? `<a href="${telHref(single.phone || (single as any).mobile_phone)}" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md\">Llamar</a>` : ''}
+                  <a href="${buildGoogleMapsDirectionsUrl(single)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md">Direcciones</a>
+                  <a href="${buildGoogleMapsSearchUrl(single)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md">Google Maps</a>
+                </div>
+              </div>`
+            const info = new (window as any).google.maps.InfoWindow({ content: infoHtml })
             marker.addListener('click', () => info.open({ anchor: marker, map }))
             markersRef.current.push(marker)
             map.setCenter(position)
@@ -173,12 +249,29 @@ export default function Visits() {
           const marker = new (window as any).google.maps.Marker({
             position,
             map,
-            label: String(idx + 1),
+            icon: createNumberedMarkerIcon(idx + 1),
             title: `${item.c.name}${item.c.phone ? ' • ' + item.c.phone : ''}`
           })
-          const info = new (window as any).google.maps.InfoWindow({
-            content: `<div style="font-size:12px"><strong>${idx + 1}. ${item.c.name}</strong><br/>${item.c.phone ? item.c.phone : ''}</div>`
-          })
+          const c = item.c as any
+          const infoHtml = `
+            <div class="space-y-3 text-[13px]">
+              <div class="border-b border-gray-200 pb-2">
+                <div class="font-semibold text-gray-900">${idx + 1}. ${escapeHtml(c.name)}</div>
+                ${c.company ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(c.company)}</div>` : ''}
+              </div>
+              <div class="space-y-2">
+                ${c.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.address)}</div>` : ''}
+                <div class="text-xs text-gray-500">${escapeHtml(displayCity(c) || c.city || c.province || '')}</div>
+                ${(c.phone || c.mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.phone || c.mobile_phone)}</div>` : ''}
+                ${c.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.email)}</div>` : ''}
+              </div>
+              <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+                ${(c.phone || c.mobile_phone) ? `<a href="${telHref(c.phone || c.mobile_phone)}" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md\">Llamar</a>` : ''}
+                <a href="${buildGoogleMapsDirectionsUrl(c)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md">Direcciones</a>
+                <a href="${buildGoogleMapsSearchUrl(c)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md">Google Maps</a>
+              </div>
+            </div>`
+          const info = new (window as any).google.maps.InfoWindow({ content: infoHtml })
           marker.addListener('click', () => info.open({ anchor: marker, map }))
           markersRef.current.push(marker)
           bounds.extend(position)
@@ -911,8 +1004,24 @@ export default function Visits() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-gray-900 truncate">{customer.name}</h3>
+                          <h3 className="text-sm font-medium text-gray-900 truncate">
+                            {(customer.phone || (customer as any).mobile_phone) ? (
+                              <a href={telHref(customer.phone || (customer as any).mobile_phone)} className="hover:underline">
+                                {customer.name}
+                              </a>
+                            ) : (
+                              customer.name
+                            )}
+                          </h3>
                           <p className="text-xs text-gray-600 truncate">{customer.company}</p>
+                          {(customer.phone || (customer as any).mobile_phone) && (
+                            <a
+                              href={telHref(customer.phone || (customer as any).mobile_phone)}
+                              className="text-xs text-blue-600 hover:underline mt-0.5 inline-block"
+                            >
+                              {customer.phone || (customer as any).mobile_phone}
+                            </a>
+                          )}
                           <div className="flex items-center mt-1">
                             <MapPin className="w-3 h-3 text-gray-400 mr-1" />
                             <span className="text-xs text-gray-500">{displayCity(customer) || customer.city || customer.province}</span>
@@ -990,8 +1099,29 @@ export default function Visits() {
                           className="flex-1 min-w-0 cursor-pointer"
                           onClick={() => setSelectedCustomer(customer)}
                         >
-                          <h3 className="text-sm font-medium text-gray-900 truncate">{customer.name}</h3>
+                          <h3 className="text-sm font-medium text-gray-900 truncate">
+                            {(customer.phone || (customer as any).mobile_phone) ? (
+                              <a
+                                href={telHref(customer.phone || (customer as any).mobile_phone)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="hover:underline"
+                              >
+                                {customer.name}
+                              </a>
+                            ) : (
+                              customer.name
+                            )}
+                          </h3>
                           <p className="text-xs text-gray-600 truncate">{customer.company}</p>
+                          {(customer.phone || (customer as any).mobile_phone) && (
+                            <a
+                              href={telHref(customer.phone || (customer as any).mobile_phone)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-blue-600 hover:underline mt-0.5 inline-block"
+                            >
+                              {customer.phone || (customer as any).mobile_phone}
+                            </a>
+                          )}
                           <div className="flex items-center mt-1">
                             <MapPin className="w-3 h-3 text-gray-400 mr-1" />
                             <span className="text-xs text-gray-500">{displayCity(customer) || customer.city}</span>
@@ -1145,9 +1275,17 @@ export default function Visits() {
                             <span className="text-blue-600 font-medium text-xs">{i + 1}</span>
                           </div>
                           <div className="min-w-0">
-                            <div className="text-xs font-medium text-gray-900 truncate">{c.name}</div>
-                            {c.phone && (
-                              <div className="text-[11px] text-gray-600 truncate">{c.phone}</div>
+                            <div className="text-xs font-medium text-gray-900 truncate">
+                              {(c.phone || c.mobile_phone) ? (
+                                <a href={telHref(c.phone || c.mobile_phone)} onClick={(e) => e.stopPropagation()} className="hover:underline">{c.name}</a>
+                              ) : (
+                                c.name
+                              )}
+                            </div>
+                            {(c.phone || c.mobile_phone) && (
+                              <a href={telHref(c.phone || c.mobile_phone)} onClick={(e) => e.stopPropagation()} className="text-[11px] text-blue-600 truncate hover:underline">
+                                {c.phone || c.mobile_phone}
+                              </a>
                             )}
                           </div>
                         </div>
@@ -1180,10 +1318,15 @@ export default function Visits() {
                     )}
                   </div>
                   
-                  {selectedCustomer.phone && (
+                  {(selectedCustomer.phone || (selectedCustomer as any).mobile_phone) && (
                     <div className="flex items-center space-x-2">
                       <Phone className="w-4 h-4 text-gray-400" />
-                      <span className="text-sm text-gray-700">{selectedCustomer.phone}</span>
+                      <a
+                        href={telHref(selectedCustomer.phone || (selectedCustomer as any).mobile_phone)}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        {selectedCustomer.phone || (selectedCustomer as any).mobile_phone}
+                      </a>
                     </div>
                   )}
                   
