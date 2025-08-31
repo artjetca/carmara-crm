@@ -242,10 +242,10 @@ export default function Customers() {
       } else if (c.city) {
         // city 不是省份名，需要找到對應的省份
         muni = c.city
-        // 查找城市屬於哪個省份
+        // 查找城市屬於哪個省份 - 使用大小寫不敏感比較
         let foundProvince = ''
         for (const [provinceName, cities] of Object.entries(municipiosByProvince)) {
-          if (cities.includes(c.city)) {
+          if (cities.some(city => city.toLowerCase() === c.city.toLowerCase())) {
             foundProvince = provinceName
             break
           }
@@ -622,14 +622,14 @@ export default function Customers() {
       // 省份筛选
       const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
       
-      // 城市筛选 - 修复筛选逻辑
+      // 城市筛选 - 修复大小写敏感问题
       const customerCity = displayCity(customer)
       const customerProvince = displayProvince(customer)
       const customerCityRaw = String(customer.city || '').trim()
       const matchesCity = !selectedCity || 
-                         customerCity === selectedCity || 
-                         customerProvince === selectedCity ||
-                         customerCityRaw === selectedCity
+                         customerCity.toLowerCase() === selectedCity.toLowerCase() || 
+                         customerProvince.toLowerCase() === selectedCity.toLowerCase() ||
+                         customerCityRaw.toLowerCase() === selectedCity.toLowerCase()
       
       
       return matchesSearch && matchesProvince && matchesCity
@@ -1041,7 +1041,7 @@ export default function Customers() {
                         <option key={editProvince} value={editProvince}>{editProvince}</option>
                       )}
                       {(municipiosByProvince[editProvince] || []).map(m => (
-                        <option key={m} value={m}>{m}</option>
+                        <option key={m} value={m} selected={m.toLowerCase() === editMunicipio.toLowerCase()}>{m}</option>
                       ))}
                     </>
                   )}
