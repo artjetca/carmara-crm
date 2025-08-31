@@ -257,42 +257,61 @@ export default function Visits() {
         markersRef.current.forEach(m => m.setMap(null))
         markersRef.current = []
 
-        // Geocode and create numbered markers with info windows
-        const geocoded = await Promise.all(
-          routeCustomers.map(async (c) => {
-            const coords = await geocodeAddress(getAddress(c))
-            return { c, coords }
-          })
-        )
-
+        // Place markers using DirectionsResult legs to ensure markers align with polyline
         const map = mapInstanceRef.current
+        const route = (result as any)?.routes?.[0]
+        const legs: any[] = route?.legs || []
+
+        // Build positions from legs: start of first leg, then end of each leg -> N stops
+        let positions: Array<{ lat: number; lng: number }> = []
+        if (legs.length > 0) {
+          const first = legs[0].start_location
+          positions.push({ lat: first.lat(), lng: first.lng() })
+          legs.forEach((leg) => {
+            const end = leg.end_location
+            positions.push({ lat: end.lat(), lng: end.lng() })
+          })
+        }
+
+        // Fallback: if legs are missing or length mismatch, geocode each address
+        if (positions.length !== routeCustomers.length) {
+          const geocoded = await Promise.all(
+            routeCustomers.map(async (c) => {
+              const coords = await geocodeAddress(getAddress(c))
+              return coords ? { lat: coords.lat, lng: coords.lng } : null
+            })
+          )
+          positions = geocoded.filter(Boolean) as Array<{ lat: number; lng: number }>
+        }
+
         const bounds = new (window as any).google.maps.LatLngBounds()
-        geocoded.forEach((item, idx) => {
-          if (!item.coords) return
-          const position = { lat: item.coords.lat, lng: item.coords.lng }
+        routeCustomers.forEach((c, idx) => {
+          const pos = positions[idx]
+          if (!pos) return
+          const position = { lat: pos.lat, lng: pos.lng }
           const marker = new (window as any).google.maps.Marker({
             position,
             map,
             icon: createNumberedMarkerIcon(idx + 1),
-            title: `${item.c.name}${item.c.phone ? ' • ' + item.c.phone : ''}`
+            title: `${c.name}${(c as any).phone ? ' • ' + (c as any).phone : ''}`
           })
-          const c = item.c as any
+          const rc: any = c
           const infoHtml = `
             <div class="space-y-3 text-[13px]">
               <div class="border-b border-gray-200 pb-2">
-                <div class="font-semibold text-gray-900">${idx + 1}. ${escapeHtml(c.name)}</div>
-                ${c.company ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(c.company)}</div>` : ''}
+                <div class="font-semibold text-gray-900">${idx + 1}. ${escapeHtml(rc.name)}</div>
+                ${rc.company ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(rc.company)}</div>` : ''}
               </div>
               <div class="space-y-2">
-                ${c.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.address)}</div>` : ''}
-                <div class="text-xs text-gray-500">${escapeHtml(displayCity(c) || c.city || c.province || '')}</div>
-                ${(c.phone || c.mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.phone || c.mobile_phone)}</div>` : ''}
-                ${c.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.email)}</div>` : ''}
+                ${rc.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(rc.address)}</div>` : ''}
+                <div class="text-xs text-gray-500">${escapeHtml(displayCity(rc) || rc.city || rc.province || '')}</div>
+                ${(rc.phone || rc.mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(rc.phone || rc.mobile_phone)}</div>` : ''}
+                ${rc.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(rc.email)}</div>` : ''}
               </div>
               <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
-                ${(c.phone || c.mobile_phone) ? `<a href="${telHref(c.phone || c.mobile_phone)}" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md\">Llamar</a>` : ''}
-                <a href="${buildGoogleMapsDirectionsUrl(c)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md">Direcciones</a>
-                <a href="${buildGoogleMapsSearchUrl(c)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md">Google Maps</a>
+                ${(rc.phone || rc.mobile_phone) ? `<a href="${telHref(rc.phone || rc.mobile_phone)}" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md\">Llamar</a>` : ''}
+                <a href="${buildGoogleMapsDirectionsUrl(rc)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md">Direcciones</a>
+                <a href="${buildGoogleMapsSearchUrl(rc)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md">Google Maps</a>
               </div>
             </div>`
           const info = new (window as any).google.maps.InfoWindow({ content: infoHtml })

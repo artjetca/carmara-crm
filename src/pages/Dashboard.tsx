@@ -116,12 +116,12 @@ export default function Dashboard() {
         }
       }
       
-      const todayVisits = (visitsData || []).filter(visit => {
+      let todayVisits = (visitsData || []).filter(visit => {
         const iso = getVisitDateIso(visit)
         return iso ? iso.startsWith(todayStr) : false
       }).length
       
-      const pendingVisits = (visitsData || []).filter(visit => 
+      let pendingVisits = (visitsData || []).filter(visit => 
         visit.status === 'pending' || visit.status === 'programada'
       ).length
       
@@ -129,12 +129,55 @@ export default function Dashboard() {
         visit.status === 'completed' || visit.status === 'completada'
       ).length
       
-      const thisWeekVisits = (visitsData || []).filter(visit => {
+      let thisWeekVisits = (visitsData || []).filter(visit => {
         const iso = getVisitDateIso(visit)
         if (!iso) return false
         const visitDate = new Date(iso)
         return visitDate >= startOfWeek
       }).length
+
+      // Include local saved routes from Programación de Visitas (localStorage)
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = localStorage.getItem('savedRoutes')
+          const savedRoutes: any[] = raw ? JSON.parse(raw) : []
+          const startOfToday = new Date(today)
+          startOfToday.setHours(0, 0, 0, 0)
+
+          const parseRouteDate = (r: any): Date | null => {
+            const d = (r?.date || '').toString().trim()
+            const t = (r?.time || '00:00').toString().trim()
+            if (!d) return null
+            const iso = `${d}T${t.length === 5 ? t + ':00' : t}`
+            const dt = new Date(iso)
+            return isNaN(dt.getTime()) ? null : dt
+          }
+
+          const savedToday = savedRoutes.filter(r => {
+            const dt = parseRouteDate(r)
+            if (!dt) return false
+            return dt.toISOString().startsWith(todayStr)
+          }).length
+
+          const savedPending = savedRoutes.filter(r => {
+            const dt = parseRouteDate(r)
+            if (!dt) return false
+            return dt >= startOfToday
+          }).length
+
+          const savedThisWeek = savedRoutes.filter(r => {
+            const dt = parseRouteDate(r)
+            if (!dt) return false
+            return dt >= startOfWeek
+          }).length
+
+          todayVisits += savedToday
+          pendingVisits += savedPending
+          thisWeekVisits += savedThisWeek
+        }
+      } catch (e) {
+        console.warn('Dashboard: failed to include saved routes from localStorage', e)
+      }
       
       const thisMonthCustomers = (customersData || []).filter(customer => {
         const createdDate = new Date(customer.created_at || '')
