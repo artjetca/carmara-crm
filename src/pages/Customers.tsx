@@ -685,6 +685,11 @@ export default function Customers() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t.customers.title}</h1>
           <p className="text-gray-600">{t.customers.subtitle}</p>
+          {(selectedCity || selectedProvince || searchTerm) && (
+            <div className="mt-2 text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-lg inline-block">
+              {filteredAndSortedCustomers.length} clientes {selectedCity ? `en ${selectedCity}` : selectedProvince ? `en provincia ${selectedProvince}` : ''}
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-3">
           <button onClick={handleImportClick} className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
