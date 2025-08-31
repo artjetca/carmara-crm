@@ -21,6 +21,7 @@ export default function Maps() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedProvince, setSelectedProvince] = useState('')
+  const [selectedCity, setSelectedCity] = useState('')
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   // 從 localStorage 載入已保存的座標，避免重複地理編碼
   const [coordsById, setCoordsById] = useState<Record<string, { lat: number; lng: number }>>(() => {
@@ -98,16 +99,48 @@ export default function Maps() {
     }
   }
 
-  // Solo mostrar provincias Cádiz y Huelva en el filtro
-  const provinces = ['Cádiz', 'Huelva']
+  // Provincias disponibles - 與客戶頁面一致
+  const provinces = ['Cádiz', 'Huelva', 'Ceuta']
+  
+  // Municipios por provincia - 與客戶頁面完全一致
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': [
+      'Alcalá de los Gazules', 'Alcalá del Valle', 'Algar', 'Algeciras', 'Algodonales', 'Arcos de la Frontera',
+      'Barbate', 'Benalup-Casas Viejas', 'Benaocaz', 'Bornos', 'El Bosque', 'Cádiz', 'Castellar de la Frontera',
+      'Chiclana de la Frontera', 'Chipiona', 'Conil de la Frontera', 'Espera', 'El Gastor', 'Grazalema',
+      'Jerez de la Frontera', 'Jimena de la Frontera', 'La Línea de la Concepción', 'Los Barrios',
+      'Medina-Sidonia', 'Olvera', 'Paterna de Rivera', 'Prado del Rey', 'El Puerto de Santa María',
+      'Puerto Real', 'Puerto Serrano', 'Rota', 'San Fernando', 'San José del Valle', 'San Roque',
+      'Sanlúcar de Barrameda', 'Setenil de las Bodegas', 'Tarifa', 'Torre Alháquime', 'Trebujena',
+      'Ubrique', 'Vejer de la Frontera', 'Villaluenga del Rosario', 'Villamartín', 'Zahara'
+    ],
+    'Huelva': [
+      'Alájar', 'Aljaraque', 'Almendro', 'Almonaster la Real', 'Almonte', 'Alosno', 'Aracena',
+      'Aroche', 'Arroyomolinos de León', 'Ayamonte', 'Beas', 'Berrocal', 'Bollullos Par del Condado',
+      'Bonares', 'Cabezas Rubias', 'Cala', 'Calañas', 'El Campillo', 'Campofrío', 'Cañaveral de León',
+      'Cartaya', 'Castaño del Robledo', 'El Cerro de Andévalo', 'Corteconcepción', 'Cortegana',
+      'Cortelazor', 'Cumbres de Enmedio', 'Cumbres de San Bartolomé', 'Cumbres Mayores', 'Encinasola',
+      'Escacena del Campo', 'Fuenteheridos', 'Galaroza', 'El Granado', 'La Granada de Río-Tinto',
+      'Gibraleón', 'Higuera de la Sierra', 'Hinojales', 'Hinojos', 'Huelva', 'Isla Cristina',
+      'Jabugo', 'Lepe', 'Linares de la Sierra', 'Lucena del Puerto', 'Manzanilla', 'Marines',
+      'Minas de Riotinto', 'Moguer', 'La Nava', 'Nerva', 'Niebla', 'Palos de la Frontera',
+      'La Palma del Condado', 'Paterna del Campo', 'Paymogo', 'Puebla de Guzmán', 'Puerto Moral',
+      'Punta Umbría', 'Rociana del Condado', 'Rosal de la Frontera', 'San Bartolomé de la Torre',
+      'San Juan del Puerto', 'San Silvestre de Guzmán', 'Sanlúcar de Guadiana', 'Santa Ana la Real',
+      'Santa Bárbara de Casa', 'Santa Olalla del Cala', 'Trigueros', 'Valdelarco', 'Valverde del Camino',
+      'Villablanca', 'Villalba del Alcor', 'Villanueva de las Cruces', 'Villanueva de los Castillejos',
+      'Villarrasa', 'Zalamea la Real', 'Zufre'
+    ],
+    'Ceuta': ['Ceuta']
+  }
 
   // 與 Visits 頁面一致的城市顯示與解析規則
   const isProvinceName = (v?: string) => {
     const s = String(v || '').trim().toLowerCase()
-    return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+    return s === 'huelva' || s === 'cádiz' || s === 'cadiz' || s === 'ceuta'
   }
 
-  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz" 或 "Huelva"
+  // 省份名稱標準化：無論大小寫/重音，統一為 "Cádiz"、"Huelva" 或 "Ceuta"
   const toCanonicalProvince = (v?: string): string => {
     const s = String(v || '')
       .trim()
@@ -116,7 +149,26 @@ export default function Maps() {
       .replace(/[\u0300-\u036f]/g, '') // 去除重音符號
     if (s === 'huelva') return 'Huelva'
     if (s === 'cadiz') return 'Cádiz'
+    if (s === 'ceuta') return 'Ceuta'
     return ''
+  }
+
+  // 获取根据选择省份过滤的城市选项
+  const getFilteredCities = () => {
+    const allCities = new Set<string>()
+    
+    if (selectedProvince) {
+      // 如果选择了省份，只显示该省份下的城市
+      const provinceCities = municipiosByProvince[selectedProvince] || []
+      provinceCities.forEach(city => allCities.add(city))
+    } else {
+      // 如果没有选择省份，显示所有城市
+      Object.values(municipiosByProvince).forEach(cities => {
+        cities.forEach(city => allCities.add(city))
+      })
+    }
+    
+    return Array.from(allCities).sort()
   }
 
   const extractCityForDisplay = (notes?: string): string => {
@@ -176,25 +228,28 @@ export default function Maps() {
         const matchesSearch = (
           customer.name?.toLowerCase().includes(q) ||
           customer.company?.toLowerCase().includes(q) ||
-          customer.city?.toLowerCase().includes(q)
+          customer.email?.toLowerCase().includes(q)
         )
         
-        // 如果沒有選擇省份或選擇的是空字串，顯示所有客戶
-        if (!selectedProvince || selectedProvince === '') {
-          return matchesSearch
-        }
+        // 省份篩選
+        const matchesProvince = !selectedProvince || toCanonicalProvince(displayProvince(customer)) === toCanonicalProvince(selectedProvince)
         
-        // 檢查省份是否匹配
-        const customerProvince = displayProvince(customer)
-        const matchesProvince = toCanonicalProvince(customerProvince) === toCanonicalProvince(selectedProvince)
+        // 城市篩選 - 嚴格只匹配實際城市名稱
+        const customerCity = displayCity(customer)
+        const customerCityRaw = String(customer.city || '').trim()
         
-        return matchesSearch && matchesProvince
+        // 只匹配實際的城市，不管是否與省份同名
+        const matchesCity = !selectedCity || 
+                           customerCity.toLowerCase() === selectedCity.toLowerCase() ||
+                           customerCityRaw.toLowerCase() === selectedCity.toLowerCase()
+        
+        return matchesSearch && matchesProvince && matchesCity
       })
     } catch (error) {
       console.error('[FILTER] Error filtering customers:', error)
       return []
     }
-  }, [customers, searchTerm, selectedProvince])
+  }, [customers, searchTerm, selectedProvince, selectedCity])
 
   const getAddress = (c: Customer) => {
     // 以解析後城市為優先，若無則回退到 city，再回退 province
@@ -885,12 +940,17 @@ export default function Maps() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t.maps.title}</h1>
           <p className="text-gray-600">{t.maps.subtitle}</p>
+          {(selectedCity || selectedProvince || searchTerm) && (
+            <div className="mt-2 text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-lg inline-block">
+              {filteredCustomers.length} clientes {selectedCity ? `en ${selectedCity}` : selectedProvince ? `en provincia ${selectedProvince}` : ''}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Filtros */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col lg:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -906,12 +966,27 @@ export default function Maps() {
           <div className="sm:w-48">
             <select
               value={selectedProvince}
-              onChange={(e) => setSelectedProvince(e.target.value)}
+              onChange={(e) => {
+                setSelectedProvince(e.target.value)
+                setSelectedCity('') // 清空城市選擇
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">{t.maps.allProvinces}</option>
+              <option value="">Todas las Provincias</option>
               {provinces.map(province => (
                 <option key={province} value={province as string}>{province}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:w-48">
+            <select
+              value={selectedCity}
+              onChange={(e) => setSelectedCity(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Todas las Ciudades</option>
+              {getFilteredCities().map(city => (
+                <option key={city} value={city}>{city}</option>
               ))}
             </select>
           </div>
