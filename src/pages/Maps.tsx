@@ -1119,7 +1119,7 @@ export default function Maps() {
         <div className="lg:col-span-3">
           {/* Mapa interactivo */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-[600px] relative">
+            <div className="h-[800px] relative">
               {/* Botón de centrar en mi ubicación */}
               <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2">
                 <button
@@ -1283,66 +1283,6 @@ export default function Maps() {
             </div>
           </div>
 
-          {/* Detalles del cliente seleccionado */}
-          {selectedCustomer && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">{selectedCustomer.name}</h3>
-                  <p className="text-gray-600">{selectedCustomer.company}</p>
-                  {selectedCustomer.position && (
-                    <p className="text-sm text-gray-500">{selectedCustomer.position}</p>
-                  )}
-                </div>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => openInGoogleMaps(selectedCustomer)}
-                    className="inline-flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>{t.maps.openInMaps}</span>
-                  </button>
-                  <button
-                    onClick={() => getDirections(selectedCustomer)}
-                    className="inline-flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                  >
-                    <Navigation className="w-4 h-4" />
-                    <span>{t.maps.getDirections}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3">{t.maps.contactInfo}</h4>
-                  <div className="space-y-2">
-                    {selectedCustomer.phone && (
-                      <div className="flex items-center space-x-2">
-                        <Phone className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-600">{selectedCustomer.phone}</span>
-                        <a href={`tel:${selectedCustomer.phone}`} className="text-blue-600 hover:text-blue-800 text-xs">{t.maps.call}</a>
-                      </div>
-                    )}
-                    {selectedCustomer.email && (
-                      <div className="flex items-center space-x-2">
-                        <Mail className="w-4 h-4 text-gray-400" />
-                        <span className="text-sm text-gray-600">{selectedCustomer.email}</span>
-                        <a href={`mailto:${selectedCustomer.email}`} className="text-blue-600 hover:text-blue-800 text-xs">{t.maps.email}</a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium text-gray-900 mb-3">{t.maps.location}</h4>
-                  <div className="text-sm text-gray-600">
-                    <div>{selectedCustomer.address}</div>
-                    <div>{displayCity(selectedCustomer) || selectedCustomer.city || selectedCustomer.province}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
