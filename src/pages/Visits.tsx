@@ -42,6 +42,10 @@ export default function Visits() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [routeDate, setRouteDate] = useState('')
   const [routeTime, setRouteTime] = useState('')
+  const [savedRoutes, setSavedRoutes] = useState<any[]>([])
+  const [routeName, setRouteName] = useState('')
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [showLoadModal, setShowLoadModal] = useState(false)
   const t = translations
 
   useEffect(() => {
@@ -187,6 +191,7 @@ export default function Visits() {
         return address
       })
 
+      // 使用本地 Express API
       const response = await fetch('/api/distance/calculate', {
         method: 'POST',
         headers: {
@@ -194,6 +199,10 @@ export default function Visits() {
         },
         body: JSON.stringify({ waypoints })
       })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
 
       const result = await response.json()
       console.log('[RoutePlanning] Distance API response:', result)
@@ -204,7 +213,7 @@ export default function Visits() {
         // 更新每個客戶的距離和時間信息
         const updatedRoute = [...route]
         segments.forEach((segment: any, index: number) => {
-          if (index < updatedRoute.length - 1) {
+          if (index < updatedRoute.length - 1 && !segment.error) {
             updatedRoute[index + 1].distance = segment.distance
             updatedRoute[index + 1].duration = Math.round(segment.duration)
             console.log(`[RoutePlanning] Stop ${index + 2}: ${segment.distance.toFixed(1)}km, ${Math.round(segment.duration)}min`)
@@ -288,7 +297,60 @@ export default function Visits() {
     setRouteCustomers([])
     setTotalDistance(0)
     setTotalDuration(0)
+    setSelectedCustomer(null)
   }
+
+  // 儲存路線
+  const saveRoute = () => {
+    if (!routeName.trim()) {
+      alert('Por favor ingresa un nombre para la ruta')
+      return
+    }
+    
+    const routeData = {
+      id: Date.now().toString(),
+      name: routeName,
+      date: routeDate,
+      time: routeTime,
+      customers: routeCustomers,
+      totalDistance,
+      totalDuration,
+      createdAt: new Date().toISOString()
+    }
+    
+    const saved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+    saved.push(routeData)
+    localStorage.setItem('savedRoutes', JSON.stringify(saved))
+    setSavedRoutes(saved)
+    setShowSaveModal(false)
+    setRouteName('')
+    alert('Ruta guardada exitosamente')
+  }
+
+  // 載入路線
+  const loadRoute = (routeData: any) => {
+    setRouteCustomers(routeData.customers)
+    setRouteDate(routeData.date)
+    setRouteTime(routeData.time)
+    setTotalDistance(routeData.totalDistance)
+    setTotalDuration(routeData.totalDuration)
+    setShowLoadModal(false)
+    calculateRouteDistanceAndTime(routeData.customers)
+  }
+
+  // 刪除儲存的路線
+  const deleteSavedRoute = (routeId: string) => {
+    const saved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+    const updated = saved.filter((r: any) => r.id !== routeId)
+    localStorage.setItem('savedRoutes', JSON.stringify(updated))
+    setSavedRoutes(updated)
+  }
+
+  // 載入儲存的路線列表
+  useEffect(() => {
+    const saved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+    setSavedRoutes(saved)
+  }, [])
 
   // 獲取當前位置
   const getCurrentLocation = () => {
@@ -397,13 +459,28 @@ export default function Visits() {
           <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
           <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={getCurrentLocation}
             className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
           >
             <MapPinIcon className="w-4 h-4" />
             <span>Mi Ubicación</span>
+          </button>
+          <button
+            onClick={() => setShowSaveModal(true)}
+            disabled={routeCustomers.length === 0}
+            className="inline-flex items-center space-x-2 px-4 py-2 border border-green-300 text-green-700 rounded-lg hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Guardar Ruta</span>
+          </button>
+          <button
+            onClick={() => setShowLoadModal(true)}
+            className="inline-flex items-center space-x-2 px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50"
+          >
+            <Route className="w-4 h-4" />
+            <span>Cargar Ruta</span>
           </button>
           <button
             onClick={clearRoute}
@@ -649,8 +726,11 @@ export default function Visits() {
                           )}
                         </div>
                         <button
-                          onClick={() => removeFromRoute(customer.id)}
-                          className="text-red-600 hover:text-red-800"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFromRoute(customer.id)
+                          }}
+                          className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
                           title="Quitar de la ruta"
                         >
                           <X className="w-4 h-4" />
@@ -672,11 +752,28 @@ export default function Visits() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Distancia total:</span>
-                    <span className="font-medium">{totalDistance.toFixed(1)} km</span>
+                    <span className="font-medium text-blue-600">{totalDistance > 0 ? `${totalDistance.toFixed(1)} km` : 'Calculando...'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Tiempo estimado:</span>
-                    <span className="font-medium">{Math.floor(totalDuration / 60)}h {totalDuration % 60}min</span>
+                    <span className="font-medium text-green-600">{totalDuration > 0 ? `${Math.floor(totalDuration / 60)}h ${Math.round(totalDuration % 60)}min` : 'Calculando...'}</span>
+                  </div>
+                  {/* Mostrar detalles individuales de cada parada */}
+                  <div className="pt-2 border-t border-gray-300">
+                    <h4 className="text-xs font-medium text-gray-700 mb-2">Detalles por parada:</h4>
+                    <div className="space-y-1">
+                      {routeCustomers.map((customer, index) => (
+                        <div key={customer.id} className="flex justify-between text-xs">
+                          <span className="text-gray-600">{index + 1}. {customer.name}</span>
+                          <span className="text-gray-500">
+                            {customer.distance && customer.duration 
+                              ? `${customer.distance.toFixed(1)}km, ${Math.round(customer.duration)}min`
+                              : index === 0 ? 'Origen' : 'Calculando...'
+                            }
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -699,7 +796,7 @@ export default function Visits() {
               <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
               <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
             </div>
-            <div className="h-[500px] relative">
+            <div className="h-[1100px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -715,8 +812,18 @@ export default function Visits() {
                     loading="lazy"
                     allowFullScreen
                     referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(getAddress(routeCustomers[0]))}&destination=${encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))}&waypoints=${routeCustomers.slice(1, -1).map(c => encodeURIComponent(getAddress(c))).join('|')}&mode=driving&language=es`}
+                    src={routeCustomers.length === 1 
+                      ? `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(getAddress(routeCustomers[0]))}&language=es`
+                      : `https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(getAddress(routeCustomers[0]))}&destination=${encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))}&waypoints=${routeCustomers.slice(1, -1).map(c => encodeURIComponent(getAddress(c))).join('|')}&mode=driving&language=es`}
                   />
+                  {/* My Location button on map */}
+                  <button
+                    onClick={getCurrentLocation}
+                    className="absolute top-4 right-4 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                    title="Mi Ubicación"
+                  >
+                    <MapPinIcon className="w-5 h-5 text-blue-600" />
+                  </button>
                   <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-xs">
                     <h3 className="font-medium text-gray-900 mb-2">Ruta Actual</h3>
                     <div className="text-xs text-gray-600 space-y-1">
@@ -808,6 +915,104 @@ export default function Visits() {
           )}
         </div>
       </div>
+
+      {/* Modal para guardar ruta */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Guardar Ruta</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre de la ruta</label>
+                <input
+                  type="text"
+                  value={routeName}
+                  onChange={(e) => setRouteName(e.target.value)}
+                  placeholder="Ej: Ruta Algeciras Mañana"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="text-sm text-gray-600">
+                <p>Esta ruta incluye:</p>
+                <ul className="list-disc list-inside mt-1">
+                  <li>{routeCustomers.length} paradas</li>
+                  <li>Fecha: {routeDate || 'No especificada'}</li>
+                  <li>Hora: {routeTime || 'No especificada'}</li>
+                  <li>Distancia: {totalDistance.toFixed(1)} km</li>
+                </ul>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveRoute}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para cargar ruta */}
+      {showLoadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Rutas Guardadas</h3>
+              <button
+                onClick={() => setShowLoadModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {savedRoutes.length === 0 ? (
+              <div className="text-center py-8">
+                <Route className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">No hay rutas guardadas</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {savedRoutes.map((savedRoute) => (
+                  <div key={savedRoute.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h4 className="font-medium text-gray-900">{savedRoute.name}</h4>
+                        <div className="text-sm text-gray-600 mt-1">
+                          <p>Fecha: {savedRoute.date || 'No especificada'} - Hora: {savedRoute.time || 'No especificada'}</p>
+                          <p>{savedRoute.customers.length} paradas - {savedRoute.totalDistance.toFixed(1)} km - {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min</p>
+                          <p className="text-xs text-gray-500 mt-1">Guardada: {new Date(savedRoute.createdAt).toLocaleDateString('es-ES')}</p>
+                        </div>
+                      </div>
+                      <div className="flex space-x-2 ml-4">
+                        <button
+                          onClick={() => loadRoute(savedRoute)}
+                          className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                        >
+                          Cargar
+                        </button>
+                        <button
+                          onClick={() => deleteSavedRoute(savedRoute.id)}
+                          className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

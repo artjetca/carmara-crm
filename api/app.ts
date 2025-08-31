@@ -27,7 +27,7 @@ app.get('/api/health', (req: Request, res: Response): void => {
 });
 
 /**
- * API Routes (loaded with better error handling for Vercel)
+ * API Routes
  */
 // Import routes
 import authRoutes from './routes/auth.js'
@@ -39,6 +39,8 @@ app.use('/api/auth', authRoutes)
 app.use('/api/customers', customersRoutes)
 app.use('/api/geocode', geocodeRoutes)
 app.use('/api/distance', distanceRoutes)
+
+console.log('[routes] All routes loaded successfully')
 
 /**
  * error handler middleware
