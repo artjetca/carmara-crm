@@ -19,8 +19,9 @@ exports.handler = async (event, context) => {
       }
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY
     if (!apiKey) {
+      console.warn('[netlify distance] Google Maps API key missing. Checked env: GOOGLE_MAPS_API_KEY, VITE_GOOGLE_MAPS_API_KEY')
       return {
         statusCode: 500,
         body: JSON.stringify({
@@ -28,6 +29,12 @@ exports.handler = async (event, context) => {
           error: 'Google Maps API key not configured'
         })
       }
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      const source = process.env.GOOGLE_MAPS_API_KEY
+        ? 'GOOGLE_MAPS_API_KEY'
+        : (process.env.VITE_GOOGLE_MAPS_API_KEY ? 'VITE_GOOGLE_MAPS_API_KEY' : 'none')
+      console.log(`[netlify distance] Using Google Maps API key from ${source}; length=${String(apiKey).length}`)
     }
 
     const results = []
