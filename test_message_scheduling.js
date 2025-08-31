@@ -44,8 +44,8 @@ async function testMessageScheduling() {
     // 3. Get any user for testing
     console.log('3. Getting test user...')
     const { data: users, error: userError } = await supabase
-      .from('profiles')
-      .select('id, email, role')
+      .from('user_profiles')
+      .select('id, email, full_name')
       .limit(1)
 
     if (userError || !users?.length) {
@@ -59,11 +59,12 @@ async function testMessageScheduling() {
     // 4. Test message creation
     console.log('4. Testing message creation...')
     const testMessage = {
-      customer_ids: [testCustomer.id],
+      customer_id: testCustomer.id,
+      type: 'sms',
       message: 'Test message from automated testing',
       scheduled_for: new Date(Date.now() + 60000).toISOString(), // 1 minute from now
       status: 'pending',
-      created_by: testUser.id
+      user_id: testUser.id
     }
 
     const { data: createdMessage, error: createError } = await supabase
@@ -81,15 +82,14 @@ async function testMessageScheduling() {
     console.log(`   Scheduled for: ${createdMessage.scheduled_for}`)
     console.log(`   Status: ${createdMessage.status}\n`)
 
-    // 5. Test message retrieval with profile join
+    // 5. Test message retrieval with user_profiles join
     console.log('5. Testing message retrieval with profile join...')
     const { data: retrievedMessages, error: retrieveError } = await supabase
       .from('scheduled_messages')
       .select(`
         *,
-        creator_profile:profiles!scheduled_messages_created_by_fkey (
+        creator_profile:user_profiles!scheduled_messages_user_id_fkey (
           id,
-          name,
           email,
           full_name
         )

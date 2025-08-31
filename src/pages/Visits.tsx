@@ -47,6 +47,11 @@ export default function Visits() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
   const t = translations
+  // Google Maps Embed API key for frontend map visualization
+  const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  if (!mapsApiKey) {
+    console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
+  }
 
   useEffect(() => {
     if (!user?.id) return
@@ -142,16 +147,47 @@ export default function Visits() {
     return Array.from(provinceSet).sort()
   }, [customers])
 
+  // Municipios por provincia - lista completa (alineada con `src/pages/Maps.tsx`)
+  const municipiosByProvince: Record<string, string[]> = {
+    'Cádiz': [
+      'Alcalá de los Gazules', 'Alcalá del Valle', 'Algar', 'Algeciras', 'Algodonales', 'Arcos de la Frontera',
+      'Barbate', 'Benalup-Casas Viejas', 'Benaocaz', 'Bornos', 'El Bosque', 'Cádiz', 'Castellar de la Frontera',
+      'Chiclana de la Frontera', 'Chipiona', 'Conil de la Frontera', 'Espera', 'El Gastor', 'Grazalema',
+      'Jerez de la Frontera', 'Jimena de la Frontera', 'La Línea de la Concepción', 'Los Barrios',
+      'Medina-Sidonia', 'Olvera', 'Paterna de Rivera', 'Prado del Rey', 'El Puerto de Santa María',
+      'Puerto Real', 'Puerto Serrano', 'Rota', 'San Fernando', 'San José del Valle', 'San Roque',
+      'Sanlúcar de Barrameda', 'Setenil de las Bodegas', 'Tarifa', 'Torre Alháquime', 'Trebujena',
+      'Ubrique', 'Vejer de la Frontera', 'Villaluenga del Rosario', 'Villamartín', 'Zahara'
+    ],
+    'Huelva': [
+      'Alájar', 'Aljaraque', 'Almendro', 'Almonaster la Real', 'Almonte', 'Alosno', 'Aracena',
+      'Aroche', 'Arroyomolinos de León', 'Ayamonte', 'Beas', 'Berrocal', 'Bollullos Par del Condado',
+      'Bonares', 'Cabezas Rubias', 'Cala', 'Calañas', 'El Campillo', 'Campofrío', 'Cañaveral de León',
+      'Cartaya', 'Castaño del Robledo', 'El Cerro de Andévalo', 'Corteconcepción', 'Cortegana',
+      'Cortelazor', 'Cumbres de Enmedio', 'Cumbres de San Bartolomé', 'Cumbres Mayores', 'Encinasola',
+      'Escacena del Campo', 'Fuenteheridos', 'Galaroza', 'El Granado', 'La Granada de Río-Tinto',
+      'Gibraleón', 'Higuera de la Sierra', 'Hinojales', 'Hinojos', 'Huelva', 'Isla Cristina',
+      'Jabugo', 'Lepe', 'Linares de la Sierra', 'Lucena del Puerto', 'Manzanilla', 'Marines',
+      'Minas de Riotinto', 'Moguer', 'La Nava', 'Nerva', 'Niebla', 'Palos de la Frontera',
+      'La Palma del Condado', 'Paterna del Campo', 'Paymogo', 'Puebla de Guzmán', 'Puerto Moral',
+      'Punta Umbría', 'Rociana del Condado', 'Rosal de la Frontera', 'San Bartolomé de la Torre',
+      'San Juan del Puerto', 'San Silvestre de Guzmán', 'Sanlúcar de Guadiana', 'Santa Ana la Real',
+      'Santa Bárbara de Casa', 'Santa Olalla del Cala', 'Trigueros', 'Valdelarco', 'Valverde del Camino',
+      'Villablanca', 'Villalba del Alcor', 'Villanueva de las Cruces', 'Villanueva de los Castillejos',
+      'Villarrasa', 'Zalamea la Real', 'Zufre'
+    ],
+    'Ceuta': ['Ceuta']
+  }
+
   const getFilteredCities = () => {
-    if (!selectedProvince) return []
-    const citySet = new Set<string>()
-    customers
-      .filter(customer => displayProvince(customer) === selectedProvince)
-      .forEach(customer => {
-        const city = displayCity(customer)
-        if (city) citySet.add(city)
-      })
-    return Array.from(citySet).sort()
+    // 如果選擇了省份，顯示該省份的全部城市（與 Maps 頁一致）
+    if (selectedProvince) {
+      const list = municipiosByProvince[selectedProvince] || []
+      return Array.from(new Set(list)).sort()
+    }
+    // 未選擇省份時，顯示所有省份的全部城市合集
+    const all = Object.values(municipiosByProvince).flat()
+    return Array.from(new Set(all)).sort()
   }
 
   // 篩選客戶邏輯
@@ -376,6 +412,109 @@ export default function Visits() {
     }
   }
 
+  // 根據經緯度計算哈弗辛距離（公里）
+  const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371 // km
+    const toRad = (d: number) => (d * Math.PI) / 180
+    const dLat = toRad(lat2 - lat1)
+    const dLon = toRad(lon2 - lon1)
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  // 服務端地理編碼，獲取座標
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const resp = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      })
+      const data = await resp.json()
+      if (resp.ok && data?.success && data?.data?.lat != null && data?.data?.lng != null) {
+        return { lat: Number(data.data.lat), lng: Number(data.data.lng) }
+      }
+    } catch (e) {
+      console.warn('[RoutePlanning] geocode failed for', address, e)
+    }
+    return null
+  }
+
+  // 依據當前位置自動優化路線順序（最近鄰啟發式）
+  const reorderRouteByCurrentLocation = async () => {
+    try {
+      if (routeCustomers.length < 2) {
+        alert('Necesitas al menos 2 paradas para optimizar el orden de la ruta')
+        return
+      }
+
+      // 取得當前位置
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (!navigator.geolocation) return reject(new Error('Geolocalización no disponible'))
+        navigator.geolocation.getCurrentPosition(resolve, reject)
+      })
+      const { latitude: curLat, longitude: curLng } = position.coords
+
+      // 取得各客戶座標（並行）
+      const geocoded = await Promise.all(
+        routeCustomers.map(async (c, idx) => {
+          const addr = getAddress(c)
+          const coords = await geocodeAddress(addr)
+          return { idx, customer: c, coords }
+        })
+      )
+
+      // 分離可用與不可用座標
+      const withCoords = geocoded.filter(g => g.coords).map(g => ({
+        customer: g.customer,
+        lat: (g.coords as any).lat as number,
+        lng: (g.coords as any).lng as number
+      }))
+      const withoutCoords = geocoded.filter(g => !g.coords).map(g => g.customer)
+
+      if (withCoords.length === 0) {
+        alert('No se pudieron geocodificar las direcciones para optimizar la ruta')
+        return
+      }
+
+      // 最近鄰排序
+      const remaining = [...withCoords]
+      const ordered: typeof withCoords = []
+      let current = { lat: curLat, lng: curLng }
+      while (remaining.length > 0) {
+        let bestIndex = 0
+        let bestDist = Number.POSITIVE_INFINITY
+        for (let i = 0; i < remaining.length; i++) {
+          const cand = remaining[i]
+          const d = haversineDistance(current.lat, current.lng, cand.lat, cand.lng)
+          if (d < bestDist) {
+            bestDist = d
+            bestIndex = i
+          }
+        }
+        const next = remaining.splice(bestIndex, 1)[0]
+        ordered.push(next)
+        current = { lat: next.lat, lng: next.lng }
+      }
+
+      // 合併排序結果（未能地理編碼者維持在尾端原順序）
+      const newOrderedCustomers: RouteCustomer[] = [
+        ...ordered.map((o, i) => ({ ...o.customer, order: i + 1 })),
+        ...withoutCoords.map((c, i) => ({ ...c, order: ordered.length + i + 1 }))
+      ]
+
+      setRouteCustomers(newOrderedCustomers)
+      await calculateRouteDistanceAndTime(newOrderedCustomers)
+    } catch (err: any) {
+      console.error('[RoutePlanning] reorder by current location failed:', err)
+      alert('No se pudo optimizar el orden de la ruta: ' + (err?.message || 'Error desconocido'))
+    }
+  }
+
   // 開啟 Google Maps 導航
   const startNavigation = () => {
     if (routeCustomers.length === 0) return
@@ -421,6 +560,8 @@ export default function Visits() {
     if (city) parts.push(city)
     const province = displayProvince(customer)
     if (province) parts.push(province)
+    // Add country to improve geocoding stability
+    parts.push('Spain')
     return parts.join(', ') || 'Sin dirección'
   }
 
@@ -777,13 +918,21 @@ export default function Visits() {
               <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
               <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
             </div>
-            <div className="h-[700px] relative">
+            <div className="h-[900px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <Route className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">Sin ruta planificada</h3>
                     <p className="text-gray-600">Agrega clientes de la lista izquierda para crear una ruta</p>
+                  </div>
+                </div>
+              ) : (!mapsApiKey ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center max-w-md">
+                    <Route className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Falta la clave de Google Maps</h3>
+                    <p className="text-gray-600 text-sm">Configura <code>VITE_GOOGLE_MAPS_API_KEY</code> en tu archivo <code>.env.local</code> y reinicia el servidor de Vite para visualizar el mapa de la ruta.</p>
                   </div>
                 </div>
               ) : (
@@ -794,16 +943,18 @@ export default function Visits() {
                     allowFullScreen
                     referrerPolicy="no-referrer-when-downgrade"
                     src={routeCustomers.length === 1 
-                      ? `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${encodeURIComponent(getAddress(routeCustomers[0]))}&language=es`
+                      ? `https://www.google.com/maps/embed/v1/place?key=${mapsApiKey}&q=${encodeURIComponent(getAddress(routeCustomers[0]))}&language=es`
 : (() => {
                           const origin = encodeURIComponent(getAddress(routeCustomers[0]))
                           const destination = encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))
                           const waypointsList = routeCustomers.slice(1, -1)
-                          let url = `https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${origin}&destination=${destination}&mode=driving&language=es`
+                          let url = `https://www.google.com/maps/embed/v1/directions?key=${mapsApiKey}&origin=${origin}&destination=${destination}&mode=driving&language=es`
                           if (waypointsList.length > 0) {
                             const waypoints = waypointsList.map(c => encodeURIComponent(getAddress(c))).join('|')
                             url += `&waypoints=${waypoints}`
                           }
+                          const redacted = url.replace(/([?&]key=)([^&]+)/, '$1[hidden]')
+                          console.debug('[RoutePlanning] Map embed URL:', redacted)
                           return url
                         })()}
                   />
@@ -832,6 +983,13 @@ export default function Visits() {
                       </div>
                     </div>
                     <button
+                      onClick={reorderRouteByCurrentLocation}
+                      className="w-full mt-2 inline-flex items-center justify-center space-x-1 px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700"
+                    >
+                      <Route className="w-3 h-3" />
+                      <span>Optimizar por mi ubicación</span>
+                    </button>
+                    <button
                       onClick={startNavigation}
                       className="w-full mt-2 inline-flex items-center justify-center space-x-1 px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
                     >
@@ -839,8 +997,27 @@ export default function Visits() {
                       <span>Navegar</span>
                     </button>
                   </div>
+                  {/* Lista de paradas con nombre y teléfono */}
+                  <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-xs max-h-[60%] overflow-y-auto">
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Paradas</h4>
+                    <div className="space-y-2">
+                      {routeCustomers.map((c, i) => (
+                        <div key={c.id} className="flex items-start space-x-2">
+                          <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span className="text-blue-600 font-medium text-xs">{i + 1}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-gray-900 truncate">{c.name}</div>
+                            {c.phone && (
+                              <div className="text-[11px] text-gray-600 truncate">{c.phone}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
           </div>
 
