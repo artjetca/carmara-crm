@@ -1090,17 +1090,6 @@ export default function Customers() {
         />
       )}
 
-      {/* Add Customer Modal */}
-      {showAddModal && (
-        <AddCustomerModal
-          onClose={() => setShowAddModal(false)}
-          onSave={(newCustomer) => {
-            setCustomers([...customers, newCustomer])
-            setShowAddModal(false)
-          }}
-        />
-      )}
-
       {/* Bulk Delete Confirmation Modal */}
       {showBulkConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1262,9 +1251,9 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white w-full max-w-xl rounded-lg shadow-lg p-6">
+      <div className="bg-white w-full max-w-xl rounded-lg shadow-lg p-6 max-h-[90vh] overflow-y-auto overscroll-contain">
         <h3 className="text-lg font-semibold mb-4">Agregar cliente</h3>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-24">
           <div>
             <label className="block text-sm text-gray-700 mb-1">Nombre</label>
             <input
@@ -1363,7 +1352,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               onChange={e => handleChange('notes', e.target.value)}
             />
           </div>
-          <div className="sm:col-span-2 mt-2 flex justify-end gap-3">
+          <div className="sm:col-span-2 mt-4 sticky bottom-0 bg-white pt-3 z-10 flex justify-end gap-3 border-t" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
             <button type="button" onClick={onClose} className="px-4 py-2 border rounded" disabled={loading}>Cancelar</button>
             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60" disabled={loading || !formData.name.trim()}>
               {loading ? 'Guardando…' : 'Guardar'}
