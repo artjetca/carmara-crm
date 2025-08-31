@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
@@ -52,6 +52,161 @@ export default function Visits() {
   if (!mapsApiKey) {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
+
+  // Google Maps JS API refs/state
+  const mapRef = useRef<HTMLDivElement | null>(null)
+  const mapInstanceRef = useRef<any>(null)
+  const directionsServiceRef = useRef<any>(null)
+  const directionsRendererRef = useRef<any>(null)
+  const markersRef = useRef<any[]>([])
+
+  // Load Google Maps JS API if needed
+  const ensureGoogleMapsLoaded = async (): Promise<any> => {
+    if ((window as any).google?.maps) return (window as any).google
+    if (!mapsApiKey) throw new Error('Missing Google Maps API key')
+    await new Promise<void>((resolve, reject) => {
+      const existing = document.querySelector('script[data-role="gmaps-js"]') as HTMLScriptElement | null
+      if (existing) {
+        existing.addEventListener('load', () => resolve())
+        existing.addEventListener('error', () => reject(new Error('Google Maps script failed to load')))
+        return
+      }
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}`
+      script.async = true
+      script.defer = true
+      script.setAttribute('data-role', 'gmaps-js')
+      script.onload = () => resolve()
+      script.onerror = () => reject(new Error('Google Maps script failed to load'))
+      document.head.appendChild(script)
+    })
+    return (window as any).google
+  }
+
+  // Render route on Google Maps with numbered markers
+  useEffect(() => {
+    const render = async () => {
+      try {
+        if (!mapsApiKey || !mapRef.current || routeCustomers.length === 0) return
+        const google = await ensureGoogleMapsLoaded()
+
+        // Init map and services once
+        if (!mapInstanceRef.current) {
+          mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+            center: { lat: 36.7213, lng: -4.4214 },
+            zoom: 9,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: true
+          })
+        }
+        if (!directionsServiceRef.current) directionsServiceRef.current = new google.maps.DirectionsService()
+        if (!directionsRendererRef.current) {
+          directionsRendererRef.current = new google.maps.DirectionsRenderer({ suppressMarkers: true })
+          directionsRendererRef.current.setMap(mapInstanceRef.current)
+        }
+
+        // If only one stop, skip directions and just drop a marker
+        if (routeCustomers.length === 1) {
+          // Clear any previous route
+          if (directionsRendererRef.current) {
+            directionsRendererRef.current.set('directions', null)
+          }
+          // Clear old markers
+          markersRef.current.forEach(m => m.setMap(null))
+          markersRef.current = []
+          const single = routeCustomers[0]
+          const coords = await geocodeAddress(getAddress(single))
+          if (coords) {
+            const map = mapInstanceRef.current
+            const position = { lat: coords.lat, lng: coords.lng }
+            const marker = new (window as any).google.maps.Marker({
+              position,
+              map,
+              label: '1',
+              title: `${single.name}${single.phone ? ' • ' + single.phone : ''}`
+            })
+            const info = new (window as any).google.maps.InfoWindow({
+              content: `<div style=\"font-size:12px\"><strong>1. ${single.name}</strong><br/>${single.phone ? single.phone : ''}</div>`
+            })
+            marker.addListener('click', () => info.open({ anchor: marker, map }))
+            markersRef.current.push(marker)
+            map.setCenter(position)
+            map.setZoom(13)
+          }
+          return
+        }
+
+        // Build route request using formatted addresses (2+ stops)
+        const originAddr = getAddress(routeCustomers[0])
+        const destinationAddr = getAddress(routeCustomers[routeCustomers.length - 1])
+        const waypoints = routeCustomers.slice(1, -1).map(c => ({ location: getAddress(c), stopover: true }))
+
+        const request: any = {
+          origin: originAddr,
+          destination: destinationAddr,
+          waypoints,
+          travelMode: (window as any).google.maps.TravelMode.DRIVING,
+          optimizeWaypoints: false
+        }
+
+        const result = await directionsServiceRef.current.route(request)
+        directionsRendererRef.current.setDirections(result)
+
+        // Clear old markers
+        markersRef.current.forEach(m => m.setMap(null))
+        markersRef.current = []
+
+        // Geocode and create numbered markers with info windows
+        const geocoded = await Promise.all(
+          routeCustomers.map(async (c) => {
+            const coords = await geocodeAddress(getAddress(c))
+            return { c, coords }
+          })
+        )
+
+        const map = mapInstanceRef.current
+        const bounds = new (window as any).google.maps.LatLngBounds()
+        geocoded.forEach((item, idx) => {
+          if (!item.coords) return
+          const position = { lat: item.coords.lat, lng: item.coords.lng }
+          const marker = new (window as any).google.maps.Marker({
+            position,
+            map,
+            label: String(idx + 1),
+            title: `${item.c.name}${item.c.phone ? ' • ' + item.c.phone : ''}`
+          })
+          const info = new (window as any).google.maps.InfoWindow({
+            content: `<div style="font-size:12px"><strong>${idx + 1}. ${item.c.name}</strong><br/>${item.c.phone ? item.c.phone : ''}</div>`
+          })
+          marker.addListener('click', () => info.open({ anchor: marker, map }))
+          markersRef.current.push(marker)
+          bounds.extend(position)
+        })
+
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds)
+        }
+      } catch (e) {
+        console.warn('[RoutePlanning] map render failed', e)
+      }
+    }
+    render()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapsApiKey, routeCustomers])
+
+  // Clear map when route is empty
+  useEffect(() => {
+    if (routeCustomers.length === 0 && mapInstanceRef.current) {
+      try {
+        if (directionsRendererRef.current) {
+          directionsRendererRef.current.set('directions', null)
+        }
+        markersRef.current.forEach(m => m.setMap(null))
+        markersRef.current = []
+      } catch {}
+    }
+  }, [routeCustomers.length])
 
   useEffect(() => {
     if (!user?.id) return
@@ -204,7 +359,10 @@ export default function Visits() {
       const matchesProvince = !selectedProvince || customerProvince === selectedProvince
 
       const customerCity = displayCity(customer)
-      const matchesCity = !selectedCity || customerCity.toLowerCase() === selectedCity.toLowerCase()
+      const cityEqual = !!selectedCity && !!customerCity && customerCity.toLowerCase() === selectedCity.toLowerCase()
+      const selectedIsCapital = !!selectedCity && /^(huelva|c(a|á)diz|ceuta)$/i.test(selectedCity.trim())
+      const provinceEqual = !!selectedCity && !!customerProvince && selectedIsCapital && customerProvince.toLowerCase() === selectedCity.toLowerCase()
+      const matchesCity = !selectedCity || cityEqual || provinceEqual
 
       return matchesSearch && matchesProvince && matchesCity
     })
@@ -937,27 +1095,7 @@ export default function Visits() {
                 </div>
               ) : (
                 <div className="h-full relative">
-                  <iframe
-                    className="w-full h-full border-0"
-                    loading="lazy"
-                    allowFullScreen
-                    referrerPolicy="no-referrer-when-downgrade"
-                    src={routeCustomers.length === 1 
-                      ? `https://www.google.com/maps/embed/v1/place?key=${mapsApiKey}&q=${encodeURIComponent(getAddress(routeCustomers[0]))}&language=es`
-: (() => {
-                          const origin = encodeURIComponent(getAddress(routeCustomers[0]))
-                          const destination = encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))
-                          const waypointsList = routeCustomers.slice(1, -1)
-                          let url = `https://www.google.com/maps/embed/v1/directions?key=${mapsApiKey}&origin=${origin}&destination=${destination}&mode=driving&language=es`
-                          if (waypointsList.length > 0) {
-                            const waypoints = waypointsList.map(c => encodeURIComponent(getAddress(c))).join('|')
-                            url += `&waypoints=${waypoints}`
-                          }
-                          const redacted = url.replace(/([?&]key=)([^&]+)/, '$1[hidden]')
-                          console.debug('[RoutePlanning] Map embed URL:', redacted)
-                          return url
-                        })()}
-                  />
+                  <div ref={mapRef} className="w-full h-full rounded-lg border" />
                   {/* My Location button on map */}
                   <button
                     onClick={getCurrentLocation}
