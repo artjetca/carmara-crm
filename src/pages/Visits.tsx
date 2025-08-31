@@ -3,20 +3,24 @@ import { useAuth } from '../hooks/useAuth'
 import { Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
 import {
-  Plus,
-  MapPin,
-  User,
-  Navigation,
-  ExternalLink,
-  Trash2,
-  GripVertical,
   Search,
-  Route,
+  Plus,
   X,
   ArrowUp,
   ArrowDown,
+  Navigation,
+  Route,
+  MapPin,
+  Car,
   Clock,
-  Car
+  ExternalLink,
+  MapPinIcon,
+  Phone,
+  Mail,
+  Calendar,
+  Timer,
+  Users,
+  Trash2
 } from 'lucide-react'
 
 interface RouteCustomer extends Customer {
@@ -35,6 +39,9 @@ export default function Visits() {
   const [selectedCity, setSelectedCity] = useState('')
   const [totalDistance, setTotalDistance] = useState(0)
   const [totalDuration, setTotalDuration] = useState(0)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [routeDate, setRouteDate] = useState('')
+  const [routeTime, setRouteTime] = useState('')
   const t = translations
 
   useEffect(() => {
@@ -78,7 +85,7 @@ export default function Visits() {
     return match ? match[1].trim() : ''
   }
 
-  const isProvinceName = (s?: string) => /^(huelva|c(a|á)diz)$/i.test(String(s || '').trim())
+  const isProvinceName = (s?: string) => /^(huelva|c(a|á)diz|ceuta)$/i.test(String(s || '').trim())
 
   const toCanonicalProvince = (v?: string): string => {
     const s = String(v || '')
@@ -88,6 +95,7 @@ export default function Visits() {
       .replace(/[\u0300-\u036f]/g, '')
     if (s === 'huelva') return 'Huelva'
     if (s === 'cadiz') return 'Cádiz'
+    if (s === 'ceuta') return 'Ceuta'
     return ''
   }
 
@@ -171,39 +179,53 @@ export default function Visits() {
     }
 
     try {
-      const waypoints = route.map(customer => getAddress(customer))
+      console.log('[RoutePlanning] Calculating distances for route:', route.length, 'customers')
+      
+      const waypoints = route.map(customer => {
+        const address = getAddress(customer)
+        console.log('[RoutePlanning] Waypoint:', address)
+        return address
+      })
 
       const response = await fetch('/api/distance/calculate', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ waypoints })
       })
 
       const result = await response.json()
+      console.log('[RoutePlanning] Distance API response:', result)
 
       if (result.success && result.data) {
         const { segments, totalDistance: totDist, totalDuration: totTime } = result.data
 
         // 更新每個客戶的距離和時間信息
+        const updatedRoute = [...route]
         segments.forEach((segment: any, index: number) => {
-          if (index < route.length - 1) {
-            route[index + 1].distance = segment.distance
-            route[index + 1].duration = segment.duration
+          if (index < updatedRoute.length - 1) {
+            updatedRoute[index + 1].distance = segment.distance
+            updatedRoute[index + 1].duration = Math.round(segment.duration)
+            console.log(`[RoutePlanning] Stop ${index + 2}: ${segment.distance.toFixed(1)}km, ${Math.round(segment.duration)}min`)
           }
         })
 
         setTotalDistance(totDist)
-        setTotalDuration(totTime)
+        setTotalDuration(Math.round(totTime))
         
         // 更新路線客戶數據
-        setRouteCustomers([...route])
+        setRouteCustomers(updatedRoute)
+        console.log('[RoutePlanning] Route updated with distances:', updatedRoute)
       } else {
         console.warn('Distance calculation failed:', result.error)
+        // 如果API失敗，仍然更新路線但不顯示距離
+        setRouteCustomers([...route])
       }
     } catch (error) {
       console.error('Error calculating route distance and time:', error)
+      // 如果發生錯誤，仍然更新路線但不顯示距離
+      setRouteCustomers([...route])
     }
   }
 
@@ -268,6 +290,49 @@ export default function Visits() {
     setTotalDuration(0)
   }
 
+  // 獲取當前位置
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords
+          const locationCustomer: RouteCustomer = {
+            id: 'current-location',
+            name: 'Mi Ubicación',
+            company: 'Ubicación Actual',
+            address: `${latitude}, ${longitude}`,
+            city: 'Ubicación GPS',
+            province: '',
+            phone: '',
+            email: '',
+            notes: '',
+            contrato: '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            created_by: user?.id || '',
+            order: 1
+          }
+          
+          // 如果路線為空，添加當前位置作為起點
+          if (routeCustomers.length === 0) {
+            setRouteCustomers([locationCustomer])
+          } else {
+            // 否則將當前位置插入為第一個位置
+            const newRoute = [locationCustomer, ...routeCustomers.map((rc, idx) => ({ ...rc, order: idx + 2 }))]
+            setRouteCustomers(newRoute)
+            calculateRouteDistanceAndTime(newRoute)
+          }
+        },
+        (error) => {
+          console.error('Error getting location:', error)
+          alert('No se pudo obtener la ubicación actual')
+        }
+      )
+    } else {
+      alert('Geolocalización no disponible en este navegador')
+    }
+  }
+
   // 開啟 Google Maps 導航
   const startNavigation = () => {
     if (routeCustomers.length === 0) return
@@ -288,6 +353,20 @@ export default function Visits() {
     }
     url += '&travelmode=driving'
 
+    window.open(url, '_blank')
+  }
+
+  // 打開客戶位置在 Google Maps
+  const openInGoogleMaps = (customer: Customer) => {
+    const address = getAddress(customer)
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    window.open(url, '_blank')
+  }
+
+  // 獲取到客戶的導航
+  const getDirections = (customer: Customer) => {
+    const address = getAddress(customer)
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving`
     window.open(url, '_blank')
   }
 
@@ -320,6 +399,13 @@ export default function Visits() {
         </div>
         <div className="flex space-x-2">
           <button
+            onClick={getCurrentLocation}
+            className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+          >
+            <MapPinIcon className="w-4 h-4" />
+            <span>Mi Ubicación</span>
+          </button>
+          <button
             onClick={clearRoute}
             disabled={routeCustomers.length === 0}
             className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -335,6 +421,52 @@ export default function Visits() {
             <Navigation className="w-4 h-4" />
             <span>Iniciar Navegación</span>
           </button>
+        </div>
+      </div>
+
+      {/* Configuración de fecha y hora */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Programación de la Ruta</h2>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de la ruta</label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="date"
+                value={routeDate}
+                onChange={(e) => setRouteDate(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Hora de inicio</label>
+            <div className="relative">
+              <Timer className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="time"
+                value={routeTime}
+                onChange={(e) => setRouteTime(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={() => {
+                if (!routeDate || !routeTime) {
+                  alert('Por favor selecciona fecha y hora para la ruta')
+                  return
+                }
+                alert(`Ruta programada para ${routeDate} a las ${routeTime}`)
+              }}
+              disabled={routeCustomers.length === 0 || !routeDate || !routeTime}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Programar Ruta
+            </button>
+          </div>
         </div>
       </div>
 
@@ -410,7 +542,7 @@ export default function Visits() {
             <div className="max-h-96 overflow-y-auto">
               {filteredCustomers.length === 0 ? (
                 <div className="text-center py-8">
-                  <User className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-gray-600">No hay clientes disponibles</p>
                 </div>
               ) : (
@@ -497,7 +629,10 @@ export default function Visits() {
                             </button>
                           </div>
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div 
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => setSelectedCustomer(customer)}
+                        >
                           <h3 className="text-sm font-medium text-gray-900 truncate">{customer.name}</h3>
                           <p className="text-xs text-gray-600 truncate">{customer.company}</p>
                           <div className="flex items-center mt-1">
@@ -509,7 +644,7 @@ export default function Visits() {
                               <Car className="w-3 h-3" />
                               <span>{customer.distance.toFixed(1)} km</span>
                               <Clock className="w-3 h-3" />
-                              <span>{customer.duration} min</span>
+                              <span>{Math.round(customer.duration)} min</span>
                             </div>
                           )}
                         </div>
@@ -556,14 +691,15 @@ export default function Visits() {
           </div>
         </div>
 
-        {/* Panel derecho - Mapa de la ruta */}
-        <div className="lg:col-span-3">
+        {/* Panel derecho - Mapa y detalles */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Mapa de la ruta */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
               <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
             </div>
-            <div className="h-[800px] relative">
+            <div className="h-[500px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -579,7 +715,7 @@ export default function Visits() {
                     loading="lazy"
                     allowFullScreen
                     referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(getAddress(routeCustomers[0]))}&destination=${encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))}&waypoints=${routeCustomers.slice(1, -1).map(c => encodeURIComponent(getAddress(c))).join('|')}&mode=driving`}
+                    src={`https://www.google.com/maps/embed/v1/directions?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&origin=${encodeURIComponent(getAddress(routeCustomers[0]))}&destination=${encodeURIComponent(getAddress(routeCustomers[routeCustomers.length - 1]))}&waypoints=${routeCustomers.slice(1, -1).map(c => encodeURIComponent(getAddress(c))).join('|')}&mode=driving&language=es`}
                   />
                   <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-xs">
                     <h3 className="font-medium text-gray-900 mb-2">Ruta Actual</h3>
@@ -594,7 +730,7 @@ export default function Visits() {
                       </div>
                       <div className="flex justify-between">
                         <span>Tiempo:</span>
-                        <span className="font-medium">{Math.floor(totalDuration / 60)}h {totalDuration % 60}min</span>
+                        <span className="font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
                       </div>
                     </div>
                     <button
@@ -609,6 +745,67 @@ export default function Visits() {
               )}
             </div>
           </div>
+
+          {/* Panel de detalles del cliente */}
+          {selectedCustomer && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-gray-900">Detalles del Cliente</h3>
+                <button
+                  onClick={() => setSelectedCustomer(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4">
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="font-medium text-gray-900">{selectedCustomer.name}</h4>
+                    {selectedCustomer.company && (
+                      <p className="text-sm text-gray-600">{selectedCustomer.company}</p>
+                    )}
+                  </div>
+                  
+                  {selectedCustomer.phone && (
+                    <div className="flex items-center space-x-2">
+                      <Phone className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-700">{selectedCustomer.phone}</span>
+                    </div>
+                  )}
+                  
+                  {selectedCustomer.email && (
+                    <div className="flex items-center space-x-2">
+                      <Mail className="w-4 h-4 text-gray-400" />
+                      <span className="text-sm text-gray-700">{selectedCustomer.email}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                    <span className="text-sm text-gray-700">{getAddress(selectedCustomer)}</span>
+                  </div>
+                  
+                  <div className="pt-3 border-t border-gray-200 space-y-2">
+                    <button
+                      onClick={() => openInGoogleMaps(selectedCustomer)}
+                      className="w-full inline-flex items-center justify-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Abrir en Mapas</span>
+                    </button>
+                    <button
+                      onClick={() => getDirections(selectedCustomer)}
+                      className="w-full inline-flex items-center justify-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>Obtener Direcciones</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
