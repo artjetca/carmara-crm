@@ -45,8 +45,11 @@ export default function Maps() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setMyLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => undefined,
-        { enableHighAccuracy: true, timeout: 5000 }
+        (error) => {
+          // Silently handle geolocation errors on page load
+          console.debug('Geolocation not available:', error.message)
+        },
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 300000 }
       )
     }
   }, [user?.id])
@@ -517,7 +520,10 @@ export default function Maps() {
   }), [])
 
   const locateMe = () => {
-    if (!navigator.geolocation) return
+    if (!navigator.geolocation) {
+      console.warn('Geolocation is not supported by this browser')
+      return
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const cur = { lat: pos.coords.latitude, lng: pos.coords.longitude }
@@ -526,8 +532,22 @@ export default function Maps() {
           mapRef.current.flyTo([cur.lat, cur.lng], 14, { duration: 0.8 })
         }
       },
-      () => undefined,
-      { enableHighAccuracy: true, timeout: 8000 }
+      (error) => {
+        console.debug('Geolocation error:', error.message)
+        // Optionally show a user-friendly message
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            console.debug('User denied geolocation permission')
+            break
+          case error.POSITION_UNAVAILABLE:
+            console.debug('Location information unavailable')
+            break
+          case error.TIMEOUT:
+            console.debug('Location request timeout')
+            break
+        }
+      },
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
     )
   }
 
