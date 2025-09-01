@@ -1039,72 +1039,29 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         return
       }
 
-      // Preparar filas base (sin decidir columnas específicas aún)
-      const baseRows = formData.customer_ids.flatMap(cid =>
-        formData.schedules.map(s => {
-          const iso = new Date(`${s.date}T${s.time}:00`).toISOString()
-          const base: any = {
-            customer_id: cid,
-            type: formData.type,
-            message: formData.message,
-            status: 'pending',
-            __iso: iso
-          }
-          if (formData.type === 'email' && formData.subject.trim().length > 0) {
-            base['subject'] = formData.subject
-          }
-          return base
-        })
+      // Construir filas con claves uniformes para evitar 400 (todas incluyen subject)
+      const rows = formData.customer_ids.flatMap(cid =>
+        formData.schedules.map(s => ({
+          customer_id: cid,
+          type: formData.type,
+          subject: formData.type === 'email' ? formData.subject : null,
+          message: formData.message,
+          scheduled_for: new Date(`${s.date}T${s.time}:00`).toISOString(),
+          status: 'pending',
+          user_id: user?.id
+        }))
       )
 
-      // Helper para construir filas según clave de tiempo y usuario
-      const buildRows = (timeKey: 'scheduled_for' | 'send_at', userKey: 'user_id' | 'created_by' | null) => {
-        return baseRows.map((r: any) => {
-          const out: any = {
-            customer_id: r.customer_id,
-            type: r.type,
-            message: r.message,
-            status: r.status
-          }
-          if (r.subject) out.subject = r.subject
-          out[timeKey] = r.__iso
-          if (userKey) out[userKey] = user?.id
-          return out
-        })
-      }
+      const { data, error } = await supabase
+        .from('scheduled_messages')
+        .insert(rows)
+        .select('*')
 
-      // Secuencia de intentos para máxima compatibilidad sin "preflight selects"
-      const variants: Array<{ timeKey: 'scheduled_for' | 'send_at'; userKey: 'user_id' | 'created_by' | null }> = [
-        { timeKey: 'scheduled_for', userKey: 'user_id' },
-        { timeKey: 'send_at', userKey: 'user_id' },
-        { timeKey: 'scheduled_for', userKey: 'created_by' },
-        { timeKey: 'send_at', userKey: 'created_by' },
-        // Últimos intentos sin user column (por si hay triggers por defecto)
-        { timeKey: 'scheduled_for', userKey: null },
-        { timeKey: 'send_at', userKey: null }
-      ]
+      if (error) throw error
 
-      let lastError: any = null
-      for (const v of variants) {
-        try {
-          const rows = buildRows(v.timeKey, v.userKey)
-          const { data, error } = await supabase
-            .from('scheduled_messages')
-            .insert(rows)
-            .select('*')
-          if (error) throw error
-          const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
-          alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
-          onSave(Array.isArray(data) ? data[0] : data)
-          lastError = null
-          break
-        } catch (err: any) {
-          lastError = err
-          // Continuar con el siguiente variante
-        }
-      }
-
-      if (lastError) throw lastError
+      const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
+      alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
+      onSave(Array.isArray(data) ? data[0] : data)
     } catch (error: any) {
       console.error('Error saving message:', {
         message: error?.message,
