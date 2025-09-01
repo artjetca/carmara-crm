@@ -928,6 +928,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   // 省/市用於過濾客戶下拉選單（不持久化到資料庫）
   const [selectedProvince, setSelectedProvince] = useState<string>('')
   const [selectedCity, setSelectedCity] = useState<string>('')
+  // 單選加入用的暫存 id
+  const [customerToAdd, setCustomerToAdd] = useState<string>('')
 
   // 本地 Province/City 常數（與 Visits 一致）
   const provinces = ['Cádiz', 'Huelva', 'Ceuta']
@@ -1007,6 +1009,22 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     return provinceOk && cityOk
   })
 
+  // 可加入清單（不含已選）
+  const addableCustomers = modalFilteredCustomers.filter(c => !formData.customer_ids.includes(c.id))
+
+  // 加入與移除選取的客戶（單選 + 準備清單）
+  const addSelectedCustomer = () => {
+    if (!customerToAdd) return
+    if (!formData.customer_ids.includes(customerToAdd)) {
+      setFormData({ ...formData, customer_ids: [...formData.customer_ids, customerToAdd] })
+    }
+    setCustomerToAdd('')
+  }
+
+  const removeSelectedCustomer = (id: string) => {
+    setFormData({ ...formData, customer_ids: formData.customer_ids.filter(cid => cid !== id) })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -1021,17 +1039,37 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         return
       }
 
-      // Expandir combinaciones cliente × horario
+      // 1) Detectar columnas del backend para máxima compatibilidad (user_id vs created_by, scheduled_for vs send_at, subject opcional)
+      const detectCol = async (col: string) => {
+        const res = await supabase.from('scheduled_messages').select(col).limit(1)
+        return !res.error
+      }
+
+      const hasUserId = await detectCol('user_id')
+      const hasCreatedBy = !hasUserId ? await detectCol('created_by') : false
+      const hasScheduledFor = await detectCol('scheduled_for')
+      const hasSendAt = !hasScheduledFor ? await detectCol('send_at') : false
+      const hasSubject = await detectCol('subject')
+
+      // 2) Expandir combinaciones cliente × horario usando columnas detectadas
       const rows = formData.customer_ids.flatMap(cid =>
-        formData.schedules.map(s => ({
-          customer_id: cid,
-          type: formData.type,
-          subject: formData.subject,
-          message: formData.message,
-          scheduled_for: new Date(`${s.date}T${s.time}:00`).toISOString(),
-          status: 'pending',
-          user_id: user?.id
-        }))
+        formData.schedules.map(s => {
+          const base: any = {
+            customer_id: cid,
+            type: formData.type,
+            message: formData.message,
+            status: 'pending'
+          }
+          const iso = new Date(`${s.date}T${s.time}:00`).toISOString()
+          if (hasScheduledFor) base['scheduled_for'] = iso
+          else if (hasSendAt) base['send_at'] = iso
+          if (hasUserId) base['user_id'] = user?.id
+          else if (hasCreatedBy) base['created_by'] = user?.id
+          if (hasSubject && formData.type === 'email' && formData.subject.trim().length > 0) {
+            base['subject'] = formData.subject
+          }
+          return base
+        })
       )
 
       const { data, error } = await supabase
@@ -1040,8 +1078,11 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         .select('*')
 
       if (error) throw error
+
+      const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
+      alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
       onSave(Array.isArray(data) ? data[0] : data)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving message:', error)
       alert(t.communications.messageSaveError)
     } finally {
@@ -1106,33 +1147,55 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Cliente(s) *
               </label>
-              <select
-                required
-                multiple
-                value={formData.customer_ids}
-                onChange={(e) => {
-                  const values = Array.from(e.currentTarget.selectedOptions).map(o => o.value)
-                  setFormData({ ...formData, customer_ids: values })
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                size={Math.min(Math.max(modalFilteredCustomers.length, 4), 12)}
-              >
-                {modalFilteredCustomers.map(customer => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-2 text-sm text-gray-700">
-                <div className="font-medium">Seleccionados: {selectedCustomers.length}</div>
-                {selectedCustomers.length > 0 && (
-                  <ul className="mt-1 list-disc list-inside space-y-0.5">
-                    {selectedCustomers.map(c => (
-                      <li key={c.id}>
-                        {c.name} — {c.email || 'sin email'}
-                      </li>
+              <div className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end">
+                <div className="sm:col-span-5">
+                  <select
+                    value={customerToAdd}
+                    onChange={(e) => setCustomerToAdd(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Seleccionar cliente</option>
+                    {addableCustomers.map(customer => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}
+                      </option>
                     ))}
-                  </ul>
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <button
+                    type="button"
+                    onClick={addSelectedCustomer}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    disabled={!customerToAdd}
+                    title="Añadir a la lista"
+                  >
+                    Añadir
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3">
+                {selectedCustomers.length === 0 ? (
+                  <p className="text-sm text-gray-500">No hay clientes en la lista preparada.</p>
+                ) : (
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-1">Lista preparada ({selectedCustomers.length})</div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCustomers.map(c => (
+                        <span key={c.id} className="inline-flex items-center gap-2 px-2 py-1 rounded border text-sm bg-gray-50">
+                          <span>{c.name}</span>
+                          <button
+                            type="button"
+                            className="text-red-600 hover:text-red-800"
+                            title="Quitar"
+                            onClick={() => removeSelectedCustomer(c.id)}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
