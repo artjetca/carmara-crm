@@ -17,7 +17,8 @@ import {
   PhoneIncoming,
   PhoneOutgoing,
   CheckCircle,
-  XCircle
+  XCircle,
+  Trash2
 } from 'lucide-react'
 
 interface Call {
@@ -46,18 +47,39 @@ interface Call {
 
 interface ScheduledMessage {
   id: string
-  customer_ids: string[]
+  // Runtime may have either customer_ids (array) or single customer_id
+  customer_ids?: string[]
+  customer_id?: string
   message: string
   scheduled_for: string
   status: 'pending' | 'sent' | 'failed'
   error_message?: string
   created_at: string
-  created_by: string
+  created_by?: string
+  user_id?: string
+  type?: 'sms' | 'email'
+  subject?: string
   creator_profile?: {
     id: string
     name: string
     email: string
     full_name: string
+  }
+}
+
+// Helper to delete a scheduled message in DB
+const deleteScheduledMessage = async (id: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase
+      .from('scheduled_messages')
+      .delete()
+      .eq('id', id)
+    if (error) throw error
+    return true
+  } catch (err) {
+    console.error('Error deleting message:', err)
+    alert('No se pudo eliminar el mensaje. Ver logs para más detalles.')
+    return false
   }
 }
 
@@ -161,6 +183,14 @@ export default function Communications() {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Delete handler bound to state
+  const handleDeleteMessage = async (id: string) => {
+    const ok = await deleteScheduledMessage(id)
+    if (ok) {
+      setMessages(prev => prev.filter(m => m.id !== id))
     }
   }
 
@@ -469,7 +499,7 @@ export default function Communications() {
           {activeTab === 'calls' ? (
             <CallsList calls={filteredCalls} />
           ) : (
-            <MessagesList messages={filteredMessages} />
+            <MessagesList messages={filteredMessages} onDelete={handleDeleteMessage} />
           )}
         </div>
       </div>
@@ -491,7 +521,8 @@ export default function Communications() {
           customers={customers}
           onClose={() => setShowMessageModal(false)}
           onSave={(message) => {
-            setMessages([message, ...messages])
+            // After saving potentially many rows, reload from DB for accuracy
+            loadData()
             setShowMessageModal(false)
           }}
         />
@@ -577,7 +608,7 @@ function CallsList({ calls }: { calls: Call[] }) {
 }
 
 // Componente para lista de mensajes
-function MessagesList({ messages }: { messages: ScheduledMessage[] }) {
+function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; onDelete: (id: string) => Promise<void> | void }) {
   const t = translations
 
   const formatDate = (dateString: string) => {
@@ -637,7 +668,7 @@ function MessagesList({ messages }: { messages: ScheduledMessage[] }) {
                     Creado por: {message.creator_profile?.full_name || message.creator_profile?.name || 'Usuario desconocido'}
                   </h3>
                   <span className="text-xs text-gray-500">
-                    {message.customer_ids.length} destinatario(s)
+                    {(message.customer_ids?.length || (message.customer_id ? 1 : 0))} destinatario(s)
                   </span>
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${getMessageStatusColor(message.status)}`}>
                     {t.communications[message.status as keyof typeof t.communications] || message.status}
@@ -654,6 +685,13 @@ function MessagesList({ messages }: { messages: ScheduledMessage[] }) {
               </div>
             </div>
             <div className="flex items-center space-x-2">
+              <button
+                title="Eliminar"
+                className="p-1 rounded hover:bg-red-50"
+                onClick={() => onDelete(message.id)}
+              >
+                <Trash2 className="w-4 h-4 text-red-600" />
+              </button>
               {getMessageStatusIcon(message.status)}
             </div>
           </div>
@@ -877,12 +915,13 @@ interface MessageModalProps {
 function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   const { user } = useAuth()
   const [formData, setFormData] = useState({
-    customer_id: '',
+    customer_ids: [] as string[],
     type: 'sms' as 'sms' | 'email',
     subject: '',
     message: '',
-    scheduled_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
-    scheduled_time: '09:00' // HH:MM
+    schedules: [
+      { date: new Date().toISOString().split('T')[0], time: '09:00' }
+    ] as { date: string; time: string }[]
   })
   const [loading, setLoading] = useState(false)
   const t = translations
@@ -957,12 +996,12 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   }
 
   // 當前在下拉中選擇的客戶（用於顯示聯絡方式與地址）
-  const selectedCustomer = customers.find(c => c.id === formData.customer_id)
+  const selectedCustomers = customers.filter(c => formData.customer_ids.includes(c.id))
 
   // 依省市過濾顧客
   const modalFilteredCustomers = customers.filter(c => {
     // 確保當前已選客戶永遠在清單中，避免被過濾掉
-    if (formData.customer_id && c.id === formData.customer_id) return true
+    if (formData.customer_ids?.includes(c.id)) return true
     const provinceOk = !selectedProvince || deriveProvince(c) === selectedProvince
     const cityOk = !selectedCity || deriveCity(c) === selectedCity
     return provinceOk && cityOk
@@ -973,24 +1012,35 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     setLoading(true)
 
     try {
-      // 組合為 ISO 字串（使用本地時間，不加 Z，讓後端以原時區呈現）
-      const scheduledFor = new Date(`${formData.scheduled_date}T${formData.scheduled_time}:00`).toISOString()
-      const { data, error } = await supabase
-        .from('scheduled_messages')
-        .insert({
-          customer_id: formData.customer_id,
+      if (!formData.customer_ids.length) {
+        alert('Seleccione al menos un cliente')
+        return
+      }
+      if (!formData.schedules.length) {
+        alert('Agregue al menos una fecha y hora')
+        return
+      }
+
+      // Expandir combinaciones cliente × horario
+      const rows = formData.customer_ids.flatMap(cid =>
+        formData.schedules.map(s => ({
+          customer_id: cid,
           type: formData.type,
           subject: formData.subject,
           message: formData.message,
-          scheduled_for: scheduledFor,
+          scheduled_for: new Date(`${s.date}T${s.time}:00`).toISOString(),
           status: 'pending',
           user_id: user?.id
-        })
+        }))
+      )
+
+      const { data, error } = await supabase
+        .from('scheduled_messages')
+        .insert(rows)
         .select('*')
-        .single()
-      
+
       if (error) throw error
-      onSave(data)
+      onSave(Array.isArray(data) ? data[0] : data)
     } catch (error) {
       console.error('Error saving message:', error)
       alert(t.communications.messageSaveError)
@@ -1014,7 +1064,6 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                   onChange={(e) => {
                     setSelectedProvince(e.target.value)
                     setSelectedCity('')
-                    setFormData({ ...formData, customer_id: '' })
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
@@ -1030,7 +1079,6 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                   value={selectedCity}
                   onChange={(e) => {
                     setSelectedCity(e.target.value)
-                    setFormData({ ...formData, customer_id: '' })
                   }}
                   disabled={false}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1056,70 +1104,50 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cliente *
+                Cliente(s) *
               </label>
               <select
                 required
-                value={formData.customer_id}
-                onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
+                multiple
+                value={formData.customer_ids}
+                onChange={(e) => {
+                  const values = Array.from(e.currentTarget.selectedOptions).map(o => o.value)
+                  setFormData({ ...formData, customer_ids: values })
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                size={Math.min(modalFilteredCustomers.length + 1, 10)}
+                size={Math.min(Math.max(modalFilteredCustomers.length, 4), 12)}
               >
-                <option value="">✓ Seleccionar cliente</option>
                 {modalFilteredCustomers.map(customer => (
                   <option key={customer.id} value={customer.id}>
                     {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}
                   </option>
                 ))}
               </select>
+              <div className="mt-2 text-sm text-gray-700">
+                <div className="font-medium">Seleccionados: {selectedCustomers.length}</div>
+                {selectedCustomers.length > 0 && (
+                  <ul className="mt-1 list-disc list-inside space-y-0.5">
+                    {selectedCustomers.map(c => (
+                      <li key={c.id}>
+                        {c.name} — {c.email || 'sin email'}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
 
-            {selectedCustomer && (
+            {selectedCustomers.length > 0 && (
               <div className="border rounded-lg p-3 bg-gray-50 text-sm text-gray-700">
-                <div className="font-semibold text-gray-900">{selectedCustomer.name}</div>
-                <div className="text-gray-600">{selectedCustomer.company || 'Sin empresa'}</div>
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                  <span>
-                    <span className="font-medium">Teléfono:</span>{' '}
-                    {selectedCustomer.phone ? (
-                      <a href={`tel:${selectedCustomer.phone}`} className="text-blue-600 hover:underline">{selectedCustomer.phone}</a>
-                    ) : (
-                      <span className="text-gray-500">-</span>
-                    )}
-                  </span>
-                  <span>
-                    <span className="font-medium">Móvil:</span>{' '}
-                    {selectedCustomer.mobile_phone ? (
-                      <a href={`tel:${selectedCustomer.mobile_phone}`} className="text-blue-600 hover:underline">{selectedCustomer.mobile_phone}</a>
-                    ) : (
-                      <span className="text-gray-500">-</span>
-                    )}
-                  </span>
-                  <span>
-                    <span className="font-medium">Email:</span>{' '}
-                    {selectedCustomer.email ? (
-                      <a href={`mailto:${selectedCustomer.email}`} className="text-blue-600 hover:underline">{selectedCustomer.email}</a>
-                    ) : (
-                      <span className="text-gray-500">-</span>
-                    )}
-                  </span>
-                </div>
-                <div className="mt-1">
-                  <span className="font-medium">Dirección:</span>{' '}
-                  {selectedCustomer.address ? (
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedCustomer.address || ''} ${deriveCity(selectedCustomer) || ''}`.trim())}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                      title="Abrir en Google Maps"
-                    >
-                      {selectedCustomer.address}
-                    </a>
-                  ) : (
-                    <span className="text-gray-500">Sin dirección</span>
+                <div className="font-semibold text-gray-900">{selectedCustomers.length} cliente(s) seleccionados</div>
+                <ul className="mt-1 list-disc list-inside space-y-0.5">
+                  {selectedCustomers.slice(0, 5).map(c => (
+                    <li key={c.id}>{c.name} — {c.company || 'Sin empresa'} ({deriveProvince(c) || '-'})</li>
+                  ))}
+                  {selectedCustomers.length > 5 && (
+                    <li className="text-gray-500">… y {selectedCustomers.length - 5} más</li>
                   )}
-                </div>
+                </ul>
               </div>
             )}
             
@@ -1165,28 +1193,66 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               />
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Fecha
-                </label>
-                <input
-                  type="date"
-                  value={formData.scheduled_date}
-                  onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Fechas y horas</label>
+              <div className="space-y-2">
+                {formData.schedules.map((s, idx) => (
+                  <div key={idx} className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end">
+                    <div className="sm:col-span-3">
+                      <input
+                        type="date"
+                        value={s.date}
+                        onChange={(e) => {
+                          const next = [...formData.schedules]
+                          next[idx] = { ...next[idx], date: e.target.value }
+                          setFormData({ ...formData, schedules: next })
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <input
+                        type="time"
+                        value={s.time}
+                        onChange={(e) => {
+                          const next = [...formData.schedules]
+                          next[idx] = { ...next[idx], time: e.target.value }
+                          setFormData({ ...formData, schedules: next })
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div className="sm:col-span-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="px-2 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 w-full"
+                        onClick={() => setFormData({ ...formData, schedules: [...formData.schedules, { date: s.date, time: s.time }] })}
+                        title="Duplicar"
+                      >
+                        +
+                      </button>
+                      {formData.schedules.length > 1 && (
+                        <button
+                          type="button"
+                          className="px-2 py-2 border border-red-300 rounded-lg text-red-700 hover:bg-red-50 w-full"
+                          onClick={() => setFormData({ ...formData, schedules: formData.schedules.filter((_, i) => i !== idx) })}
+                          title="Eliminar"
+                        >
+                          −
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Hora *
-                </label>
-                <input
-                  type="time"
-                  value={formData.scheduled_time}
-                  onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  onClick={() => setFormData({ ...formData, schedules: [...formData.schedules, { date: formData.schedules[0]?.date || new Date().toISOString().split('T')[0], time: '09:00' }] })}
+                >
+                  Añadir fecha/hora
+                </button>
               </div>
             </div>
             
