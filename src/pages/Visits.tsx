@@ -46,6 +46,7 @@ export default function Visits() {
   const [routeName, setRouteName] = useState('')
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
@@ -129,6 +130,7 @@ export default function Visits() {
   const markersRef = useRef<any[]>([])
   const myLocationMarkerRef = useRef<any>(null)
   const myLocationInfoRef = useRef<any>(null)
+  const bottomSheetRef = useRef<HTMLDivElement | null>(null)
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -188,14 +190,9 @@ export default function Visits() {
           } catch (err) {
             // Ignore: resize may fail if map not fully ready yet
           }
-          // Add padding so overlays don't cover markers/controls (more space on mobile)
+          // Base padding; bottom will be adjusted dynamically when the bottom sheet is open
           try {
-            const isMobile = window.matchMedia ? window.matchMedia('(max-width: 768px)').matches : (window.innerWidth <= 768)
-            if (isMobile) {
-              mapInstanceRef.current.setOptions?.({ padding: { top: 80, right: 16, bottom: 16, left: 16 } })
-            } else {
-              mapInstanceRef.current.setOptions?.({ padding: { top: 16, right: 16, bottom: 16, left: 16 } })
-            }
+            mapInstanceRef.current.setOptions?.({ padding: { top: 16, right: 16, bottom: 16, left: 16 } })
           } catch {}
         }
         if (!directionsServiceRef.current) directionsServiceRef.current = new google.maps.DirectionsService()
@@ -366,6 +363,31 @@ export default function Visits() {
     render()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapsApiKey, routeCustomers])
+
+  // Adjust map padding dynamically when the bottom sheet opens/closes
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map) return
+    const apply = () => {
+      try {
+        const h = bottomSheetRef.current?.offsetHeight || 240
+        const padding = showDetails
+          ? { top: 16, right: 16, bottom: Math.min(h + 16, 360), left: 16 }
+          : { top: 16, right: 16, bottom: 16, left: 16 }
+        map.setOptions?.({ padding })
+      } catch {}
+    }
+    apply()
+    if (showDetails) {
+      const tId = window.setTimeout(apply, 50)
+      const onResize = () => apply()
+      window.addEventListener('resize', onResize)
+      return () => {
+        window.clearTimeout(tId)
+        window.removeEventListener('resize', onResize)
+      }
+    }
+  }, [showDetails, routeCustomers.length, totalDistance, totalDuration])
 
   // Clear map when route is empty
   useEffect(() => {
@@ -1426,6 +1448,27 @@ export default function Visits() {
               <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
               <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
             </div>
+            {routeCustomers.length > 0 && (
+              <div className="px-4 py-3 border-b border-gray-100 bg-white/60">
+                <div className="flex items-center gap-2 overflow-x-auto">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+                    Paradas: <span className="ml-1 font-medium">{routeCustomers.length}</span>
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
+                    Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
+                    Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
+                  </span>
+                  <button
+                    onClick={() => setShowDetails(true)}
+                    className="ml-auto px-3 py-1.5 text-xs bg-white border rounded-lg hover:bg-gray-50"
+                  >
+                    Detalles
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="h-[900px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
@@ -1454,37 +1497,6 @@ export default function Visits() {
                   >
                     <MapPinIcon className="w-5 h-5 text-blue-600" />
                   </button>
-                  <div className="absolute left-4 top-24 md:top-4 bg-white rounded-lg shadow-md p-3 max-w-xs">
-                    <h3 className="font-medium text-gray-900 mb-2">Ruta Actual</h3>
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <div className="flex justify-between">
-                        <span>Paradas:</span>
-                        <span className="font-medium">{routeCustomers.length}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Distancia:</span>
-                        <span className="font-medium">{totalDistance.toFixed(1)} km</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Tiempo:</span>
-                        <span className="font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={reorderRouteByCurrentLocation}
-                      className="w-full mt-2 inline-flex items-center justify-center space-x-1 px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700"
-                    >
-                      <Route className="w-3 h-3" />
-                      <span>Optimizar por mi ubicación</span>
-                    </button>
-                    <button
-                      onClick={startNavigation}
-                      className="w-full mt-2 inline-flex items-center justify-center space-x-1 px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>Navegar</span>
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>
@@ -1557,6 +1569,48 @@ export default function Visits() {
           )}
         </div>
       </div>
+
+      {/* Bottom sheet with route details and actions (mobile-first) */}
+      {showDetails && (
+        <div className="fixed inset-x-0 bottom-0 z-40">
+          <div className="mx-auto max-w-6xl px-4 pb-[env(safe-area-inset-bottom)]">
+            <div ref={bottomSheetRef} className="bg-white rounded-t-2xl shadow-xl border border-gray-200">
+              <div className="px-4 py-2 border-b flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-900">Ruta Actual</span>
+                <button onClick={() => setShowDetails(false)} className="p-1 rounded hover:bg-gray-100" aria-label="Cerrar">
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
+              <div className="p-4">
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <div className="text-xs text-gray-500">Paradas</div>
+                    <div className="font-semibold">{routeCustomers.length}</div>
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-2">
+                    <div className="text-xs text-blue-700">Distancia</div>
+                    <div className="font-semibold text-blue-700">{totalDistance.toFixed(1)} km</div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-2">
+                    <div className="text-xs text-green-700">Tiempo</div>
+                    <div className="font-semibold text-green-700">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button onClick={reorderRouteByCurrentLocation} className="inline-flex items-center justify-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                    <Route className="w-4 h-4 mr-1" />
+                    <span>Optimizar por mi ubicación</span>
+                  </button>
+                  <button onClick={startNavigation} className="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    <ExternalLink className="w-4 h-4 mr-1" />
+                    <span>Navegar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal para guardar ruta */}
       {showSaveModal && (
