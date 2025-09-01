@@ -1460,12 +1460,22 @@ export default function Visits() {
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
                     Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
                   </span>
-                  <button
-                    onClick={() => setShowDetails(true)}
-                    className="ml-auto px-3 py-1.5 text-xs bg-white border rounded-lg hover:bg-gray-50"
-                  >
-                    Detalles
-                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      onClick={reorderRouteByCurrentLocation}
+                      className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 inline-flex items-center"
+                    >
+                      <Route className="w-3 h-3 mr-1" />
+                      Optimizar por mi ubicación
+                    </button>
+                    <button
+                      onClick={startNavigation}
+                      className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-flex items-center"
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      Navegar
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1492,7 +1502,7 @@ export default function Visits() {
                   {/* My Location button on map */}
                   <button
                     onClick={getCurrentLocation}
-                    className="absolute right-4 top-20 md:top-4 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                    className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
                     title="Mi Ubicación"
                   >
                     <MapPinIcon className="w-5 h-5 text-blue-600" />
