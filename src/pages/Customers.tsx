@@ -204,6 +204,8 @@ export default function Customers() {
     
     // 分離用戶的notes和省市資訊
     const cleanNotes = stripLocationTags(c.notes as string)
+    // 初始化 C.P（postal_code）：優先使用欄位，其次嘗試從地址/備註中提取 5 位數
+    const initialPostalCode = (c as any).postal_code || extractPostalCode(c.address) || extractPostalCode(cleanNotes) || ''
     
     setEditData({
       name: c.name,
@@ -211,6 +213,7 @@ export default function Customers() {
       phone: c.phone,
       email: c.email,
       address: c.address,
+      postal_code: initialPostalCode,
       city: c.city,
       notes: cleanNotes as any,
       contrato: (c as any).contrato || '',
@@ -275,6 +278,11 @@ export default function Customers() {
         phone: editData.phone,
         email: editData.email,
         address: editData.address,
+      }
+
+      // 包含 C.P（postal_code）欄位
+      if (editData.postal_code !== undefined) {
+        updateData.postal_code = (editData.postal_code || '').trim() || null
       }
 
       // 包含 Número 欄位
@@ -1002,6 +1010,17 @@ export default function Customers() {
                   className="w-full px-3 py-2 border rounded"
                   value={editData.email || ''}
                   onChange={e => handleEditChange('email', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">C.P</label>
+                <input
+                  className="w-full px-3 py-2 border rounded"
+                  value={(editData as any).postal_code || ''}
+                  onChange={e => handleEditChange('postal_code', e.target.value)}
+                  inputMode="numeric"
+                  pattern="\\d{5}"
+                  maxLength={5}
                 />
               </div>
               <div className="sm:col-span-2">
