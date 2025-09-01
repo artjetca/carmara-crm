@@ -177,12 +177,16 @@ export default function Visits() {
 
         // Init map and services once
         if (!mapInstanceRef.current) {
+          const isTouchDevice = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || (navigator as any).maxTouchPoints > 0
+          const gestureHandling = isTouchDevice ? ('greedy' as any) : ('cooperative' as any)
           mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+            // Default center; we fit bounds to the route below once directions are rendered
             center: { lat: 36.7213, lng: -4.4214 },
-            zoom: 9,
+            zoom: routeCustomers.length ? 10 : 7,
             mapTypeControl: false,
             streetViewControl: false,
-            fullscreenControl: true
+            fullscreenControl: true,
+            gestureHandling
           })
           // Ensure map properly lays out if container just appeared
           try {
