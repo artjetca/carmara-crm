@@ -1250,15 +1250,7 @@ export default function Visits() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-gray-900 truncate">
-                            {(customer.phone || (customer as any).mobile_phone) ? (
-                              <a href={telHref(customer.phone || (customer as any).mobile_phone)} className="hover:underline">
-                                {customer.name}
-                              </a>
-                            ) : (
-                              customer.name
-                            )}
-                          </h3>
+                          <h3 className="text-sm font-medium text-gray-900 truncate">{customer.name}</h3>
                           <p className="text-xs text-gray-600 truncate">{customer.company}</p>
                           {(customer.phone || (customer as any).mobile_phone) && (
                             <a
