@@ -49,6 +49,8 @@ export default function Visits() {
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  // Per-user draft key for autosave of route planning
+  const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
   if (!mapsApiKey) {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
@@ -657,6 +659,8 @@ export default function Visits() {
     setTotalDistance(0)
     setTotalDuration(0)
     setSelectedCustomer(null)
+    // clear draft when route is cleared
+    try { localStorage.removeItem(draftKey) } catch {}
   }
 
   // 儲存路線
@@ -681,6 +685,8 @@ export default function Visits() {
     saved.push(routeData)
     localStorage.setItem('savedRoutes', JSON.stringify(saved))
     setSavedRoutes(saved)
+    // on successful save, clear the temporary draft
+    try { localStorage.removeItem(draftKey) } catch {}
     setShowSaveModal(false)
     setRouteName('')
     alert('Ruta guardada exitosamente')
@@ -710,6 +716,55 @@ export default function Visits() {
     const saved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
     setSavedRoutes(saved)
   }, [])
+
+  // Restore draft route (if any) on mount / when user is ready
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey)
+      if (!raw) return
+      const draft = JSON.parse(raw || '{}')
+      if (!draft || typeof draft !== 'object') return
+      // avoid overwriting an existing in-memory route
+      if (routeCustomers.length > 0) return
+      const draftCustomers = Array.isArray(draft.customers) ? draft.customers : []
+      if (draftCustomers.length === 0 && !draft.date && !draft.time) return
+      setRouteCustomers(draftCustomers)
+      setRouteDate(String(draft.date || ''))
+      setRouteTime(String(draft.time || ''))
+      setTotalDistance(Number(draft.totalDistance || 0))
+      setTotalDuration(Number(draft.totalDuration || 0))
+      if (draftCustomers.length > 0) {
+        // recalc to ensure distances are fresh and map renders
+        calculateRouteDistanceAndTime(draftCustomers)
+      }
+      try { console.log('[RoutePlanning] Draft route restored from localStorage') } catch {}
+    } catch (e) {
+      console.warn('[RoutePlanning] Failed to restore draft route', e)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey])
+
+  // Autosave draft whenever route-related state changes
+  useEffect(() => {
+    try {
+      // If nothing meaningful, remove draft
+      if (routeCustomers.length === 0 && !routeDate && !routeTime) {
+        localStorage.removeItem(draftKey)
+        return
+      }
+      const draft = {
+        date: routeDate,
+        time: routeTime,
+        customers: routeCustomers,
+        totalDistance,
+        totalDuration,
+        updatedAt: new Date().toISOString()
+      }
+      localStorage.setItem(draftKey, JSON.stringify(draft))
+    } catch (e) {
+      console.warn('[RoutePlanning] Failed to persist draft route', e)
+    }
+  }, [draftKey, routeCustomers, routeDate, routeTime, totalDistance, totalDuration])
 
   // 獲取當前位置 - 只顯示位置，不自動加入路線
   const getCurrentLocation = async () => {
