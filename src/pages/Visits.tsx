@@ -188,6 +188,15 @@ export default function Visits() {
           } catch (err) {
             // Ignore: resize may fail if map not fully ready yet
           }
+          // Add padding so overlays don't cover markers/controls (more space on mobile)
+          try {
+            const isMobile = window.matchMedia ? window.matchMedia('(max-width: 768px)').matches : (window.innerWidth <= 768)
+            if (isMobile) {
+              mapInstanceRef.current.setOptions?.({ padding: { top: 80, right: 16, bottom: 16, left: 16 } })
+            } else {
+              mapInstanceRef.current.setOptions?.({ padding: { top: 16, right: 16, bottom: 16, left: 16 } })
+            }
+          } catch {}
         }
         if (!directionsServiceRef.current) directionsServiceRef.current = new google.maps.DirectionsService()
         if (!directionsRendererRef.current) {
@@ -1440,12 +1449,12 @@ export default function Visits() {
                   {/* My Location button on map */}
                   <button
                     onClick={getCurrentLocation}
-                    className="absolute top-4 right-4 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                    className="absolute right-4 top-20 md:top-4 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
                     title="Mi Ubicación"
                   >
                     <MapPinIcon className="w-5 h-5 text-blue-600" />
                   </button>
-                  <div className="absolute top-4 left-4 bg-white rounded-lg shadow-md p-3 max-w-xs">
+                  <div className="absolute left-4 top-24 md:top-4 bg-white rounded-lg shadow-md p-3 max-w-xs">
                     <h3 className="font-medium text-gray-900 mb-2">Ruta Actual</h3>
                     <div className="text-xs text-gray-600 space-y-1">
                       <div className="flex justify-between">

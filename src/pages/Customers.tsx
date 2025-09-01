@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Upload, Download, Trash2, Plus, Search, Building, Edit } from 'lucide-react'
+import { Upload, Download, Trash2, Plus, Search, Building, Edit, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useStore } from '../store/useStore'
 import { supabase, Customer } from '../lib/supabase'
@@ -1251,10 +1251,15 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white w-full max-w-xl rounded-lg shadow-lg p-6 max-h-[90vh] overflow-y-auto overscroll-contain">
-        <h3 className="text-lg font-semibold mb-4">Agregar cliente</h3>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-24">
-          <div>
+      <div className="bg-white w-full max-w-xl rounded-lg shadow-lg max-h-[90vh] overflow-y-auto overscroll-contain">
+        <div className="sticky top-0 z-10 bg-white border-b px-6 py-3 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Agregar cliente</h3>
+          <button onClick={onClose} className="p-2 rounded hover:bg-gray-100" aria-label="Cerrar">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Nombre</label>
             <input
               className="w-full px-3 py-2 border rounded"
@@ -1328,7 +1333,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               <option value="">-</option>
               {addProvince && (
                 <>
-                  {(municipiosByProvince[addProvince] || []).map(m => (
+                  {(availableMunicipios || []).map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </>
@@ -1352,7 +1357,7 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               onChange={e => handleChange('notes', e.target.value)}
             />
           </div>
-          <div className="sm:col-span-2 mt-4 sticky bottom-0 bg-white pt-3 z-10 flex justify-end gap-3 border-t" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <div className="sticky bottom-0 bg-white border-t p-4 flex justify-end gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 border rounded" disabled={loading}>Cancelar</button>
             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60" disabled={loading || !formData.name.trim()}>
               {loading ? 'Guardando…' : 'Guardar'}
