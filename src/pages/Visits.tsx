@@ -153,11 +153,24 @@ export default function Visits() {
     return (window as any).google
   }
 
+  // Small helper to await next tick or a short delay
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
   // Render route on Google Maps with numbered markers
   useEffect(() => {
     const render = async () => {
       try {
-        if (!mapsApiKey || !mapRef.current || routeCustomers.length === 0) return
+        // Require API key and at least 1 stop
+        if (!mapsApiKey || routeCustomers.length === 0) return
+
+        // Wait for the map container to be mounted (can lag right after draft restore)
+        if (!mapRef.current) {
+          await sleep(0)
+        }
+        if (!mapRef.current) {
+          await sleep(50)
+        }
+        if (!mapRef.current) return
         const google = await ensureGoogleMapsLoaded()
 
         // Init map and services once
@@ -169,6 +182,12 @@ export default function Visits() {
             streetViewControl: false,
             fullscreenControl: true
           })
+          // Ensure map properly lays out if container just appeared
+          try {
+            google.maps.event.trigger(mapInstanceRef.current, 'resize')
+          } catch (err) {
+            // Ignore: resize may fail if map not fully ready yet
+          }
         }
         if (!directionsServiceRef.current) directionsServiceRef.current = new google.maps.DirectionsService()
         if (!directionsRendererRef.current) {
@@ -323,6 +342,12 @@ export default function Visits() {
         })
 
         if (!bounds.isEmpty()) {
+          // Trigger resize to ensure bounds fit if the container size changed recently
+          try {
+            (window as any).google.maps.event.trigger(map, 'resize')
+          } catch (err) {
+            // Ignore: resize may fail if map not fully ready yet
+          }
           map.fitBounds(bounds)
         }
       } catch (e) {
