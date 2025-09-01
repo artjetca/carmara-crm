@@ -790,12 +790,9 @@ export default function Customers() {
               >
                 <option value="">Todas las Ciudades</option>
                 {selectedProvince ? (
-                  <>
-                    <option key={selectedProvince} value={selectedProvince}>{selectedProvince}</option>
-                    {(municipiosByProvince[selectedProvince] || []).map(city => (
-                      <option key={city} value={city}>{city}</option>
-                    ))}
-                  </>
+                  (municipiosByProvince[selectedProvince] || []).map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))
                 ) : (
                   allCities.map(city => (
                     <option key={city} value={city}>{city}</option>

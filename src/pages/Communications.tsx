@@ -213,7 +213,7 @@ export default function Communications() {
   // Helpers (must be declared before first use)
   const isProvinceName = (v?: string) => {
     const s = String(v || '').trim().toLowerCase()
-    return s === 'huelva' || s === 'cádiz' || s === 'cadiz'
+    return s === 'huelva' || s === 'cádiz' || s === 'cadiz' || s === 'ceuta'
   }
 
   const extractCityForDisplay = (notes?: string): string => {
@@ -227,7 +227,7 @@ export default function Communications() {
     const cityFromNotes = extractCityForDisplay(c.notes)
     if (cityFromNotes) return cityFromNotes
     const city = String(c.city || '').trim()
-    if (city && !isProvinceName(city)) return city
+    if (city) return city
     return ''
   }
 
@@ -246,7 +246,7 @@ export default function Communications() {
   }
 
   // 省份和城市數據
-  const provinces = ['Cádiz', 'Huelva']
+  const provinces = ['Cádiz', 'Huelva', 'Ceuta']
   const municipiosByProvince: Record<string, string[]> = {
     'Cádiz': [
       'Alcalá de los Gazules', 'Alcalá del Valle', 'Algar', 'Algeciras', 'Algodonales', 'Arcos de la Frontera',
@@ -264,7 +264,8 @@ export default function Communications() {
       'Bonares', 'Chucena', 'Corrales', 'Cortegana', 'Cumbres Mayores', 'Galaroza', 'Hinojales',
       'Lucena del Puerto', 'Manzanilla', 'Mazagón', 'Nerva', 'El Repilado', 'San Juan del Puerto',
       'Trigueros', 'Villalba del Alcor', 'Villanueva de los Castillejos'
-    ]
+    ],
+    'Ceuta': ['Ceuta']
   }
 
   // Obtener todas las ciudades únicas de los clientes existentes
@@ -890,7 +891,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   const [selectedCity, setSelectedCity] = useState<string>('')
 
   // 本地 Province/City 常數（與 Visits 一致）
-  const provinces = ['Cádiz', 'Huelva']
+  const provinces = ['Cádiz', 'Huelva', 'Ceuta']
   const municipiosByProvince: Record<string, string[]> = {
     'Cádiz': [
       'Alcalá de los Gazules', 'Alcalá del Valle', 'Algar', 'Algeciras', 'Algodonales', 'Arcos de la Frontera',
@@ -908,11 +909,12 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       'Bonares', 'Chucena', 'Corrales', 'Cortegana', 'Cumbres Mayores', 'Galaroza', 'Hinojales',
       'Lucena del Puerto', 'Manzanilla', 'Mazagón', 'Nerva', 'El Repilado', 'San Juan del Puerto',
       'Trigueros', 'Villalba del Alcor', 'Villanueva de los Castillejos'
-    ]
+    ],
+    'Ceuta': ['Ceuta']
   }
 
   // 本地輔助：從 notes/欄位推導省市
-  const isProvinceName = (v?: string) => /^(huelva|c(a|á)diz)$/i.test(String(v || '').trim())
+  const isProvinceName = (v?: string) => /^(huelva|c(a|á)diz|ceuta)$/i.test(String(v || '').trim())
   
   const extractFromNotes = (notes: string | undefined, key: 'Provincia' | 'Ciudad') => {
     if (!notes) return ''
@@ -925,6 +927,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     const s = String(val || '').trim().toLowerCase()
     if (s === 'cadiz' || s === 'cádiz') return 'Cádiz'
     if (s === 'huelva') return 'Huelva'
+    if (s === 'ceuta') return 'Ceuta'
     return val?.trim() || ''
   }
 
@@ -937,9 +940,11 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     // City equals province
     if (/^huelva$/i.test(city)) return 'Huelva'
     if (/^c(a|á)diz$/i.test(city)) return 'Cádiz'
+    if (/^ceuta$/i.test(city)) return 'Ceuta'
     // Infer province by municipality membership
     if (municipiosByProvince['Huelva']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Huelva'
     if (municipiosByProvince['Cádiz']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Cádiz'
+    if (municipiosByProvince['Ceuta']?.some(m => m.toLowerCase() === city.toLowerCase())) return 'Ceuta'
     return ''
   }
   
