@@ -47,7 +47,6 @@ export default function Visits() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
   const t = translations
-  const DRAFT_STORAGE_KEY = 'routeDraft'
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   if (!mapsApiKey) {
@@ -654,7 +653,6 @@ export default function Visits() {
 
   // 清空路線
   const clearRoute = () => {
-    try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch {}
     setRouteCustomers([])
     setTotalDistance(0)
     setTotalDuration(0)
@@ -684,7 +682,6 @@ export default function Visits() {
     localStorage.setItem('savedRoutes', JSON.stringify(saved))
     setSavedRoutes(saved)
     setShowSaveModal(false)
-    try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch {}
     setRouteName('')
     alert('Ruta guardada exitosamente')
   }
