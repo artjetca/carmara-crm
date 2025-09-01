@@ -47,57 +47,12 @@ export default function Visits() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
   const t = translations
+  const DRAFT_STORAGE_KEY = 'routeDraft'
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   if (!mapsApiKey) {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
-
-  // Autosave draft of in-progress route so it survives navigation without explicit save
-  const draftKey = useMemo(() => `routeDraft_${user?.id || 'anon'}`, [user?.id])
-
-  // Restore draft on load (only if no current route)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(draftKey)
-      if (!raw) return
-      if (routeCustomers.length > 0) return
-      const draft = JSON.parse(raw)
-      if (!draft || !Array.isArray(draft.customers) || draft.customers.length === 0) return
-      setRouteCustomers(draft.customers)
-      setRouteDate(draft.date || '')
-      setRouteTime(draft.time || '')
-      setTotalDistance(draft.totalDistance || 0)
-      setTotalDuration(draft.totalDuration || 0)
-      // Recalculate to sync distances/times with current backend and renderer
-      calculateRouteDistanceAndTime(draft.customers)
-      console.log('[RoutePlanning] Restored route draft from localStorage')
-    } catch (e) {
-      console.warn('[RoutePlanning] Failed to restore route draft', e)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftKey])
-
-  // Persist draft whenever route or date/time changes; remove when empty
-  useEffect(() => {
-    try {
-      if (routeCustomers.length === 0) {
-        localStorage.removeItem(draftKey)
-        return
-      }
-      const draft = {
-        date: routeDate,
-        time: routeTime,
-        customers: routeCustomers,
-        totalDistance,
-        totalDuration,
-        updatedAt: new Date().toISOString()
-      }
-      localStorage.setItem(draftKey, JSON.stringify(draft))
-    } catch (e) {
-      // no-op
-    }
-  }, [draftKey, routeCustomers, routeDate, routeTime, totalDistance, totalDuration])
 
   // Helpers for tel: links and safe HTML in InfoWindow
   const sanitizePhone = (phone?: string) => String(phone || '').replace(/\D+/g, '')
@@ -699,11 +654,11 @@ export default function Visits() {
 
   // 清空路線
   const clearRoute = () => {
+    try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch {}
     setRouteCustomers([])
     setTotalDistance(0)
     setTotalDuration(0)
     setSelectedCustomer(null)
-    try { localStorage.removeItem(draftKey) } catch {}
   }
 
   // 儲存路線
@@ -729,8 +684,8 @@ export default function Visits() {
     localStorage.setItem('savedRoutes', JSON.stringify(saved))
     setSavedRoutes(saved)
     setShowSaveModal(false)
+    try { localStorage.removeItem(DRAFT_STORAGE_KEY) } catch {}
     setRouteName('')
-    try { localStorage.removeItem(draftKey) } catch {}
     alert('Ruta guardada exitosamente')
   }
 
@@ -742,7 +697,6 @@ export default function Visits() {
     setTotalDistance(routeData.totalDistance)
     setTotalDuration(routeData.totalDuration)
     setShowLoadModal(false)
-    try { localStorage.removeItem(draftKey) } catch {}
     calculateRouteDistanceAndTime(routeData.customers)
   }
 
