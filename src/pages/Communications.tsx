@@ -1039,51 +1039,80 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         return
       }
 
-      // 1) Detectar columnas del backend para máxima compatibilidad (user_id vs created_by, scheduled_for vs send_at, subject opcional)
-      const detectCol = async (col: string) => {
-        const res = await supabase.from('scheduled_messages').select(col).limit(1)
-        return !res.error
-      }
-
-      const hasUserId = await detectCol('user_id')
-      const hasCreatedBy = !hasUserId ? await detectCol('created_by') : false
-      const hasScheduledFor = await detectCol('scheduled_for')
-      const hasSendAt = !hasScheduledFor ? await detectCol('send_at') : false
-      const hasSubject = await detectCol('subject')
-
-      // 2) Expandir combinaciones cliente × horario usando columnas detectadas
-      const rows = formData.customer_ids.flatMap(cid =>
+      // Preparar filas base (sin decidir columnas específicas aún)
+      const baseRows = formData.customer_ids.flatMap(cid =>
         formData.schedules.map(s => {
+          const iso = new Date(`${s.date}T${s.time}:00`).toISOString()
           const base: any = {
             customer_id: cid,
             type: formData.type,
             message: formData.message,
-            status: 'pending'
+            status: 'pending',
+            __iso: iso
           }
-          const iso = new Date(`${s.date}T${s.time}:00`).toISOString()
-          if (hasScheduledFor) base['scheduled_for'] = iso
-          else if (hasSendAt) base['send_at'] = iso
-          if (hasUserId) base['user_id'] = user?.id
-          else if (hasCreatedBy) base['created_by'] = user?.id
-          if (hasSubject && formData.type === 'email' && formData.subject.trim().length > 0) {
+          if (formData.type === 'email' && formData.subject.trim().length > 0) {
             base['subject'] = formData.subject
           }
           return base
         })
       )
 
-      const { data, error } = await supabase
-        .from('scheduled_messages')
-        .insert(rows)
-        .select('*')
+      // Helper para construir filas según clave de tiempo y usuario
+      const buildRows = (timeKey: 'scheduled_for' | 'send_at', userKey: 'user_id' | 'created_by' | null) => {
+        return baseRows.map((r: any) => {
+          const out: any = {
+            customer_id: r.customer_id,
+            type: r.type,
+            message: r.message,
+            status: r.status
+          }
+          if (r.subject) out.subject = r.subject
+          out[timeKey] = r.__iso
+          if (userKey) out[userKey] = user?.id
+          return out
+        })
+      }
 
-      if (error) throw error
+      // Secuencia de intentos para máxima compatibilidad sin "preflight selects"
+      const variants: Array<{ timeKey: 'scheduled_for' | 'send_at'; userKey: 'user_id' | 'created_by' | null }> = [
+        { timeKey: 'scheduled_for', userKey: 'user_id' },
+        { timeKey: 'send_at', userKey: 'user_id' },
+        { timeKey: 'scheduled_for', userKey: 'created_by' },
+        { timeKey: 'send_at', userKey: 'created_by' },
+        // Últimos intentos sin user column (por si hay triggers por defecto)
+        { timeKey: 'scheduled_for', userKey: null },
+        { timeKey: 'send_at', userKey: null }
+      ]
 
-      const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
-      alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
-      onSave(Array.isArray(data) ? data[0] : data)
+      let lastError: any = null
+      for (const v of variants) {
+        try {
+          const rows = buildRows(v.timeKey, v.userKey)
+          const { data, error } = await supabase
+            .from('scheduled_messages')
+            .insert(rows)
+            .select('*')
+          if (error) throw error
+          const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
+          alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
+          onSave(Array.isArray(data) ? data[0] : data)
+          lastError = null
+          break
+        } catch (err: any) {
+          lastError = err
+          // Continuar con el siguiente variante
+        }
+      }
+
+      if (lastError) throw lastError
     } catch (error: any) {
-      console.error('Error saving message:', error)
+      console.error('Error saving message:', {
+        message: error?.message,
+        name: error?.name,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code
+      })
       alert(t.communications.messageSaveError)
     } finally {
       setLoading(false)
