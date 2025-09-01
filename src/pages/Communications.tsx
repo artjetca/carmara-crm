@@ -1039,16 +1039,12 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         return
       }
 
-      // Construir filas con claves uniformes para evitar 400 (todas incluyen subject)
+      // Usar solo las columnas que existen en la tabla actual
       const rows = formData.customer_ids.flatMap(cid =>
         formData.schedules.map(s => ({
-          customer_id: cid,
-          type: formData.type,
-          subject: formData.type === 'email' ? formData.subject : null,
-          message: formData.message,
+          message: `${formData.type.toUpperCase()}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''} [Cliente: ${cid}]`,
           scheduled_for: new Date(`${s.date}T${s.time}:00`).toISOString(),
-          status: 'pending',
-          user_id: user?.id
+          status: 'pending'
         }))
       )
 
