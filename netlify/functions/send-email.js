@@ -1,36 +1,54 @@
 const { google } = require('googleapis');
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+
 exports.handler = async (event, context) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS'
-      },
+      headers: corsHeaders,
       body: ''
-    };
+    }
   }
 
-  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
+      headers: corsHeaders,
       body: JSON.stringify({ error: 'Method not allowed' })
-    };
+    }
+  }
+
+  // Validate environment variables
+  const requiredEnvVars = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN', 'GMAIL_FROM_EMAIL']
+  const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar])
+  
+  if (missingEnvVars.length > 0) {
+    console.error('Missing environment variables:', missingEnvVars)
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ 
+        error: `Gmail API not configured. Missing environment variables: ${missingEnvVars.join(', ')}`,
+        missingVars: missingEnvVars
+      })
+    }
   }
 
   try {
-    const { to, subject, message, type = 'email' } = JSON.parse(event.body);
+    const { to, subject, message, type } = JSON.parse(event.body || '{}')
 
-    // Validate required fields
-    if (!to || !message) {
+    if (!to || !subject || !message) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ error: 'Missing required fields: to, message' })
-      };
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Missing required fields: to, subject, message' })
+      }
     }
 
     // Skip SMS for now - only handle email
