@@ -1365,18 +1365,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
 
       const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
       
-      // Only send emails immediately if scheduled time is now or in the past
-      if (formData.type === 'email') {
-        const now = new Date()
-        const immediateMessages = data.filter(msg => {
-          const scheduledTime = new Date(msg.scheduled_for)
-          return scheduledTime <= now
-        })
-        
-        if (immediateMessages.length > 0) {
-          await sendImmediateEmails(immediateMessages, formData)
-        }
-      }
+      // Do not send emails immediately - all emails should be scheduled
+      // Email sending will be handled by a separate background scheduler
       
       alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
       

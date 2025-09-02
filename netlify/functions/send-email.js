@@ -105,7 +105,7 @@ exports.handler = async (event, context) => {
     const rawMessage = [
       `From: ${fromEmail}`,
       `To: ${to}`,
-      `Subject: ${emailSubject}`,
+      `Subject: =?UTF-8?B?${Buffer.from(emailSubject).toString('base64')}?=`,
       'Content-Type: text/html; charset=utf-8',
       '',
       emailContent
