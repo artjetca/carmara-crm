@@ -41,8 +41,31 @@ async function testMessageScheduling() {
     }
     console.log('')
 
-    // 2. Get a test customer
-    console.log('2. Getting test customer...')
+    // 2. Test simple insert with minimal data
+    console.log('2. Testing simple insert...')
+    const testRow = {
+      message: 'Test message from script',
+      scheduled_for: new Date().toISOString(),
+      status: 'pending'
+    }
+    
+    const { data: insertData, error: insertError } = await supabase
+      .from('scheduled_messages')
+      .insert([testRow])
+      .select('*')
+    
+    if (insertError) {
+      console.log('❌ Insert error:', insertError)
+      console.log('Details:', insertError.details)
+      console.log('Hint:', insertError.hint)
+      console.log('Code:', insertError.code)
+    } else {
+      console.log('✅ Insert successful:', insertData)
+    }
+    console.log('')
+
+    // 3. Get a test customer
+    console.log('3. Getting test customer...')
     const { data: customers, error: customerError } = await supabase
       .from('customers')
       .select('id, name, company, province, city')
