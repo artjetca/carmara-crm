@@ -1040,15 +1040,18 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       }
 
       // Usar las columnas que realmente existen: customer_ids, message, scheduled_for, status, created_by
-      const rows = formData.customer_ids.flatMap(cid =>
-        formData.schedules.map(s => ({
+      const rows = formData.customer_ids.flatMap(cid => {
+        const customer = customers.find(c => c.id === cid)
+        const customerName = customer ? `${customer.name} (${customer.company || 'Sin empresa'})` : cid
+        
+        return formData.schedules.map(s => ({
           customer_ids: [cid], // Array format for customer_ids column
-          message: `${formData.type.toUpperCase()}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''}`,
+          message: `${formData.type.toUpperCase()}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''} | Cliente: ${customerName}`,
           scheduled_for: new Date(`${s.date}T${s.time}:00`).toISOString(),
           status: 'pending',
           created_by: user?.id
         }))
-      )
+      })
 
       const { data, error } = await supabase
         .from('scheduled_messages')
