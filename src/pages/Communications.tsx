@@ -1365,16 +1365,24 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
 
       const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
       
-      // Send immediate emails for email type messages
+      // Only send emails immediately if scheduled time is now or in the past
       if (formData.type === 'email') {
-        await sendImmediateEmails(data, formData)
-        // Reload data instead of full page refresh
-        setTimeout(() => {
-          window.location.reload()
-        }, 2000)
+        const now = new Date()
+        const immediateMessages = data.filter(msg => {
+          const scheduledTime = new Date(msg.scheduled_for)
+          return scheduledTime <= now
+        })
+        
+        if (immediateMessages.length > 0) {
+          await sendImmediateEmails(immediateMessages, formData)
+        }
       }
       
       alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
+      
+      // Close modal and let parent component refresh the list
+      onClose()
+      
       onSave(Array.isArray(data) ? data[0] : data)
     } catch (error: any) {
       console.error('Error saving message:', {
