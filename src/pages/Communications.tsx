@@ -306,6 +306,8 @@ export default function Communications() {
         throw new Error('Mensaje no encontrado')
       }
 
+      console.log('Processing message:', message)
+
       // Extract customer ID from message
       const customerId = message.customer_ids?.[0]
       if (!customerId) {
@@ -315,22 +317,36 @@ export default function Communications() {
       // Find customer
       const customer = customers.find(c => c.id === customerId)
       if (!customer?.email) {
-        throw new Error('Email del cliente no encontrado')
+        throw new Error(`Email del cliente no encontrado. Cliente: ${customer?.name || 'Desconocido'}`)
       }
+
+      console.log('Sending to customer:', customer.name, customer.email)
 
       // Extract subject and content from message
       let subject = 'Mensaje desde Casmara CRM'
       let content = message.message
 
-      // Try to extract subject if it's in the message format
-      const subjectMatch = message.message.match(/\(([^)]+)\)/)
-      if (subjectMatch) {
-        subject = subjectMatch[1]
-        content = message.message.replace(/\s*\([^)]+\)/, '')
+      // Handle new message format: "Mensaje: content (subject)" or "SMS: content"
+      if (content.startsWith('Mensaje:')) {
+        content = content.replace(/^Mensaje:\s*/, '')
+        
+        // Try to extract subject if it's in parentheses at the end
+        const subjectMatch = content.match(/\s*\(([^)]+)\)\s*$/)
+        if (subjectMatch) {
+          subject = subjectMatch[1]
+          content = content.replace(/\s*\([^)]+\)\s*$/, '')
+        }
+      } else if (content.startsWith('EMAIL:')) {
+        // Handle old format for backward compatibility
+        content = content.replace(/^EMAIL:\s*/, '')
+        const subjectMatch = content.match(/\s*\(([^)]+)\)\s*$/)
+        if (subjectMatch) {
+          subject = subjectMatch[1]
+          content = content.replace(/\s*\([^)]+\)\s*$/, '')
+        }
       }
 
-      // Remove EMAIL: prefix if present
-      content = content.replace(/^EMAIL:\s*/, '')
+      console.log('Email details:', { to: customer.email, subject, content: content.substring(0, 100) + '...' })
 
       // Send email
       const response = await fetch('/.netlify/functions/send-email', {
@@ -341,12 +357,15 @@ export default function Communications() {
         body: JSON.stringify({
           to: customer.email,
           subject: subject,
-          message: content,
+          message: content.trim(),
           type: 'email'
         })
       })
 
+      console.log('Email API response status:', response.status)
+
       const emailResult = await response.json()
+      console.log('Email API result:', emailResult)
 
       if (response.ok && emailResult.success) {
         // Update message status to 'sent'
@@ -356,13 +375,18 @@ export default function Communications() {
           .eq('id', messageId)
 
         if (updateError) {
+          console.error('Error updating status to sent:', updateError)
           throw updateError
         }
 
+        console.log('✅ Email sent successfully, status updated')
+        
         // Refresh data to show updated status
         loadData()
-        alert('✅ Email enviado correctamente')
+        alert(`✅ Email enviado correctamente a ${customer.email}`)
       } else {
+        console.error('Email sending failed:', emailResult)
+        
         // Update message status to 'failed'
         await supabase
           .from('scheduled_messages')
@@ -377,6 +401,22 @@ export default function Communications() {
       }
     } catch (error: any) {
       console.error('Error sending email:', error)
+      
+      // Update message status to 'failed' if not already done
+      try {
+        await supabase
+          .from('scheduled_messages')
+          .update({ 
+            status: 'failed',
+            error_message: error.message || 'Error desconocido'
+          })
+          .eq('id', messageId)
+        
+        loadData()
+      } catch (updateError) {
+        console.error('Error updating failed status:', updateError)
+      }
+      
       alert(`❌ Error al enviar email: ${error.message}`)
     }
   }
@@ -665,11 +705,32 @@ export default function Communications() {
 
         {/* Test Email Section */}
         <div className="p-6 border-b border-gray-200 bg-blue-50">
-          <div className="max-w-2xl">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              🧪 Probar Envío de Email
-            </h3>
-            <TestEmailForm />
+          <div className="max-w-4xl">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  🧪 Probar Envío de Email
+                </h3>
+                <TestEmailForm />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  ⚡ Programador de Emails
+                </h3>
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-sm text-gray-600 mb-4">
+                    Ejecutar manualmente el programador para enviar emails pendientes programados.
+                  </p>
+                  <button
+                    onClick={triggerEmailScheduler}
+                    className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center space-x-2"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Ejecutar Programador de Emails</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
