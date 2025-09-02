@@ -67,21 +67,6 @@ interface ScheduledMessage {
   }
 }
 
-// Helper to delete a scheduled message in DB
-const deleteScheduledMessage = async (id: string): Promise<boolean> => {
-  try {
-    const { error } = await supabase
-      .from('scheduled_messages')
-      .delete()
-      .eq('id', id)
-    if (error) throw error
-    return true
-  } catch (err) {
-    console.error('Error deleting message:', err)
-    alert('No se pudo eliminar el mensaje. Ver logs para más detalles.')
-    return false
-  }
-}
 
 // Test Email Form Component
 const TestEmailForm = () => {
@@ -297,9 +282,102 @@ export default function Communications() {
 
   // Delete handler bound to state
   const handleDeleteMessage = async (id: string) => {
-    const ok = await deleteScheduledMessage(id)
-    if (ok) {
+    try {
+      const { error } = await supabase
+        .from('scheduled_messages')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      
+      // Remove from local state
       setMessages(prev => prev.filter(m => m.id !== id))
+    } catch (error) {
+      console.error('Error deleting message:', error)
+      alert('Error al eliminar el mensaje')
+    }
+  }
+
+  const handleSendNow = async (messageId: string) => {
+    try {
+      // Find the message
+      const message = messages.find(m => m.id === messageId)
+      if (!message) {
+        throw new Error('Mensaje no encontrado')
+      }
+
+      // Extract customer ID from message
+      const customerId = message.customer_ids?.[0]
+      if (!customerId) {
+        throw new Error('ID del cliente no encontrado')
+      }
+
+      // Find customer
+      const customer = customers.find(c => c.id === customerId)
+      if (!customer?.email) {
+        throw new Error('Email del cliente no encontrado')
+      }
+
+      // Extract subject and content from message
+      let subject = 'Mensaje desde Casmara CRM'
+      let content = message.message
+
+      // Try to extract subject if it's in the message format
+      const subjectMatch = message.message.match(/\(([^)]+)\)/)
+      if (subjectMatch) {
+        subject = subjectMatch[1]
+        content = message.message.replace(/\s*\([^)]+\)/, '')
+      }
+
+      // Remove EMAIL: prefix if present
+      content = content.replace(/^EMAIL:\s*/, '')
+
+      // Send email
+      const response = await fetch('/.netlify/functions/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: customer.email,
+          subject: subject,
+          message: content,
+          type: 'email'
+        })
+      })
+
+      const emailResult = await response.json()
+
+      if (response.ok && emailResult.success) {
+        // Update message status to 'sent'
+        const { error: updateError } = await supabase
+          .from('scheduled_messages')
+          .update({ status: 'sent' })
+          .eq('id', messageId)
+
+        if (updateError) {
+          throw updateError
+        }
+
+        // Refresh data to show updated status
+        loadData()
+        alert('✅ Email enviado correctamente')
+      } else {
+        // Update message status to 'failed'
+        await supabase
+          .from('scheduled_messages')
+          .update({ 
+            status: 'failed',
+            error_message: emailResult.error || 'Error desconocido'
+          })
+          .eq('id', messageId)
+
+        loadData()
+        throw new Error(emailResult.error || 'Error al enviar email')
+      }
+    } catch (error: any) {
+      console.error('Error sending email:', error)
+      alert(`❌ Error al enviar email: ${error.message}`)
     }
   }
 
@@ -572,7 +650,7 @@ export default function Communications() {
           {activeTab === 'calls' ? (
             <CallsList calls={filteredCalls} />
           ) : (
-            <MessagesList messages={filteredMessages} onDelete={handleDeleteMessage} />
+            <MessagesList messages={filteredMessages} onDelete={handleDeleteMessage} onSendNow={handleSendNow} />
           )}
         </div>
       </div>
@@ -682,10 +760,11 @@ function CallsList({ calls }: { calls: Call[] }) {
 }
 
 // Componente para lista de mensajes
-function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; onDelete: (id: string) => Promise<void> | void }) {
+function MessagesList({ messages, onDelete, onSendNow }: { messages: ScheduledMessage[]; onDelete: (id: string) => Promise<void> | void; onSendNow: (id: string) => Promise<void> | void }) {
   const t = translations
   const [selectedMessages, setSelectedMessages] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
+  const [sendingMessages, setSendingMessages] = useState<string[]>([])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
@@ -753,6 +832,18 @@ function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; on
       alert('Error al eliminar algunos mensajes')
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  const handleSendNow = async (messageId: string) => {
+    setSendingMessages(prev => [...prev, messageId])
+    try {
+      await onSendNow(messageId)
+    } catch (error) {
+      console.error('Error sending message:', error)
+      alert('Error al enviar el mensaje')
+    } finally {
+      setSendingMessages(prev => prev.filter(id => id !== messageId))
     }
   }
 
@@ -875,6 +966,17 @@ function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; on
                 </div>
               </div>
               <div className="flex items-center space-x-2">
+                {/* Send Now button for pending email messages */}
+                {isEmail && message.status === 'pending' && (
+                  <button
+                    title="Enviar ahora"
+                    className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => handleSendNow(message.id)}
+                    disabled={sendingMessages.includes(message.id)}
+                  >
+                    {sendingMessages.includes(message.id) ? 'Enviando...' : 'Enviar ahora'}
+                  </button>
+                )}
                 <button
                   title="Eliminar"
                   className="p-1 rounded hover:bg-red-50"
