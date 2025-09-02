@@ -1025,6 +1025,35 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     setFormData({ ...formData, customer_ids: formData.customer_ids.filter(cid => cid !== id) })
   }
 
+  // Send immediate emails for email type messages
+  const sendImmediateEmails = async (rows: any[], formData: any) => {
+    try {
+      for (const row of rows) {
+        const customer = customers.find(c => row.customer_ids.includes(c.id))
+        if (customer?.email && formData.type === 'email') {
+          const response = await fetch('/.netlify/functions/send-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              to: customer.email,
+              subject: formData.subject || 'Mensaje desde Casmara CRM',
+              message: formData.message,
+              type: 'email'
+            })
+          })
+          
+          if (!response.ok) {
+            console.error(`Failed to send email to ${customer.email}`)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error sending immediate emails:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -1061,6 +1090,12 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       if (error) throw error
 
       const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
+      
+      // Send immediate emails for email type messages
+      if (formData.type === 'email') {
+        await sendImmediateEmails(rows, formData)
+      }
+      
       alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
       onSave(Array.isArray(data) ? data[0] : data)
     } catch (error: any) {
