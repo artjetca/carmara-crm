@@ -568,6 +568,29 @@ export default function Communications() {
     )
   }
 
+  // Check authentication status
+  if (!user) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-center space-x-3">
+            <XCircle className="w-6 h-6 text-red-600" />
+            <div>
+              <h3 className="text-lg font-medium text-red-800">Error de Autenticación</h3>
+              <p className="text-red-700 mt-1">No está autenticado. Por favor, inicie sesión para acceder a las comunicaciones.</p>
+              <button 
+                onClick={() => window.location.href = '/login'}
+                className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Ir a Iniciar Sesión
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -575,6 +598,11 @@ export default function Communications() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t.communications.title}</h1>
           <p className="text-gray-600">{t.communications.subtitle}</p>
+          {/* Auth Status Indicator */}
+          <div className="flex items-center space-x-2 mt-2">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <span className="text-sm text-green-700">Autenticado como: {user.email}</span>
+          </div>
         </div>
         <div className="flex items-center space-x-3">
           <button
@@ -1412,6 +1440,15 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     setLoading(true)
 
     try {
+      // Check authentication first
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError || !session?.user) {
+        alert('❌ Error de autenticación. Por favor, cierre sesión e inicie sesión nuevamente.')
+        console.error('Authentication error:', sessionError)
+        return
+      }
+      
       if (!formData.customer_ids.length) {
         alert('Seleccione al menos un cliente')
         return
@@ -1454,14 +1491,28 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         .insert(rows)
         .select('*')
 
-      if (error) throw error
+      if (error) {
+        console.error('Database insert error:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
+        
+        if (error.message?.includes('JWT') || error.message?.includes('auth')) {
+          alert('❌ Error de autenticación. Por favor, actualice la página e inicie sesión nuevamente.')
+        } else {
+          alert(`❌ Error al guardar: ${error.message}`)
+        }
+        return
+      }
 
       const insertedCount = Array.isArray(data) ? data.length : (data ? 1 : 0)
       
       // Do not send emails immediately - all emails should be scheduled
       // Email sending will be handled by a separate background scheduler
       
-      alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
+      alert(`✅ Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
       
       // Close modal and let parent component refresh the list
       onClose()
@@ -1475,7 +1526,12 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         hint: error?.hint,
         code: error?.code
       })
-      alert(t.communications.messageSaveError)
+      
+      if (error?.message?.includes('JWT') || error?.message?.includes('auth')) {
+        alert('❌ Error de autenticación. Por favor, cierre sesión e inicie sesión nuevamente.')
+      } else {
+        alert(`❌ Error al guardar el mensaje: ${error?.message || 'Error desconocido'}`)
+      }
     } finally {
       setLoading(false)
     }
