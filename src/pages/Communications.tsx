@@ -1266,21 +1266,53 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       for (const row of rows) {
         const customer = customers.find(c => row.customer_ids.includes(c.id))
         if (customer?.email && formData.type === 'email') {
-          const response = await fetch('/.netlify/functions/send-email', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to: customer.email,
-              subject: formData.subject || 'Mensaje desde Casmara CRM',
-              message: formData.message,
-              type: 'email'
+          try {
+            const response = await fetch('/.netlify/functions/send-email', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to: customer.email,
+                subject: formData.subject || 'Mensaje desde Casmara CRM',
+                message: formData.message,
+                type: 'email'
+              })
             })
-          })
-          
-          if (!response.ok) {
-            console.error(`Failed to send email to ${customer.email}`)
+            
+            const emailResult = await response.json()
+            
+            if (response.ok && emailResult.success) {
+              // Update message status to 'sent' in database
+              await supabase
+                .from('scheduled_messages')
+                .update({ status: 'sent' })
+                .eq('id', row.id)
+              
+              console.log(`Email sent successfully to ${customer.email}`)
+            } else {
+              // Update message status to 'failed' with error message
+              await supabase
+                .from('scheduled_messages')
+                .update({ 
+                  status: 'failed',
+                  error_message: emailResult.error || 'Error desconocido'
+                })
+                .eq('id', row.id)
+              
+              console.error(`Failed to send email to ${customer.email}: ${emailResult.error}`)
+            }
+          } catch (emailError) {
+            // Update message status to 'failed' with error message
+            await supabase
+              .from('scheduled_messages')
+              .update({ 
+                status: 'failed',
+                error_message: `Error de conexión: ${emailError}`
+              })
+              .eq('id', row.id)
+            
+            console.error(`Email sending error for ${customer.email}:`, emailError)
           }
         }
       }
@@ -1329,6 +1361,10 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       // Send immediate emails for email type messages
       if (formData.type === 'email') {
         await sendImmediateEmails(rows, formData)
+        // Reload messages to show updated status
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
       }
       
       alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)

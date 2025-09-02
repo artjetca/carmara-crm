@@ -738,18 +738,89 @@ export default function Visits() {
       customers: routeCustomers,
       totalDistance,
       totalDuration,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      userId: user?.id // Add user ID for backup identification
     }
     
     const saved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
     saved.push(routeData)
     localStorage.setItem('savedRoutes', JSON.stringify(saved))
     setSavedRoutes(saved)
+    
+    // Create automatic backup in a separate key
+    createBackup(routeData)
+    
     // on successful save, clear the temporary draft
     try { localStorage.removeItem(draftKey) } catch {}
     setShowSaveModal(false)
     setRouteName('')
-    alert('Ruta guardada exitosamente')
+    alert('Ruta guardada exitosamente con respaldo automático')
+  }
+
+  // 創建備份
+  const createBackup = (routeData: any) => {
+    try {
+      const backupKey = `routeBackup:${user?.id}:${Date.now()}`
+      const backupData = {
+        ...routeData,
+        backupKey,
+        backupCreatedAt: new Date().toISOString()
+      }
+      
+      // Store individual backup
+      localStorage.setItem(backupKey, JSON.stringify(backupData))
+      
+      // Maintain backup index
+      const backupIndex = JSON.parse(localStorage.getItem(`backupIndex:${user?.id}`) || '[]')
+      backupIndex.push({
+        key: backupKey,
+        name: routeData.name,
+        createdAt: backupData.backupCreatedAt,
+        routeId: routeData.id
+      })
+      
+      // Keep only last 10 backups per user
+      if (backupIndex.length > 10) {
+        const oldBackup = backupIndex.shift()
+        try {
+          localStorage.removeItem(oldBackup.key)
+        } catch {}
+      }
+      
+      localStorage.setItem(`backupIndex:${user?.id}`, JSON.stringify(backupIndex))
+      console.log('Route backup created:', backupKey)
+    } catch (error) {
+      console.error('Error creating backup:', error)
+    }
+  }
+
+  // 恢復備份
+  const restoreFromBackup = (backupKey: string) => {
+    try {
+      const backupData = JSON.parse(localStorage.getItem(backupKey) || '{}')
+      if (backupData && backupData.customers) {
+        setRouteCustomers(backupData.customers)
+        setRouteDate(backupData.date || '')
+        setRouteTime(backupData.time || '')
+        setTotalDistance(backupData.totalDistance || 0)
+        setTotalDuration(backupData.totalDuration || 0)
+        setRouteName(backupData.name || '')
+        calculateRouteDistanceAndTime(backupData.customers)
+        alert('Ruta restaurada desde respaldo exitosamente')
+      }
+    } catch (error) {
+      console.error('Error restoring backup:', error)
+      alert('Error al restaurar el respaldo')
+    }
+  }
+
+  // 獲取備份列表
+  const getBackupList = () => {
+    try {
+      return JSON.parse(localStorage.getItem(`backupIndex:${user?.id}`) || '[]')
+    } catch {
+      return []
+    }
   }
 
   // 載入路線
@@ -1660,7 +1731,7 @@ export default function Visits() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Rutas Guardadas</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Rutas Guardadas y Respaldos</h3>
               <button
                 onClick={() => setShowLoadModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -1668,43 +1739,92 @@ export default function Visits() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            {savedRoutes.length === 0 ? (
-              <div className="text-center py-8">
-                <Route className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600">No hay rutas guardadas</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {savedRoutes.map((savedRoute) => (
-                  <div key={savedRoute.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-900">{savedRoute.name}</h4>
-                        <div className="text-sm text-gray-600 mt-1">
-                          <p>Fecha: {savedRoute.date || 'No especificada'} - Hora: {savedRoute.time || 'No especificada'}</p>
-                          <p>{savedRoute.customers.length} paradas - {savedRoute.totalDistance.toFixed(1)} km - {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min</p>
-                          <p className="text-xs text-gray-500 mt-1">Guardada: {new Date(savedRoute.createdAt).toLocaleDateString('es-ES')}</p>
+            
+            {/* Rutas Guardadas */}
+            <div className="mb-6">
+              <h4 className="text-md font-medium text-gray-800 mb-3">Rutas Guardadas</h4>
+              {savedRoutes.length === 0 ? (
+                <div className="text-center py-4">
+                  <Route className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-600 text-sm">No hay rutas guardadas</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {savedRoutes.map((savedRoute) => (
+                    <div key={savedRoute.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-gray-900">{savedRoute.name}</h4>
+                          <div className="text-sm text-gray-600 mt-1">
+                            <p>Fecha: {savedRoute.date || 'No especificada'} - Hora: {savedRoute.time || 'No especificada'}</p>
+                            <p>{savedRoute.customers.length} paradas - {savedRoute.totalDistance.toFixed(1)} km - {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min</p>
+                            <p className="text-xs text-gray-500 mt-1">Guardada: {new Date(savedRoute.createdAt).toLocaleDateString('es-ES')}</p>
+                          </div>
+                        </div>
+                        <div className="flex space-x-2 ml-4">
+                          <button
+                            onClick={() => loadRoute(savedRoute)}
+                            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                          >
+                            Cargar
+                          </button>
+                          <button
+                            onClick={() => deleteSavedRoute(savedRoute.id)}
+                            className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                          >
+                            Eliminar
+                          </button>
                         </div>
                       </div>
-                      <div className="flex space-x-2 ml-4">
-                        <button
-                          onClick={() => loadRoute(savedRoute)}
-                          className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                        >
-                          Cargar
-                        </button>
-                        <button
-                          onClick={() => deleteSavedRoute(savedRoute.id)}
-                          className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Respaldos Automáticos */}
+            <div>
+              <h4 className="text-md font-medium text-gray-800 mb-3">Respaldos Automáticos</h4>
+              {(() => {
+                const backups = getBackupList()
+                return backups.length === 0 ? (
+                  <div className="text-center py-4">
+                    <Clock className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600 text-sm">No hay respaldos disponibles</p>
                   </div>
-                ))}
-              </div>
-            )}
+                ) : (
+                  <div className="space-y-2">
+                    {backups.slice().reverse().map((backup: any) => (
+                      <div key={backup.key} className="border border-orange-200 rounded-lg p-3 bg-orange-50">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h5 className="font-medium text-gray-900 text-sm">{backup.name}</h5>
+                            <p className="text-xs text-gray-600 mt-1">
+                              Respaldo: {new Date(backup.createdAt).toLocaleDateString('es-ES', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              restoreFromBackup(backup.key)
+                              setShowLoadModal(false)
+                            }}
+                            className="px-3 py-1 bg-orange-600 text-white text-xs rounded hover:bg-orange-700"
+                          >
+                            Restaurar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
           </div>
         </div>
       )}
