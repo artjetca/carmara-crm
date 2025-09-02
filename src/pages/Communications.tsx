@@ -650,7 +650,7 @@ export default function Communications() {
           {activeTab === 'calls' ? (
             <CallsList calls={filteredCalls} />
           ) : (
-            <MessagesList messages={filteredMessages} onDelete={handleDeleteMessage} onSendNow={handleSendNow} />
+            <MessagesList messages={filteredMessages} customers={customers} onDelete={handleDeleteMessage} onSendNow={handleSendNow} />
           )}
         </div>
       </div>
@@ -760,7 +760,7 @@ function CallsList({ calls }: { calls: Call[] }) {
 }
 
 // Componente para lista de mensajes
-function MessagesList({ messages, onDelete, onSendNow }: { messages: ScheduledMessage[]; onDelete: (id: string) => Promise<void> | void; onSendNow: (id: string) => Promise<void> | void }) {
+function MessagesList({ messages, customers, onDelete, onSendNow }: { messages: ScheduledMessage[]; customers: Customer[]; onDelete: (id: string) => Promise<void> | void; onSendNow: (id: string) => Promise<void> | void }) {
   const t = translations
   const [selectedMessages, setSelectedMessages] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
@@ -847,15 +847,33 @@ function MessagesList({ messages, onDelete, onSendNow }: { messages: ScheduledMe
     }
   }
 
-  // Extract customer name from message content
-  const extractCustomerName = (message: string) => {
+  // Extract customer name and email from message content
+  const extractCustomerInfo = (message: string, customers: Customer[]) => {
+    // Extract customer ID from message customer_ids or get first customer
+    const messageObj = messages.find(m => m.message === message)
+    if (messageObj?.customer_ids?.[0]) {
+      const customer = customers.find(c => c.id === messageObj.customer_ids[0])
+      if (customer) {
+        return {
+          name: customer.name,
+          email: customer.email || 'Sin email',
+          company: customer.company || 'Sin empresa'
+        }
+      }
+    }
+    
+    // Fallback: extract from message text
     const match = message.match(/Cliente:\s*([^|]+)/)
-    return match ? match[1].trim() : ''
+    return {
+      name: match ? match[1].trim() : 'Cliente desconocido',
+      email: 'Sin email',
+      company: 'Sin empresa'
+    }
   }
 
   // Check if message is email type
   const isEmailMessage = (message: string) => {
-    return message.startsWith('EMAIL:')
+    return message.startsWith('EMAIL:') || message.startsWith('Mensaje:')
   }
 
   const sentMessages = messages.filter(m => m.status === 'sent')
@@ -919,7 +937,7 @@ function MessagesList({ messages, onDelete, onSendNow }: { messages: ScheduledMe
 
       {/* Messages List */}
       {messages.map((message) => {
-        const customerName = extractCustomerName(message.message)
+        const customerInfo = extractCustomerInfo(message.message, customers)
         const isEmail = isEmailMessage(message.message)
         
         return (
@@ -946,7 +964,7 @@ function MessagesList({ messages, onDelete, onSendNow }: { messages: ScheduledMe
                 <div className="flex-1">
                   <div className="flex items-center space-x-2">
                     <h3 className="text-sm font-medium text-gray-900">
-                      {isEmail ? 'EMAIL' : 'SMS'} - {customerName || 'Cliente desconocido'}
+                      {isEmail ? 'Mensaje' : 'SMS'} - {customerInfo.name} ({customerInfo.email})
                     </h3>
                     <span className="text-xs text-gray-500">
                       {(message.customer_ids?.length || (message.customer_id ? 1 : 0))} destinatario(s)
@@ -1423,7 +1441,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           const utcDate = fromZonedTime(dateTimeStr, 'Europe/Madrid')
           return ({
           customer_ids: [cid], // Array format for customer_ids column
-          message: `${formData.type.toUpperCase()}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''} | Cliente: ${customerName}`,
+          message: `${formData.type === 'email' ? 'Mensaje' : 'SMS'}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''}`,
           scheduled_for: utcDate.toISOString(),
           status: 'pending',
           created_by: user?.id
