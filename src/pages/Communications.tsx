@@ -1190,6 +1190,9 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     return ''
   }
 
+  // Email helper validation
+  const isValidEmail = (email?: string) => !!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
   // 當前在下拉中選擇的客戶（用於顯示聯絡方式與地址）
   const selectedCustomers = customers.filter(c => formData.customer_ids.includes(c.id))
 
@@ -1296,6 +1299,16 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       if (!formData.schedules.length) {
         alert('Agregue al menos una fecha y hora')
         return
+      }
+
+      // Block scheduling emails to customers without valid email addresses
+      if (formData.type === 'email') {
+        const customersWithoutEmail = selectedCustomers.filter(c => !isValidEmail(c.email))
+        if (customersWithoutEmail.length > 0) {
+          const names = customersWithoutEmail.map(c => `- ${c.name}`).join('\n')
+          alert(`Los siguientes clientes no tienen un email válido y no se puede programar correo para ellos:\n\n${names}\n\nQuite estos clientes de la lista o añada un email válido antes de continuar.`)
+          return
+        }
       }
 
       // Usar las columnas que realmente existen: customer_ids, message, scheduled_for, status, created_by
@@ -1415,7 +1428,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                     <option value="">Seleccionar cliente</option>
                     {addableCustomers.map(customer => (
                       <option key={customer.id} value={customer.id}>
-                        {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}
+                        {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}{customer.email ? '' : ' — sin email'}
                       </option>
                     ))}
                   </select>
@@ -1441,7 +1454,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                     <div className="flex flex-wrap gap-2">
                       {selectedCustomers.map(c => (
                         <span key={c.id} className="inline-flex items-center gap-2 px-2 py-1 rounded border text-sm bg-gray-50">
-                          <span>{c.name}</span>
+                          <span>{c.name}{!isValidEmail(c.email) ? ' (sin email)' : ''}</span>
                           <button
                             type="button"
                             className="text-red-600 hover:text-red-800"
