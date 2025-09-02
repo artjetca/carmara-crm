@@ -1,5 +1,3 @@
-const fetch = require('node-fetch');
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -18,7 +16,7 @@ exports.handler = async (event, context) => {
 
   try {
     // Call the email scheduler function
-    const schedulerUrl = `${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/email-scheduler`;
+    const schedulerUrl = `${process.env.URL || 'https://casmara-charo.netlify.app'}/.netlify/functions/email-scheduler`;
     
     const response = await fetch(schedulerUrl, {
       method: 'POST',

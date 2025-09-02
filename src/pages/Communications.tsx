@@ -424,7 +424,7 @@ export default function Communications() {
   // Trigger email scheduler manually
   const triggerEmailScheduler = async () => {
     try {
-      const response = await fetch('/.netlify/functions/trigger-scheduler', {
+      const response = await fetch('/.netlify/functions/email-scheduler', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -434,14 +434,15 @@ export default function Communications() {
       const result = await response.json()
       
       if (response.ok) {
-        alert(`✅ Programador ejecutado: ${result.result?.processed || 0} emails enviados, ${result.result?.failed || 0} fallidos`)
+        alert(`✅ Programador ejecutado: ${result.processed || 0} emails enviados, ${result.failed || 0} fallidos`)
         // Reload messages to show updated statuses
         loadData()
       } else {
         alert(`❌ Error: ${result.error || 'Error desconocido'}`)
       }
     } catch (error) {
-      alert(`❌ Error de conexión: ${error}`)
+      console.error('Scheduler error:', error)
+      alert(`❌ Error de conexión: ${error.message || error}`)
     }
   }
 
@@ -718,16 +719,22 @@ export default function Communications() {
                   ⚡ Programador de Emails
                 </h3>
                 <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-sm text-gray-600 mb-4">
-                    Ejecutar manualmente el programador para enviar emails pendientes programados.
+                  <p className="text-sm text-gray-600 mb-3">
+                    📌 <strong>Importante:</strong> Los emails programados deben enviarse manualmente porque Netlify no tiene cron jobs en el plan gratuito.
+                  </p>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Haga clic en el botón para enviar todos los emails pendientes programados para ahora.
                   </p>
                   <button
                     onClick={triggerEmailScheduler}
                     className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center space-x-2"
                   >
                     <Clock className="w-4 h-4" />
-                    <span>Ejecutar Programador de Emails</span>
+                    <span>Procesar Emails Pendientes</span>
                   </button>
+                  <div className="mt-3 text-xs text-gray-500">
+                    💡 También puede usar "Enviar ahora" en cada mensaje individual.
+                  </div>
                 </div>
               </div>
             </div>

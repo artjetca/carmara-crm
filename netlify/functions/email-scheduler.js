@@ -109,15 +109,28 @@ exports.handler = async (event, context) => {
         let subject = 'Mensaje desde Casmara CRM';
         let content = messageText;
 
-        // Try to extract subject if it's in the message format
-        const subjectMatch = messageText.match(/\(([^)]+)\)/);
-        if (subjectMatch) {
-          subject = subjectMatch[1];
-          content = messageText.replace(/\s*\([^)]+\)/, '');
+        // Handle new message format: "Mensaje: content (subject)" or old "EMAIL: content (subject)"
+        if (content.startsWith('Mensaje:')) {
+          content = content.replace(/^Mensaje:\s*/, '');
+          
+          // Try to extract subject if it's in parentheses at the end
+          const subjectMatch = content.match(/\s*\(([^)]+)\)\s*$/);
+          if (subjectMatch) {
+            subject = subjectMatch[1];
+            content = content.replace(/\s*\([^)]+\)\s*$/, '');
+          }
+        } else if (content.startsWith('EMAIL:')) {
+          // Handle old format for backward compatibility
+          content = content.replace(/^EMAIL:\s*/, '');
+          const subjectMatch = content.match(/\s*\(([^)]+)\)\s*$/);
+          if (subjectMatch) {
+            subject = subjectMatch[1];
+            content = content.replace(/\s*\([^)]+\)\s*$/, '');
+          }
         }
 
-        // Remove EMAIL: prefix if present
-        content = content.replace(/^EMAIL:\s*/, '');
+        // Clean up content by removing any trailing customer info
+        content = content.replace(/\s*\|\s*Cliente:.*$/, '').trim();
 
         // Create email content with template
         const emailContent = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -165,7 +178,9 @@ exports.handler = async (event, context) => {
           .update({ status: 'sent' })
           .eq('id', emailRecord.id);
 
-        console.log(`✅ Email sent to ${customer.email} for message ${emailRecord.id}`);
+        console.log(`✅ Email sent to ${customer.email} (${customer.name}) for message ${emailRecord.id}`);
+        console.log(`   Subject: ${subject}`);
+        console.log(`   Content preview: ${content.substring(0, 100)}...`);
         processed++;
 
       } catch (error) {
