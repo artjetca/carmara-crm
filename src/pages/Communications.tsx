@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
+import { format } from 'date-fns'
+import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import {
   Phone,
   Mail,
   MessageSquare,
   Plus,
-  Search,
-  Filter,
   Clock,
   User,
   Calendar,
@@ -339,7 +339,8 @@ export default function Communications() {
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Europe/Madrid'
     })
   }
 
@@ -554,78 +555,7 @@ export default function Communications() {
           </nav>
         </div>
 
-        {/* Filtros */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
-                <select
-                  value={selectedProvince}
-                  onChange={(e) => {
-                    setSelectedProvince(e.target.value)
-                    setSelectedCity('')
-                    setSelectedCustomer('')
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Todas</option>
-                  {provinces.map(province => (
-                    <option key={province} value={province}>{province}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
-                <select
-                  value={selectedCity}
-                  onChange={(e) => {
-                    setSelectedCity(e.target.value)
-                    setSelectedCustomer('')
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={false}
-                >
-                  <option value="">Todas</option>
-                  {availableCities.map(city => (
-                    <option key={city} value={city}>{city}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                <select
-                  value={selectedCustomer}
-                  onChange={(e) => setSelectedCustomer(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Seleccionar cliente</option>
-                  {filteredCustomers.map(customer => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} - {customer.company}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder={t.communications.searchPlaceholder}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Filters removed as requested */}
 
         {/* Test Email Section */}
         <div className="p-6 border-b border-gray-200 bg-blue-50">
@@ -634,22 +564,6 @@ export default function Communications() {
               🧪 Probar Envío de Email
             </h3>
             <TestEmailForm />
-            
-            {/* Manual Scheduler Trigger */}
-            <div className="mt-6 pt-4 border-t border-blue-200">
-              <h4 className="text-md font-medium text-gray-800 mb-2">
-                ⏰ Procesar Emails Programados
-              </h4>
-              <button
-                onClick={triggerEmailScheduler}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-              >
-                Ejecutar Programador de Emails
-              </button>
-              <p className="text-sm text-gray-600 mt-2">
-                Procesa manualmente los emails programados que están listos para enviar
-              </p>
-            </div>
           </div>
         </div>
 
@@ -706,7 +620,8 @@ function CallsList({ calls }: { calls: Call[] }) {
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Europe/Madrid'
     })
   }
 
@@ -778,7 +693,8 @@ function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; on
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Europe/Madrid'
     })
   }
 
@@ -1191,13 +1107,13 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   const { user } = useAuth()
   const [formData, setFormData] = useState({
     customer_ids: [] as string[],
-    type: 'sms' as 'sms' | 'email',
+    type: 'email' as 'sms' | 'email',
     subject: '',
     message: '',
     htmlContent: '', // Add HTML content field
     useHtml: false, // Toggle for HTML mode
     schedules: [
-      { date: new Date().toISOString().split('T')[0], time: '09:00' }
+      { date: format(toZonedTime(new Date(), 'Europe/Madrid'), 'yyyy-MM-dd'), time: '09:00' }
     ] as { date: string; time: string }[]
   })
   const [loading, setLoading] = useState(false)
@@ -1387,13 +1303,17 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         const customer = customers.find(c => c.id === cid)
         const customerName = customer ? `${customer.name} (${customer.company || 'Sin empresa'})` : cid
         
-        return formData.schedules.map(s => ({
+        return formData.schedules.map(s => {
+          const dateTimeStr = `${s.date}T${s.time}:00`
+          const utcDate = fromZonedTime(dateTimeStr, 'Europe/Madrid')
+          return ({
           customer_ids: [cid], // Array format for customer_ids column
           message: `${formData.type.toUpperCase()}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''} | Cliente: ${customerName}`,
-          scheduled_for: new Date(`${s.date}T${s.time}:00`).toISOString(),
+          scheduled_for: utcDate.toISOString(),
           status: 'pending',
           created_by: user?.id
-        }))
+          })
+        })
       })
 
       const { data, error } = await supabase
@@ -1561,8 +1481,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                 onChange={(e) => setFormData({ ...formData, type: e.target.value as 'sms' | 'email' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="sms">{t.communications.sms}</option>
                 <option value="email">{t.communications.email}</option>
+                <option value="sms">{t.communications.sms}</option>
               </select>
             </div>
             
