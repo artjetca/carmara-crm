@@ -118,6 +118,10 @@ const TestEmailForm = () => {
 
       if (response.ok && data.success) {
         setResult(`✅ Email enviado exitosamente a ${testEmail}`)
+        // Show success notification for 3 seconds
+        setTimeout(() => {
+          setResult(null)
+        }, 3000)
       } else {
         setResult(`❌ Error: ${data.error || 'Error desconocido'}`)
       }
@@ -725,6 +729,8 @@ function CallsList({ calls }: { calls: Call[] }) {
 // Componente para lista de mensajes
 function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; onDelete: (id: string) => Promise<void> | void }) {
   const t = translations
+  const [selectedMessages, setSelectedMessages] = useState<string[]>([])
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
@@ -758,6 +764,45 @@ function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; on
     }
   }
 
+  const handleSelectMessage = (messageId: string) => {
+    setSelectedMessages(prev => 
+      prev.includes(messageId) 
+        ? prev.filter(id => id !== messageId)
+        : [...prev, messageId]
+    )
+  }
+
+  const handleSelectAll = () => {
+    if (selectedMessages.length === messages.length) {
+      setSelectedMessages([])
+    } else {
+      setSelectedMessages(messages.map(m => m.id))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedMessages.length === 0) return
+    
+    const confirmDelete = confirm(`¿Estás seguro de que quieres eliminar ${selectedMessages.length} mensaje(s)?`)
+    if (!confirmDelete) return
+
+    setIsDeleting(true)
+    try {
+      for (const messageId of selectedMessages) {
+        await onDelete(messageId)
+      }
+      setSelectedMessages([])
+    } catch (error) {
+      console.error('Error deleting messages:', error)
+      alert('Error al eliminar algunos mensajes')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const sentMessages = messages.filter(m => m.status === 'sent')
+  const hasSentMessages = sentMessages.length > 0
+
   if (messages.length === 0) {
     return (
       <div className="text-center py-12">
@@ -770,10 +815,56 @@ function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; on
 
   return (
     <div className="space-y-4">
+      {/* Batch Actions Header */}
+      {hasSentMessages && (
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={selectedMessages.length === messages.length}
+                onChange={handleSelectAll}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Seleccionar todos ({messages.length})
+              </span>
+            </label>
+            {selectedMessages.length > 0 && (
+              <span className="text-sm text-gray-600">
+                {selectedMessages.length} seleccionado(s)
+              </span>
+            )}
+          </div>
+          
+          {selectedMessages.length > 0 && (
+            <button
+              onClick={handleBatchDelete}
+              disabled={isDeleting}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{isDeleting ? 'Eliminando...' : `Eliminar ${selectedMessages.length}`}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Messages List */}
       {messages.map((message) => (
         <div key={message.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-3">
+              {hasSentMessages && (
+                <div className="flex-shrink-0 pt-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedMessages.includes(message.id)}
+                    onChange={() => handleSelectMessage(message.id)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </div>
+              )}
               <div className="flex-shrink-0">
                 <MessageSquare className="w-4 h-4 text-green-500" />
               </div>
@@ -786,7 +877,7 @@ function MessagesList({ messages, onDelete }: { messages: ScheduledMessage[]; on
                     {(message.customer_ids?.length || (message.customer_id ? 1 : 0))} destinatario(s)
                   </span>
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${getMessageStatusColor(message.status)}`}>
-                    {t.communications[message.status as keyof typeof t.communications] || message.status}
+                    {message.status === 'sent' ? 'Enviado' : message.status === 'failed' ? 'Fallido' : 'Pendiente'}
                   </span>
                 </div>
                 <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
