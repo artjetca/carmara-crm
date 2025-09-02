@@ -303,6 +303,30 @@ export default function Communications() {
     }
   }
 
+  // Trigger email scheduler manually
+  const triggerEmailScheduler = async () => {
+    try {
+      const response = await fetch('/.netlify/functions/trigger-scheduler', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert(`✅ Programador ejecutado: ${result.result?.processed || 0} emails enviados, ${result.result?.failed || 0} fallidos`)
+        // Reload messages to show updated statuses
+        loadData()
+      } else {
+        alert(`❌ Error: ${result.error || 'Error desconocido'}`)
+      }
+    } catch (error) {
+      alert(`❌ Error de conexión: ${error}`)
+    }
+  }
+
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
@@ -610,6 +634,22 @@ export default function Communications() {
               🧪 Probar Envío de Email
             </h3>
             <TestEmailForm />
+            
+            {/* Manual Scheduler Trigger */}
+            <div className="mt-6 pt-4 border-t border-blue-200">
+              <h4 className="text-md font-medium text-gray-800 mb-2">
+                ⏰ Procesar Emails Programados
+              </h4>
+              <button
+                onClick={triggerEmailScheduler}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Ejecutar Programador de Emails
+              </button>
+              <p className="text-sm text-gray-600 mt-2">
+                Procesa manualmente los emails programados que están listos para enviar
+              </p>
+            </div>
           </div>
         </div>
 
