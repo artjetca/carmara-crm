@@ -41,7 +41,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { to, subject, message, type } = JSON.parse(event.body || '{}')
+    const { to, subject, message, type, isHtml } = JSON.parse(event.body || '{}')
 
     if (!to || !subject || !message) {
       return {
@@ -80,13 +80,14 @@ exports.handler = async (event, context) => {
     const emailSubject = subject || 'Mensaje desde Casmara CRM';
     const fromEmail = process.env.GMAIL_FROM_EMAIL || 'artjet0805@gmail.com';
     
-    const rawMessage = [
-      `From: ${fromEmail}`,
-      `To: ${to}`,
-      `Subject: ${emailSubject}`,
-      'Content-Type: text/html; charset=utf-8',
-      '',
-      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+    let emailContent;
+    
+    if (isHtml) {
+      // Use custom HTML content directly
+      emailContent = message;
+    } else {
+      // Use default template for plain text
+      emailContent = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #4285f4; color: white; padding: 20px; text-align: center;">
           <h2>Casmara CRM</h2>
         </div>
@@ -98,7 +99,16 @@ exports.handler = async (event, context) => {
         <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
           <p>Este mensaje fue enviado desde Casmara CRM</p>
         </div>
-      </div>`
+      </div>`;
+    }
+    
+    const rawMessage = [
+      `From: ${fromEmail}`,
+      `To: ${to}`,
+      `Subject: ${emailSubject}`,
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      emailContent
     ].join('\n');
 
     // Encode message in base64

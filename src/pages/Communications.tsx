@@ -1154,6 +1154,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     type: 'sms' as 'sms' | 'email',
     subject: '',
     message: '',
+    htmlContent: '', // Add HTML content field
+    useHtml: false, // Toggle for HTML mode
     schedules: [
       { date: new Date().toISOString().split('T')[0], time: '09:00' }
     ] as { date: string; time: string }[]
@@ -1275,8 +1277,9 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               body: JSON.stringify({
                 to: customer.email,
                 subject: formData.subject || 'Mensaje desde Casmara CRM',
-                message: formData.message,
-                type: 'email'
+                message: formData.useHtml ? formData.htmlContent : formData.message,
+                type: 'email',
+                isHtml: formData.useHtml
               })
             })
             
@@ -1284,12 +1287,16 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
             
             if (response.ok && emailResult.success) {
               // Update message status to 'sent' in database
-              await supabase
+              const { error: updateError } = await supabase
                 .from('scheduled_messages')
                 .update({ status: 'sent' })
                 .eq('id', row.id)
               
-              console.log(`Email sent successfully to ${customer.email}`)
+              if (updateError) {
+                console.error('Error updating message status:', updateError)
+              } else {
+                console.log(`Email sent successfully to ${customer.email} - Status updated to 'sent'`)
+              }
             } else {
               // Update message status to 'failed' with error message
               await supabase
@@ -1360,11 +1367,11 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       
       // Send immediate emails for email type messages
       if (formData.type === 'email') {
-        await sendImmediateEmails(rows, formData)
-        // Reload messages to show updated status
+        await sendImmediateEmails(data, formData)
+        // Reload data instead of full page refresh
         setTimeout(() => {
           window.location.reload()
-        }, 1000)
+        }, 2000)
       }
       
       alert(`Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
@@ -1535,18 +1542,61 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               </div>
             )}
             
+            {formData.type === 'email' && (
+              <div className="mb-4">
+                <div className="flex items-center space-x-4 mb-3">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="emailMode"
+                      checked={!formData.useHtml}
+                      onChange={() => setFormData({ ...formData, useHtml: false })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Texto Simple</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="emailMode"
+                      checked={formData.useHtml}
+                      onChange={() => setFormData({ ...formData, useHtml: true })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm font-medium text-gray-700">HTML Personalizado</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t.communications.message} *
+                {formData.type === 'email' && formData.useHtml ? 'Contenido HTML *' : `${t.communications.message} *`}
               </label>
-              <textarea
-                required
-                rows={4}
-                value={formData.message}
-                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={t.communications.messagePlaceholder}
-              />
+              {formData.type === 'email' && formData.useHtml ? (
+                <div>
+                  <textarea
+                    required
+                    rows={8}
+                    value={formData.htmlContent}
+                    onChange={(e) => setFormData({ ...formData, htmlContent: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                    placeholder="Pegue aquí su código HTML para crear emails promocionales atractivos..."
+                  />
+                  <div className="mt-2 text-xs text-gray-600">
+                    <p>💡 <strong>Consejo:</strong> Puede pegar código HTML completo para crear emails promocionales con diseños atractivos, imágenes, botones y estilos personalizados.</p>
+                  </div>
+                </div>
+              ) : (
+                <textarea
+                  required
+                  rows={4}
+                  value={formData.message}
+                  onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder={t.communications.messagePlaceholder}
+                />
+              )}
             </div>
             
             <div>
