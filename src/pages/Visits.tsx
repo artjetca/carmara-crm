@@ -1336,9 +1336,9 @@ export default function Visits() {
 
       {/* Layout: Left panel with customers/route, right panel with map */}
       {/* Desktop: Side-by-side flex, Mobile: Stacked */}
-      <div className="flex flex-col lg:flex-row gap-6">
+      <div className="flex flex-col lg:flex-row gap-6 border-4 border-red-500" style={{minHeight: '400px'}}>
           {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div className="space-y-6 w-full lg:w-1/4 flex-shrink-0">
+          <div className="space-y-6 w-full lg:w-1/4 flex-shrink-0 bg-yellow-200 border-2 border-blue-500">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
@@ -1538,7 +1538,7 @@ export default function Visits() {
           </div>
 
           {/* Map panel - Desktop: Right side, Mobile: Bottom */}
-          <div className="space-y-6 lg:w-3/4">
+          <div className="space-y-6 lg:w-3/4 bg-green-200 border-2 border-purple-500">
             {/* Mapa de la ruta */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
