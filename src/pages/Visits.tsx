@@ -1350,13 +1350,10 @@ export default function Visits() {
         </div>
       </div>
 
-      {/* Layout: Left panel with customers/route, right panel with map */}
-      {/* Desktop: Side-by-side flex, Mobile: Stacked */}
-      <div className="flex flex-col lg:flex-row gap-6">
-          {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div 
-            className="space-y-6 w-full lg:w-1/4 flex-shrink-0" 
-          >
+      {/* Layout matching Maps.tsx: 1/4 left panel, 3/4 right panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Panel izquierdo - Lista de clientes y ruta */}
+        <div className="lg:col-span-1 space-y-6">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
@@ -1555,10 +1552,8 @@ export default function Visits() {
             )}
           </div>
 
-          {/* Map panel - Desktop: Right side, Mobile: Bottom */}
-          <div 
-            className="space-y-6 lg:w-3/4"
-          >
+        {/* Map panel - Right side */}
+        <div className="lg:col-span-3">
             {/* Mapa de la ruta */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
@@ -1596,7 +1591,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className="h-[500px] lg:h-[900px] relative">
+              <div className="h-[800px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -1629,9 +1624,9 @@ export default function Visits() {
             </div>
           </div>
 
-          {/* Panel de detalles del cliente */}
+          {/* Panel de detalles del cliente - moved to left panel */}
           {selectedCustomer && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 lg:hidden">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-900">Detalles del Cliente</h3>
                 <button
