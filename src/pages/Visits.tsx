@@ -403,16 +403,83 @@ export default function Visits() {
       } catch {}
     }
     apply()
-    if (showDetails) {
-      const tId = window.setTimeout(apply, 50)
-      const onResize = () => apply()
-      window.addEventListener('resize', onResize)
-      return () => {
-        window.clearTimeout(tId)
-        window.removeEventListener('resize', onResize)
+    const timeoutId = setTimeout(apply, 50)
+    return () => clearTimeout(timeoutId)
+  }, [showDetails])
+
+  // Handle page visibility changes to refresh map when user returns from navigation
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && mapInstanceRef.current && mapRef.current) {
+        // Page became visible again, refresh the map
+        setTimeout(() => {
+          try {
+            const google = (window as any).google
+            if (google?.maps) {
+              google.maps.event.trigger(mapInstanceRef.current, 'resize')
+              // Re-center the map if needed
+              if (routeCustomers.length > 0) {
+                // Trigger a re-render by forcing the effect to run
+                const event = new CustomEvent('mapRefresh')
+                window.dispatchEvent(event)
+              }
+            }
+          } catch (error) {
+            console.warn('Map refresh failed:', error)
+          }
+        }, 100)
       }
     }
-  }, [showDetails, routeCustomers.length, totalDistance, totalDuration])
+
+    const handleFocus = () => {
+      if (mapInstanceRef.current && mapRef.current) {
+        setTimeout(() => {
+          try {
+            const google = (window as any).google
+            if (google?.maps) {
+              google.maps.event.trigger(mapInstanceRef.current, 'resize')
+            }
+          } catch (error) {
+            console.warn('Map focus refresh failed:', error)
+          }
+        }, 100)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [routeCustomers.length])
+
+  // Listen for custom map refresh events
+  useEffect(() => {
+    const handleMapRefresh = () => {
+      // Force re-render by clearing the map instance and letting the main effect recreate it
+      if (mapInstanceRef.current) {
+        try {
+          // Clear the map instance to force recreation
+          mapInstanceRef.current = null
+          directionsServiceRef.current = null
+          directionsRendererRef.current = null
+          markersRef.current.forEach(m => m.setMap?.(null))
+          markersRef.current = []
+          if (myLocationMarkerRef.current) {
+            myLocationMarkerRef.current.setMap?.(null)
+            myLocationMarkerRef.current = null
+          }
+        } catch (error) {
+          console.warn('Map refresh cleanup failed:', error)
+        }
+      }
+    }
+
+    window.addEventListener('mapRefresh', handleMapRefresh)
+    return () => window.removeEventListener('mapRefresh', handleMapRefresh)
+  }, [])
 
   // Clear map when route is empty
   useEffect(() => {
@@ -1039,13 +1106,45 @@ export default function Visits() {
       navigator.geolocation.getCurrentPosition(
         async ({ coords }) => {
           const { latitude, longitude } = coords
-          // If map is not available (e.g., no route -> map not rendered), fallback to alert
+          
+          // Try to ensure map is available and working
           let google: any = null
-          try { google = await ensureGoogleMapsLoaded() } catch {}
-          const map = mapInstanceRef.current
-          if (!map || !mapRef.current || !google) {
+          try { 
+            google = await ensureGoogleMapsLoaded() 
+          } catch (error) {
+            console.warn('Failed to load Google Maps:', error)
             alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
             return
+          }
+          
+          let map = mapInstanceRef.current
+          
+          // Check if map container exists and map instance is valid
+          if (!mapRef.current) {
+            alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+            return
+          }
+          
+          // If map instance doesn't exist or is invalid, try to recreate it
+          if (!map || !google) {
+            try {
+              // Force map refresh by triggering the main render effect
+              const event = new CustomEvent('mapRefresh')
+              window.dispatchEvent(event)
+              
+              // Wait a bit for the map to be recreated
+              await new Promise(resolve => setTimeout(resolve, 500))
+              
+              map = mapInstanceRef.current
+              if (!map) {
+                alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+                return
+              }
+            } catch (error) {
+              console.warn('Failed to recreate map:', error)
+              alert(`Ubicación actual: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+              return
+            }
           }
 
           // Clear previous my-location marker/info
