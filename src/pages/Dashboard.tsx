@@ -129,14 +129,15 @@ export default function Dashboard() {
         visit.status === 'completed' || visit.status === 'completada'
       ).length
       
-      // Add completed visits from route completions (localStorage)
+      // Add completed routes (count routes, not individual visits)
       try {
         if (typeof window !== 'undefined') {
-          const completedVisitsFromRoutes = JSON.parse(localStorage.getItem('completedVisits') || '[]')
-          completedVisits += completedVisitsFromRoutes.length
+          const savedRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+          const completedRoutesCount = savedRoutes.filter((route: any) => route.completed).length
+          completedVisits += completedRoutesCount
         }
       } catch (e) {
-        console.warn('Dashboard: failed to include completed visits from routes', e)
+        console.warn('Dashboard: failed to include completed routes', e)
       }
       
       let thisWeekVisits = (visitsData || []).filter(visit => {
