@@ -458,6 +458,17 @@ export default function Visits() {
   const loadSavedRoutes = async () => {
     try {
       setLoadingSavedRoutes(true)
+      
+      // Check if we're in development mode or if Netlify functions are available
+      const isNetlifyAvailable = window.location.hostname !== 'localhost'
+      
+      if (!isNetlifyAvailable) {
+        // Use localStorage in development
+        const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        setSavedRoutes(localSaved)
+        return
+      }
+
       const response = await fetch('/.netlify/functions/saved-routes', {
         method: 'GET',
         headers: {
@@ -466,10 +477,16 @@ export default function Visits() {
         }
       })
 
+      if (response.status === 502 || response.status === 404) {
+        // Netlify function not available, use localStorage
+        const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        setSavedRoutes(localSaved)
+        return
+      }
+
       const result = await response.json()
       
       if (!response.ok || !result.success) {
-        console.error('Failed to load saved routes:', result.error)
         // Fallback to localStorage if database fails
         const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
         setSavedRoutes(localSaved)
@@ -478,8 +495,7 @@ export default function Visits() {
 
       setSavedRoutes(result.data || [])
     } catch (error) {
-      console.error('Error loading saved routes:', error)
-      // Fallback to localStorage
+      // Silent fallback to localStorage to avoid console errors
       const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
       setSavedRoutes(localSaved)
     } finally {
@@ -1337,18 +1353,14 @@ export default function Visits() {
       {/* Layout: Left panel with customers/route, right panel with map */}
       {/* Desktop: Side-by-side flex, Mobile: Stacked */}
       <div 
-        className="border-4 border-red-500" 
+        className="flex flex-col lg:flex-row gap-6" 
         style={{
-          minHeight: '400px',
-          display: 'flex',
-          flexDirection: 'row',
-          gap: '1.5rem'
+          minHeight: '400px'
         }}
       >
           {/* Panel izquierdo - Lista de clientes y ruta */}
           <div 
-            className="space-y-6 bg-yellow-200 border-2 border-blue-500" 
-            style={{width: '25%', flexShrink: 0}}
+            className="space-y-6 w-full lg:w-1/4 flex-shrink-0" 
           >
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
@@ -1550,8 +1562,7 @@ export default function Visits() {
 
           {/* Map panel - Desktop: Right side, Mobile: Bottom */}
           <div 
-            className="space-y-6 bg-green-200 border-2 border-purple-500"
-            style={{width: '75%'}}
+            className="space-y-6 lg:w-3/4"
           >
             {/* Mapa de la ruta */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
