@@ -782,15 +782,37 @@ export default function Visits() {
     }
     
     const routeData = {
+      id: Date.now().toString(),
       name: routeName,
-      route_date: routeDate || null,
-      route_time: routeTime || null,
+      date: routeDate || null,
+      time: routeTime || null,
       customers: routeCustomers,
-      total_distance: totalDistance,
-      total_duration: totalDuration
+      totalDistance: totalDistance,
+      totalDuration: totalDuration,
+      createdAt: new Date().toISOString()
     }
 
     try {
+      // Check if we're in development mode or if Netlify functions are available
+      const isNetlifyAvailable = window.location.hostname !== 'localhost'
+      
+      if (!isNetlifyAvailable) {
+        // Use localStorage in development
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = [...existingRoutes, routeData]
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Reload saved routes to get updated list
+        await loadSavedRoutes()
+        
+        // on successful save, clear the temporary draft
+        try { localStorage.removeItem(draftKey) } catch {}
+        setShowSaveModal(false)
+        setRouteName('')
+        alert('Ruta guardada exitosamente (localStorage)')
+        return
+      }
+
       const response = await fetch('/.netlify/functions/saved-routes', {
         method: 'POST',
         headers: {
@@ -799,6 +821,23 @@ export default function Visits() {
         },
         body: JSON.stringify(routeData)
       })
+
+      if (response.status === 502 || response.status === 404) {
+        // Netlify function not available, fallback to localStorage
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = [...existingRoutes, routeData]
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Reload saved routes to get updated list
+        await loadSavedRoutes()
+        
+        // on successful save, clear the temporary draft
+        try { localStorage.removeItem(draftKey) } catch {}
+        setShowSaveModal(false)
+        setRouteName('')
+        alert('Ruta guardada exitosamente (localStorage fallback)')
+        return
+      }
 
       const result = await response.json()
       
@@ -816,7 +855,24 @@ export default function Visits() {
       alert('Ruta guardada exitosamente')
     } catch (error) {
       console.error('Error saving route:', error)
-      alert('Error al guardar la ruta: ' + (error as Error).message)
+      // Fallback to localStorage if database fails
+      try {
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = [...existingRoutes, routeData]
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Reload saved routes to get updated list
+        await loadSavedRoutes()
+        
+        // on successful save, clear the temporary draft
+        try { localStorage.removeItem(draftKey) } catch {}
+        setShowSaveModal(false)
+        setRouteName('')
+        alert('Ruta guardada exitosamente (localStorage fallback)')
+      } catch (fallbackError) {
+        console.error('Fallback save failed:', fallbackError)
+        alert('Error al guardar la ruta: ' + (error as Error).message)
+      }
     }
   }
 
@@ -869,7 +925,26 @@ export default function Visits() {
 
   // 刪除儲存的路線
   const deleteSavedRoute = async (routeId: string) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta ruta?')) {
+      return
+    }
+
     try {
+      // Check if we're in development mode or if Netlify functions are available
+      const isNetlifyAvailable = window.location.hostname !== 'localhost'
+      
+      if (!isNetlifyAvailable) {
+        // Use localStorage in development
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Reload saved routes to get updated list
+        await loadSavedRoutes()
+        alert('Ruta eliminada exitosamente (localStorage)')
+        return
+      }
+
       const response = await fetch(`/.netlify/functions/saved-routes/${routeId}`, {
         method: 'DELETE',
         headers: {
@@ -877,6 +952,18 @@ export default function Visits() {
           'Authorization': `Bearer ${(user as any)?.session?.access_token || ''}`
         }
       })
+
+      if (response.status === 502 || response.status === 404) {
+        // Netlify function not available, fallback to localStorage
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Reload saved routes to get updated list
+        await loadSavedRoutes()
+        alert('Ruta eliminada exitosamente (localStorage fallback)')
+        return
+      }
 
       const result = await response.json()
       
@@ -889,7 +976,19 @@ export default function Visits() {
       alert('Ruta eliminada exitosamente')
     } catch (error) {
       console.error('Error deleting route:', error)
-      alert('Error al eliminar la ruta: ' + (error as Error).message)
+      // Fallback to localStorage if database fails
+      try {
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Reload saved routes to get updated list
+        await loadSavedRoutes()
+        alert('Ruta eliminada exitosamente (localStorage fallback)')
+      } catch (fallbackError) {
+        console.error('Fallback delete failed:', fallbackError)
+        alert('Error al eliminar la ruta: ' + (error as Error).message)
+      }
     }
   }
 
@@ -1552,78 +1651,6 @@ export default function Visits() {
             )}
           </div>
 
-        {/* Map panel - Right side */}
-        <div className="lg:col-span-3">
-            {/* Mapa de la ruta */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
-                <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
-              </div>
-              {routeCustomers.length > 0 && (
-                <div className="px-4 py-3 border-b border-gray-100 bg-white/60">
-                  <div className="flex items-center gap-2 overflow-x-auto">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
-                      Paradas: <span className="ml-1 font-medium">{routeCustomers.length}</span>
-                    </span>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
-                      Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
-                    </span>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
-                      Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
-                    </span>
-                    <div className="ml-auto flex items-center gap-2">
-                      <button
-                        onClick={reorderRouteByCurrentLocation}
-                        className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 inline-flex items-center"
-                      >
-                        <Route className="w-3 h-3 mr-1" />
-                        Optimizar por mi ubicación
-                      </button>
-                      <button
-                        onClick={startNavigation}
-                        className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-flex items-center"
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Navegar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="h-[800px] relative">
-              {routeCustomers.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <Route className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Sin ruta planificada</h3>
-                    <p className="text-gray-600">Agrega clientes de la lista izquierda para crear una ruta</p>
-                  </div>
-                </div>
-              ) : (!mapsApiKey ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center max-w-md">
-                    <Route className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Falta la clave de Google Maps</h3>
-                    <p className="text-gray-600 text-sm">Configura <code>VITE_GOOGLE_MAPS_API_KEY</code> en tu archivo <code>.env.local</code> y reinicia el servidor de Vite para visualizar el mapa de la ruta.</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full relative">
-                  <div ref={mapRef} className="w-full h-full rounded-lg border" />
-                  {/* My Location button on map */}
-                  <button
-                    onClick={getCurrentLocation}
-                    className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
-                    title="Mi Ubicación"
-                  >
-                    <MapPinIcon className="w-5 h-5 text-blue-600" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Panel de detalles del cliente - moved to left panel */}
           {selectedCustomer && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
@@ -1689,6 +1716,78 @@ export default function Visits() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Map panel - Right side */}
+        <div className="lg:col-span-3">
+          {/* Mapa de la ruta */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
+                <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
+              </div>
+              {routeCustomers.length > 0 && (
+                <div className="px-4 py-3 border-b border-gray-100 bg-white/60">
+                  <div className="flex items-center gap-2 overflow-x-auto">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+                      Paradas: <span className="ml-1 font-medium">{routeCustomers.length}</span>
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
+                      Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
+                      Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
+                    </span>
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        onClick={reorderRouteByCurrentLocation}
+                        className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700 inline-flex items-center"
+                      >
+                        <Route className="w-3 h-3 mr-1" />
+                        Optimizar por mi ubicación
+                      </button>
+                      <button
+                        onClick={startNavigation}
+                        className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-flex items-center"
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        Navegar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="h-[800px] relative">
+              {routeCustomers.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <Route className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Sin ruta planificada</h3>
+                    <p className="text-gray-600">Agrega clientes de la lista izquierda para crear una ruta</p>
+                  </div>
+                </div>
+              ) : (!mapsApiKey ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center max-w-md">
+                    <Route className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Falta la clave de Google Maps</h3>
+                    <p className="text-gray-600 text-sm">Configura <code>VITE_GOOGLE_MAPS_API_KEY</code> en tu archivo <code>.env.local</code> y reinicia el servidor de Vite para visualizar el mapa de la ruta.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full relative">
+                  <div ref={mapRef} className="w-full h-full rounded-lg border" />
+                  {/* My Location button on map */}
+                  <button
+                    onClick={getCurrentLocation}
+                    className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                    title="Mi Ubicación"
+                  >
+                    <MapPinIcon className="w-5 h-5 text-blue-600" />
+                  </button>
+                </div>
+              ))}
+          </div>
         </div>
       </div>
 
