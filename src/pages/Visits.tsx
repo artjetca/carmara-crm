@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../hooks/useAuth'
-import { Customer } from '../lib/supabase'
+import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
 import {
   MapPin,
@@ -457,46 +457,31 @@ export default function Visits() {
     }
   }
 
-  // Load saved routes from database
+  // 載入儲存的路線
   const loadSavedRoutes = async () => {
     try {
       setLoadingSavedRoutes(true)
       
-      // Check if we're in development mode or if Netlify functions are available
-      const isNetlifyAvailable = window.location.hostname !== 'localhost'
-      
-      if (!isNetlifyAvailable) {
-        // Use localStorage in development
-        const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        setSavedRoutes(localSaved)
-        return
-      }
-
-      const response = await fetch('/.netlify/functions/saved-routes', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(user as any)?.session?.access_token || ''}`
+      // Try to load from database first, fallback to localStorage
+      if (user?.id) {
+        const { data: dbRoutes, error } = await supabase
+          .from('routes')
+          .select('*')
+          .eq('created_by', user.id)
+          .order('created_at', { ascending: false })
+        
+        if (!error && dbRoutes) {
+          setSavedRoutes(dbRoutes)
+          return
+        } else {
+          console.warn('Database routes failed, using localStorage fallback:', error)
         }
-      })
-
-      if (response.status === 502 || response.status === 404) {
-        // Netlify function not available, use localStorage
-        const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        setSavedRoutes(localSaved)
-        return
       }
-
-      const result = await response.json()
       
-      if (!response.ok || !result.success) {
-        // Fallback to localStorage if database fails
-        const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        setSavedRoutes(localSaved)
-        return
-      }
-
-      setSavedRoutes(result.data || [])
+      // Fallback to localStorage
+      const raw = localStorage.getItem('savedRoutes')
+      const routes = raw ? JSON.parse(raw) : []
+      setSavedRoutes(routes)
     } catch (error) {
       // Silent fallback to localStorage to avoid console errors
       const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
@@ -796,58 +781,39 @@ export default function Visits() {
     }
 
     try {
-      // Check if we're in development mode or if Netlify functions are available
-      const isNetlifyAvailable = window.location.hostname !== 'localhost'
+      // Try to save to database first, fallback to localStorage
+      if (user?.id) {
+        const { data, error } = await supabase
+          .from('routes')
+          .insert([{
+            created_by: user.id,
+            name: routeData.name,
+            route_date: routeData.date,
+            route_time: routeData.time,
+            customers: routeData.customers,
+            total_distance: routeData.totalDistance,
+            total_duration: routeData.totalDuration
+          }])
+          .select()
+        
+        if (!error && data) {
+          // Database save successful
+          await loadSavedRoutes()
+          try { localStorage.removeItem(draftKey) } catch {}
+          setShowSaveModal(false)
+          setRouteName('')
+          alert('Ruta guardada exitosamente (Base de datos)')
+          return
+        } else {
+          console.warn('Database save failed, using localStorage fallback:', error)
+        }
+      }
       
-      if (!isNetlifyAvailable) {
-        // Use localStorage in development
-        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        const updatedRoutes = [...existingRoutes, routeData]
-        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
-        // Reload saved routes to get updated list
-        await loadSavedRoutes()
-        
-        // on successful save, clear the temporary draft
-        try { localStorage.removeItem(draftKey) } catch {}
-        setShowSaveModal(false)
-        setRouteName('')
-        alert('Ruta guardada exitosamente (localStorage)')
-        return
-      }
-
-      const response = await fetch('/.netlify/functions/saved-routes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(user as any)?.session?.access_token || ''}`
-        },
-        body: JSON.stringify(routeData)
-      })
-
-      if (response.status === 502 || response.status === 404) {
-        // Netlify function not available, fallback to localStorage
-        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        const updatedRoutes = [...existingRoutes, routeData]
-        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
-        // Reload saved routes to get updated list
-        await loadSavedRoutes()
-        
-        // on successful save, clear the temporary draft
-        try { localStorage.removeItem(draftKey) } catch {}
-        setShowSaveModal(false)
-        setRouteName('')
-        alert('Ruta guardada exitosamente (localStorage fallback)')
-        return
-      }
-
-      const result = await response.json()
+      // Fallback to localStorage
+      const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+      const updatedRoutes = [...existingRoutes, routeData]
+      localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
       
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to save route')
-      }
-
       // Reload saved routes to get updated list
       await loadSavedRoutes()
       
@@ -855,27 +821,10 @@ export default function Visits() {
       try { localStorage.removeItem(draftKey) } catch {}
       setShowSaveModal(false)
       setRouteName('')
-      alert('Ruta guardada exitosamente')
+      alert('Ruta guardada exitosamente (localStorage)')
     } catch (error) {
       console.error('Error saving route:', error)
-      // Fallback to localStorage if database fails
-      try {
-        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        const updatedRoutes = [...existingRoutes, routeData]
-        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
-        // Reload saved routes to get updated list
-        await loadSavedRoutes()
-        
-        // on successful save, clear the temporary draft
-        try { localStorage.removeItem(draftKey) } catch {}
-        setShowSaveModal(false)
-        setRouteName('')
-        alert('Ruta guardada exitosamente (localStorage fallback)')
-      } catch (fallbackError) {
-        console.error('Fallback save failed:', fallbackError)
-        alert('Error al guardar la ruta: ' + (error as Error).message)
-      }
+      alert('Error al guardar la ruta: ' + (error as Error).message)
     }
   }
 
@@ -956,7 +905,25 @@ export default function Visits() {
     }
 
     try {
-      // Find the route to be deleted to check if it has completed visits
+      // Try to delete from database first
+      if (user?.id) {
+        const { error } = await supabase
+          .from('routes')
+          .delete()
+          .eq('id', routeId)
+          .eq('created_by', user.id)
+        
+        if (!error) {
+          // Database delete successful
+          await loadSavedRoutes()
+          alert('Ruta eliminada exitosamente (Base de datos)')
+          return
+        } else {
+          console.warn('Database delete failed, using localStorage fallback:', error)
+        }
+      }
+      
+      // Fallback to localStorage
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
       const routeToDelete = existingRoutes.find((route: any) => route.id === routeId)
       
@@ -967,72 +934,15 @@ export default function Visits() {
         localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
       }
       
-      // Check if we're in development mode or if Netlify functions are available
-      const isNetlifyAvailable = window.location.hostname !== 'localhost'
+      const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
+      localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
       
-      if (!isNetlifyAvailable) {
-        // Use localStorage in development
-        const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
-        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
-        // Reload saved routes to get updated list
-        await loadSavedRoutes()
-        alert('Ruta eliminada exitosamente (localStorage)')
-        return
-      }
-
-      const response = await fetch(`/.netlify/functions/saved-routes/${routeId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(user as any)?.session?.access_token || ''}`
-        }
-      })
-
-      if (response.status === 502 || response.status === 404) {
-        // Netlify function not available, fallback to localStorage
-        const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
-        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
-        // Reload saved routes to get updated list
-        await loadSavedRoutes()
-        alert('Ruta eliminada exitosamente (localStorage fallback)')
-        return
-      }
-
-      const result = await response.json()
-      
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to delete route')
-      }
-
       // Reload saved routes to get updated list
       await loadSavedRoutes()
-      alert('Ruta eliminada exitosamente')
+      alert('Ruta eliminada exitosamente (localStorage)')
     } catch (error) {
       console.error('Error deleting route:', error)
-      // Fallback to localStorage if database fails
-      try {
-        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        const routeToDelete = existingRoutes.find((route: any) => route.id === routeId)
-        
-        // If route was completed, remove its visits from completed visits
-        if (routeToDelete && routeToDelete.completed && routeToDelete.completedVisits) {
-          const existingVisits = JSON.parse(localStorage.getItem('completedVisits') || '[]')
-          const updatedVisits = existingVisits.filter((visit: any) => visit.route_id !== routeId)
-          localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
-        }
-        
-        const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
-        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
-        // Reload saved routes to get updated list
-        await loadSavedRoutes()
-        alert('Ruta eliminada exitosamente (localStorage fallback)')
-      } catch (fallbackError) {
-        console.error('Fallback delete failed:', fallbackError)
-        alert('Error al eliminar la ruta: ' + (error as Error).message)
-      }
+      alert('Error al eliminar la ruta: ' + (error as Error).message)
     }
   }
 
@@ -1926,7 +1836,7 @@ export default function Visits() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Rutas Guardadas y Respaldos</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Rutas Guardadas</h3>
               <button
                 onClick={() => setShowLoadModal(false)}
                 className="text-gray-400 hover:text-gray-600"

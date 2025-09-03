@@ -171,10 +171,15 @@ export default function Dashboard() {
           }).length
 
           const savedPending = savedRoutes.filter(r => {
+            // Skip completed routes
+            if (r.completed) return false
+            
             const dt = parseRouteDate(r)
+            // Skip routes without valid dates - don't count as pending
             if (!dt) return false
-            // Only count non-completed routes as pending
-            return dt >= startOfToday && !r.completed
+            
+            // Only count if date is today or in the future
+            return dt >= startOfToday
           }).length
 
           const savedThisWeek = savedRoutes.filter(r => {
