@@ -1333,12 +1333,12 @@ export default function Visits() {
         </div>
       </div>
 
-      {/* Mobile-first layout: customers and route info first, map at bottom */}
+      {/* Layout: Left panel with customers/route, right panel with map */}
       <div className="space-y-6">
-        {/* Mobile: Full width sections, Desktop: Side-by-side grid */}
+        {/* Desktop: Side-by-side grid, Mobile: Stacked */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div className="lg:col-span-1 order-1 space-y-6">
+          <div className="lg:col-span-1 order-1 lg:order-1 space-y-6">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
@@ -1537,8 +1537,8 @@ export default function Visits() {
             )}
           </div>
 
-          {/* Mobile: Map comes after route planning, Desktop: Map on the right side */}
-          <div className="lg:col-span-3 order-2 lg:order-1 space-y-6">
+          {/* Map panel - Desktop: Right side, Mobile: Bottom */}
+          <div className="lg:col-span-3 order-2 lg:order-2 space-y-6">
             {/* Mapa de la ruta */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
