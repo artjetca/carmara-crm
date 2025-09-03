@@ -1308,10 +1308,10 @@ export default function Visits() {
   const startNavigation = () => {
     if (routeCustomers.length === 0) return
 
+    // Use getAddress to get complete formatted addresses with province and country
     const waypoints = routeCustomers.map(customer => {
-      const address = customer.address || ''
-      const city = displayCity(customer) || ''
-      return encodeURIComponent(`${address} ${city}`.trim())
+      const fullAddress = getAddress(customer)
+      return encodeURIComponent(fullAddress)
     })
 
     const origin = waypoints[0]
@@ -1324,6 +1324,7 @@ export default function Visits() {
     }
     url += '&travelmode=driving'
 
+    console.log('[Navigation] Generated URL:', url)
     window.open(url, '_blank')
   }
 
