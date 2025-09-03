@@ -45,6 +45,27 @@ interface Call {
   }
 }
 
+interface AppointmentResponse {
+  id: string
+  message_id: string
+  customer_id: string
+  response_token: string
+  response_type: 'confirm' | 'reschedule'
+  responded_at: string | null
+  customer_ip?: string
+  customer_user_agent?: string
+  created_at: string
+  customers?: {
+    name: string
+    email: string
+    company?: string
+  }
+  scheduled_messages?: {
+    message: string
+    scheduled_for: string
+  }
+}
+
 interface ScheduledMessage {
   id: string
   // Runtime may have either customer_ids (array) or single customer_id
@@ -73,7 +94,8 @@ export default function Communications() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'calls' | 'messages'>('calls')
   const [calls, setCalls] = useState<Call[]>([])
-  const [messages, setMessages] = useState<ScheduledMessage[]>([])
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([])
+  const [appointmentResponses, setAppointmentResponses] = useState<AppointmentResponse[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -163,10 +185,12 @@ export default function Communications() {
       // customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
       
       setCalls(callsData || [])
-      setMessages(messagesData || [])
-      setCustomers(customersData || [])
+      setScheduledMessages(messagesData || [])
+      setCustomers(customersData)
+      console.log(`Loaded ${messagesData?.length || 0} scheduled messages`)
     } catch (error) {
-      console.error('Error loading data:', error)
+      console.error('Error loading scheduled messages:', error)
+      setScheduledMessages([])
     } finally {
       setLoading(false)
     }
@@ -183,7 +207,7 @@ export default function Communications() {
       if (error) throw error
       
       // Remove from local state
-      setMessages(prev => prev.filter(m => m.id !== id))
+      setScheduledMessages(prev => prev.filter(m => m.id !== id))
     } catch (error) {
       console.error('Error deleting message:', error)
       alert('Error al eliminar el mensaje')
@@ -193,7 +217,7 @@ export default function Communications() {
   const handleSendNow = async (messageId: string) => {
     try {
       // Find the message
-      const message = messages.find(m => m.id === messageId)
+      const message = scheduledMessages.find(m => m.id === messageId)
       if (!message) {
         throw new Error('Mensaje no encontrado')
       }
@@ -502,7 +526,7 @@ export default function Communications() {
            contactEmail.toLowerCase().includes(searchTerm.toLowerCase())
   })
 
-  const filteredMessages = messages.filter(message => 
+  const filteredMessages = scheduledMessages.filter(message => 
     message.creator_profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     message.creator_profile?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     message.message.toLowerCase().includes(searchTerm.toLowerCase())
@@ -602,7 +626,7 @@ export default function Communications() {
                 <MessageSquare className="w-4 h-4" />
                 <span>{t.communications.messages}</span>
                 <span className="bg-gray-100 text-gray-600 py-1 px-2 rounded-full text-xs">
-                  {messages.length}
+                  {scheduledMessages.length}
                 </span>
               </div>
             </button>
@@ -1198,6 +1222,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     message: '',
     htmlContent: '', // Add HTML content field
     useHtml: false, // Toggle for HTML mode
+    includeConfirmation: false, // Add appointment confirmation buttons
     schedules: [
       { date: format(toZonedTime(new Date(), 'Europe/Madrid'), 'yyyy-MM-dd'), time: '09:00' }
     ] as { date: string; time: string }[]
@@ -1348,7 +1373,10 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                 subject: subject,
                 message: content,
                 type: 'email',
-                isHtml: isHtml
+                isHtml: isHtml,
+                messageId: row.id,
+                customerId: customer.id,
+                includeConfirmation: formData.includeConfirmation
               })
             })
             
@@ -1785,6 +1813,44 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                 </button>
               </div>
             </div>
+            
+            {formData.type === 'email' && (
+              <div className="border rounded-lg p-4 bg-blue-50">
+                <div className="flex items-center space-x-3 mb-3">
+                  <input
+                    type="checkbox"
+                    id="includeConfirmation"
+                    checked={formData.includeConfirmation}
+                    onChange={(e) => setFormData({ ...formData, includeConfirmation: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="includeConfirmation" className="text-sm font-medium text-gray-900">
+                    📅 Incluir botones de confirmación de cita
+                  </label>
+                </div>
+                {formData.includeConfirmation && (
+                  <div className="text-sm text-gray-600 bg-white p-3 rounded border">
+                    <p className="font-medium text-gray-900 mb-2">Se añadirán automáticamente:</p>
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-100 text-green-800">✅ Confirmar Cita</span>
+                        <span className="text-xs text-gray-500">- Cliente confirma la cita</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">📅 Reprogramar</span>
+                        <span className="text-xs text-gray-500">- Cliente solicita reprogramación</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 p-2 bg-blue-50 rounded text-xs">
+                      <p><strong>También se incluirá:</strong></p>
+                      <p>• Información de contacto de Charo</p>
+                      <p>• Teléfono, email y WhatsApp</p>
+                      <p>• Footer con derechos de autor</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             
             <div className="flex justify-end space-x-3 pt-4">
               <button

@@ -1,10 +1,67 @@
 const { google } = require('googleapis');
+const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Initialize Supabase client for creating response tokens
+let supabase = null;
+if (supabaseUrl && supabaseServiceKey) {
+  supabase = createClient(supabaseUrl, supabaseServiceKey);
+}
+
+// Generate secure token for appointment response links
+function generateResponseToken(messageId, customerId, responseType) {
+  const data = `${messageId}-${customerId}-${responseType}-${Date.now()}`;
+  return crypto.createHash('sha256').update(data).digest('hex').substring(0, 32);
+}
+
+// Create response tokens for appointment confirmation
+async function createResponseTokens(messageId, customerId) {
+  if (!supabase) return { confirmToken: null, rescheduleToken: null };
+  
+  try {
+    const confirmToken = generateResponseToken(messageId, customerId, 'confirm');
+    const rescheduleToken = generateResponseToken(messageId, customerId, 'reschedule');
+    
+    // Insert both tokens
+    const { error } = await supabase
+      .from('appointment_responses')
+      .insert([
+        {
+          message_id: messageId,
+          customer_id: customerId,
+          response_token: confirmToken,
+          response_type: 'confirm',
+          responded_at: null
+        },
+        {
+          message_id: messageId,
+          customer_id: customerId,
+          response_token: rescheduleToken,
+          response_type: 'reschedule',
+          responded_at: null
+        }
+      ]);
+
+    if (error) {
+      console.error('Error creating response tokens:', error);
+      return { confirmToken: null, rescheduleToken: null };
+    }
+
+    return { confirmToken, rescheduleToken };
+  } catch (error) {
+    console.error('Error in createResponseTokens:', error);
+    return { confirmToken: null, rescheduleToken: null };
+  }
+}
 
 exports.handler = async (event, context) => {
   // Handle CORS preflight
@@ -41,7 +98,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { to, subject, message, type, isHtml } = JSON.parse(event.body || '{}')
+    const { to, subject, message, type, isHtml, messageId, customerId, includeConfirmation } = JSON.parse(event.body || '{}')
 
     if (!to || !subject || !message) {
       return {
@@ -76,6 +133,16 @@ exports.handler = async (event, context) => {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
+    // Create response tokens if appointment confirmation is requested
+    let confirmToken = null;
+    let rescheduleToken = null;
+    
+    if (includeConfirmation && messageId && customerId) {
+      const tokens = await createResponseTokens(messageId, customerId);
+      confirmToken = tokens.confirmToken;
+      rescheduleToken = tokens.rescheduleToken;
+    }
+
     // Create email message
     const emailSubject = subject || 'Mensaje desde Casmara CRM';
     const fromEmail = process.env.GMAIL_FROM_EMAIL || 'artjet0805@gmail.com';
@@ -83,8 +150,22 @@ exports.handler = async (event, context) => {
     let emailContent;
     
     if (isHtml) {
-      // Use custom HTML content directly
+      // Use custom HTML content directly, but add confirmation buttons if requested
       emailContent = message;
+      
+      if (includeConfirmation && confirmToken && rescheduleToken) {
+        const baseUrl = process.env.URL || 'https://carmara-crm.netlify.app';
+        const confirmationButtons = generateConfirmationButtons(baseUrl, confirmToken, rescheduleToken);
+        
+        // Try to insert before closing body or div tag, or append at the end
+        if (emailContent.includes('</body>')) {
+          emailContent = emailContent.replace('</body>', confirmationButtons + '</body>');
+        } else if (emailContent.includes('</div>')) {
+          emailContent = emailContent.replace(/(<\/div>)(?!.*<\/div>)/, confirmationButtons + '$1');
+        } else {
+          emailContent += confirmationButtons;
+        }
+      }
     } else {
       // Use default template for plain text
       emailContent = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -95,6 +176,7 @@ exports.handler = async (event, context) => {
           <div style="background: white; padding: 20px; border-radius: 8px;">
             ${message.replace(/\n/g, '<br>')}
           </div>
+          ${includeConfirmation && confirmToken && rescheduleToken ? generateAppointmentConfirmationSection(confirmToken, rescheduleToken) : ''}
         </div>
         <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
           <p>Este mensaje fue enviado desde Casmara CRM</p>
@@ -160,4 +242,88 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+// Generate confirmation buttons for HTML emails
+function generateConfirmationButtons(baseUrl, confirmToken, rescheduleToken) {
+  return `
+    <div style="background: #f8f9fa; padding: 30px; margin: 30px 0; border-radius: 12px; text-align: center; border: 2px solid #e9ecef;">
+      <h3 style="color: #495057; margin-bottom: 20px; font-size: 18px;">Pendiente de Confirmación</h3>
+      
+      <div style="margin: 25px 0;">
+        <a href="${baseUrl}/.netlify/functions/appointment-response?token=${confirmToken}" 
+           style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; margin: 0 10px; font-weight: bold; font-size: 16px;">
+          ✅ Confirmar Cita
+        </a>
+        <a href="${baseUrl}/.netlify/functions/appointment-response?token=${rescheduleToken}" 
+           style="display: inline-block; background: #17a2b8; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; margin: 0 10px; font-weight: bold; font-size: 16px;">
+          📅 Reprogramar
+        </a>
+      </div>
+      
+      <p style="color: #6c757d; font-size: 14px; margin-top: 20px;">
+        Haga clic en uno de los botones para confirmar su cita o solicitar una reprogramación.
+      </p>
+    </div>
+    
+    <div style="background: #e3f2fd; padding: 25px; margin: 20px 0; border-radius: 8px; text-align: center;">
+      <h4 style="color: #1976d2; margin-bottom: 15px;">¿Necesita contactar con Charo?</h4>
+      <p style="color: #424242; margin-bottom: 15px; line-height: 1.5;">
+        Si tiene alguna pregunta o necesita hacer algún cambio, no dude en contactar directamente con Charo, 
+        su asesora comercial de Casmara. Está disponible para ayudarle con cualquier consulta sobre la demostración del Beauty Advisor.
+      </p>
+      
+      <div style="margin: 15px 0;">
+        <div style="margin: 8px 0; color: #1976d2; font-weight: bold;">📞 +34 646 11 67 04</div>
+        <div style="margin: 8px 0; color: #1976d2; font-weight: bold;">✉️ rosariog.almenglo@gmail.com</div>
+        <div style="margin: 8px 0; color: #1976d2; font-weight: bold;">💬 WhatsApp Charo</div>
+      </div>
+      
+      <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #bbdefb; color: #666; font-size: 12px;">
+        © 2025 Casmara. Todos los derechos reservados.<br>
+        Asesora comercial: Charo | Tel: +34 646 11 67 04
+      </div>
+    </div>
+  `;
+}
+
+// Generate appointment confirmation section for plain text emails
+function generateAppointmentConfirmationSection(confirmToken, rescheduleToken) {
+  const baseUrl = process.env.URL || 'https://carmara-crm.netlify.app';
+  
+  return `
+    <div style="background: #f8f9fa; padding: 25px; margin: 20px 0; border-radius: 8px; text-align: center; border: 2px solid #e9ecef;">
+      <h3 style="color: #495057; margin-bottom: 20px;">Pendiente de Confirmación</h3>
+      
+      <div style="margin: 20px 0;">
+        <a href="${baseUrl}/.netlify/functions/appointment-response?token=${confirmToken}" 
+           style="display: inline-block; background: #28a745; color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; margin: 5px; font-weight: bold;">
+          ✅ Confirmar Cita
+        </a>
+        <a href="${baseUrl}/.netlify/functions/appointment-response?token=${rescheduleToken}" 
+           style="display: inline-block; background: #17a2b8; color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; margin: 5px; font-weight: bold;">
+          📅 Reprogramar
+        </a>
+      </div>
+    </div>
+    
+    <div style="background: #e3f2fd; padding: 20px; margin: 15px 0; border-radius: 8px; text-align: center;">
+      <h4 style="color: #1976d2; margin-bottom: 10px;">¿Necesita contactar con Charo?</h4>
+      <p style="color: #424242; margin-bottom: 15px; font-size: 14px;">
+        Si tiene alguna pregunta o necesita hacer algún cambio, no dude en contactar directamente con Charo, 
+        su asesora comercial de Casmara. Está disponible para ayudarle con cualquier consulta sobre la demostración del Beauty Advisor.
+      </p>
+      
+      <div style="margin: 10px 0; color: #1976d2;">
+        <div>📞 +34 646 11 67 04</div>
+        <div>✉️ rosariog.almenglo@gmail.com</div>
+        <div>💬 WhatsApp Charo</div>
+      </div>
+      
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #bbdefb; color: #666; font-size: 11px;">
+        © 2025 Casmara. Todos los derechos reservados.<br>
+        Asesora comercial: Charo | Tel: +34 646 11 67 04
+      </div>
+    </div>
+  `;
+}
 
