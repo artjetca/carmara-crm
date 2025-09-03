@@ -1338,7 +1338,7 @@ export default function Visits() {
       {/* Desktop: Side-by-side flex, Mobile: Stacked */}
       <div className="flex flex-col lg:flex-row gap-6">
           {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div className="space-y-6 lg:w-1/4">
+          <div className="space-y-6 lg:w-1/4 bg-red-100 border-4 border-red-500 min-h-[500px]">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
