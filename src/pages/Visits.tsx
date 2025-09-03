@@ -1335,9 +1335,8 @@ export default function Visits() {
       </div>
 
       {/* Layout: Left panel with customers/route, right panel with map */}
-      <div className="space-y-6">
-        {/* Desktop: Side-by-side flex, Mobile: Stacked */}
-        <div className="flex flex-col lg:flex-row gap-6">
+      {/* Desktop: Side-by-side flex, Mobile: Stacked */}
+      <div className="flex flex-col lg:flex-row gap-6">
           {/* Panel izquierdo - Lista de clientes y ruta */}
           <div className="space-y-6 lg:w-1/4">
             {/* Lista de clientes disponibles */}
@@ -1828,7 +1827,6 @@ export default function Visits() {
           </div>
         </div>
       )}
-        </div>
       </div>
     </div>
   )
