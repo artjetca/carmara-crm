@@ -54,6 +54,7 @@ export default function Visits() {
   // Per-user draft key for autosave of route planning
   const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
   console.log('[RoutePlanning] Maps API Key:', mapsApiKey ? 'Present' : 'Missing')
+  console.log('[RoutePlanning] Component rendering! customers:', customers.length, 'loading:', loading)
   if (!mapsApiKey) {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
@@ -1170,7 +1171,10 @@ export default function Visits() {
     return parts.join(', ') || 'Sin dirección'
   }
 
+  console.log('[RoutePlanning] Before render check - loading:', loading)
+  
   if (loading) {
+    console.log('[RoutePlanning] Rendering loading spinner!')
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1178,6 +1182,7 @@ export default function Visits() {
     )
   }
 
+  console.log('[RoutePlanning] About to render main component!')
   return (
     <div className="space-y-6">
       {/* Header */}
