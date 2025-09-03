@@ -53,6 +53,7 @@ export default function Visits() {
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   // Per-user draft key for autosave of route planning
   const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
+  console.log('[RoutePlanning] Maps API Key:', mapsApiKey ? 'Present' : 'Missing')
   if (!mapsApiKey) {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
