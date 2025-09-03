@@ -1195,9 +1195,9 @@ export default function Visits() {
   }
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
           <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
@@ -1245,7 +1245,7 @@ export default function Visits() {
       </div>
 
       {/* Configuración de fecha y hora */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Programación de la Ruta</h2>
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
@@ -1291,7 +1291,7 @@ export default function Visits() {
       </div>
 
       {/* Filtros */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
         <div className="flex flex-col lg:flex-row gap-4 mb-4">
           <div className="flex-1">
             <div className="relative">
@@ -1352,12 +1352,7 @@ export default function Visits() {
 
       {/* Layout: Left panel with customers/route, right panel with map */}
       {/* Desktop: Side-by-side flex, Mobile: Stacked */}
-      <div 
-        className="flex flex-col lg:flex-row gap-6" 
-        style={{
-          minHeight: '400px'
-        }}
-      >
+      <div className="flex flex-col lg:flex-row gap-6">
           {/* Panel izquierdo - Lista de clientes y ruta */}
           <div 
             className="space-y-6 w-full lg:w-1/4 flex-shrink-0" 
