@@ -167,8 +167,8 @@ export default function Visits() {
   useEffect(() => {
     const render = async () => {
       try {
-        // Require API key and at least 1 stop
-        if (!mapsApiKey || routeCustomers.length === 0) return
+        // Require API key
+        if (!mapsApiKey) return
 
         // Wait for the map container to be mounted (can lag right after draft restore)
         if (!mapRef.current) {
@@ -270,6 +270,22 @@ export default function Visits() {
             map.setCenter(position)
             map.setZoom(13)
           }
+          return
+        }
+
+        // If no customers in route, just show empty map
+        if (routeCustomers.length === 0) {
+          // Clear any previous route and markers
+          if (directionsRendererRef.current) {
+            directionsRendererRef.current.set('directions', null)
+          }
+          markersRef.current.forEach(m => m.setMap(null))
+          markersRef.current = []
+          
+          // Center map on default location (Andalusia)
+          const map = mapInstanceRef.current
+          map.setCenter({ lat: 36.7213, lng: -4.4214 })
+          map.setZoom(8)
           return
         }
 

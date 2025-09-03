@@ -289,7 +289,10 @@ export default function Communications() {
           subject,
           message: cleanContent,
           type: 'email',
-          isHtml
+          isHtml,
+          messageId: messageId,
+          customerId: customer.id,
+          includeConfirmation: true // Always include confirmation for manual sends
         })
       })
 
@@ -1215,19 +1218,58 @@ interface MessageModalProps {
 
 function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   const { user } = useAuth()
-  const [formData, setFormData] = useState({
-    customer_ids: [] as string[],
-    type: 'email' as 'sms' | 'email',
-    subject: '',
-    message: '',
-    htmlContent: '', // Add HTML content field
-    useHtml: false, // Toggle for HTML mode
-    includeConfirmation: false, // Add appointment confirmation buttons
-    schedules: [
-      { date: format(toZonedTime(new Date(), 'Europe/Madrid'), 'yyyy-MM-dd'), time: '09:00' }
-    ] as { date: string; time: string }[]
-  })
+  
+  // Load saved form data from localStorage
+  const loadSavedFormData = () => {
+    try {
+      const saved = localStorage.getItem('programar_mensaje_form')
+      if (saved) {
+        const parsedData = JSON.parse(saved)
+        return {
+          ...parsedData,
+          schedules: parsedData.schedules || [
+            { date: format(toZonedTime(new Date(), 'Europe/Madrid'), 'yyyy-MM-dd'), time: '09:00' }
+          ]
+        }
+      }
+    } catch (error) {
+      console.error('Error loading saved form data:', error)
+    }
+    
+    return {
+      customer_ids: [] as string[],
+      type: 'email' as 'sms' | 'email',
+      subject: '',
+      message: '',
+      htmlContent: '',
+      useHtml: false,
+      includeConfirmation: false,
+      schedules: [
+        { date: format(toZonedTime(new Date(), 'Europe/Madrid'), 'yyyy-MM-dd'), time: '09:00' }
+      ] as { date: string; time: string }[]
+    }
+  }
+  
+  const [formData, setFormData] = useState(loadSavedFormData())
   const [loading, setLoading] = useState(false)
+  
+  // Auto-save form data to localStorage whenever formData changes
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('programar_mensaje_form', JSON.stringify(formData))
+    } catch (error) {
+      console.error('Error saving form data:', error)
+    }
+  }, [formData])
+  
+  // Clear saved data when modal closes successfully
+  const clearSavedData = () => {
+    try {
+      localStorage.removeItem('programar_mensaje_form')
+    } catch (error) {
+      console.error('Error clearing saved data:', error)
+    }
+  }
   const t = translations
   // 省/市用於過濾客戶下拉選單（不持久化到資料庫）
   const [selectedProvince, setSelectedProvince] = useState<string>('')
@@ -1450,7 +1492,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
 
       // Block scheduling emails to customers without valid email addresses
       if (formData.type === 'email') {
-        const customersWithoutEmail = selectedCustomers.filter(c => !isValidEmail(c.email))
+        const selectedCustomersForEmail = customers.filter(c => formData.customer_ids.includes(c.id))
+        const customersWithoutEmail = selectedCustomersForEmail.filter(c => !isValidEmail(c.email))
         if (customersWithoutEmail.length > 0) {
           const names = customersWithoutEmail.map(c => `- ${c.name}`).join('\n')
           alert(`Los siguientes clientes no tienen un email válido y no se puede programar correo para ellos:\n\n${names}\n\nQuite estos clientes de la lista o añada un email válido antes de continuar.`)
@@ -1518,6 +1561,9 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       // Email sending will be handled by a separate background scheduler
       
       alert(`✅ Mensaje programado correctamente. Filas insertadas: ${insertedCount}`)
+      
+      // Clear saved form data after successful save
+      clearSavedData()
       
       // Close modal and let parent component refresh the list
       onClose()
@@ -1599,72 +1645,102 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Cliente(s) *
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-7 gap-2 items-end">
-                <div className="sm:col-span-5">
-                  <select
-                    value={customerToAdd}
-                    onChange={(e) => setCustomerToAdd(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Seleccionar cliente</option>
-                    {addableCustomers.map(customer => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name.toUpperCase()} - {customer.company || 'Sin empresa'} {deriveProvince(customer) ? `(${deriveProvince(customer)})` : ''}{customer.email ? '' : ' — sin email'}
-                      </option>
-                    ))}
-                  </select>
+              
+              {/* Customer selection with checkboxes */}
+              <div className="border rounded-lg max-h-60 overflow-y-auto bg-white">
+                {/* Select All checkbox */}
+                <div className="sticky top-0 bg-gray-50 border-b p-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={modalFilteredCustomers.length > 0 && modalFilteredCustomers.every(c => formData.customer_ids.includes(c.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          // Select all filtered customers
+                          const allIds = modalFilteredCustomers.map(c => c.id)
+                          setFormData({ ...formData, customer_ids: allIds })
+                        } else {
+                          // Deselect all
+                          setFormData({ ...formData, customer_ids: [] })
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-gray-900">
+                      Seleccionar todos ({modalFilteredCustomers.length} clientes)
+                    </span>
+                  </label>
                 </div>
-                <div className="sm:col-span-2">
-                  <button
-                    type="button"
-                    onClick={addSelectedCustomer}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    disabled={!customerToAdd}
-                    title="Añadir a la lista"
-                  >
-                    Añadir
-                  </button>
-                </div>
-              </div>
-              <div className="mt-3">
-                {selectedCustomers.length === 0 ? (
-                  <p className="text-sm text-gray-500">No hay clientes en la lista preparada.</p>
-                ) : (
-                  <div>
-                    <div className="text-sm font-medium text-gray-700 mb-1">Lista preparada ({selectedCustomers.length})</div>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedCustomers.map(c => (
-                        <span key={c.id} className="inline-flex items-center gap-2 px-2 py-1 rounded border text-sm bg-gray-50">
-                          <span>{c.name}{!isValidEmail(c.email) ? ' (sin email)' : ''}</span>
-                          <button
-                            type="button"
-                            className="text-red-600 hover:text-red-800"
-                            title="Quitar"
-                            onClick={() => removeSelectedCustomer(c.id)}
-                          >
-                            ×
-                          </button>
-                        </span>
+                
+                {/* Individual customer checkboxes */}
+                <div className="p-2">
+                  {modalFilteredCustomers.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">No hay clientes que coincidan con los filtros</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {modalFilteredCustomers.map(customer => (
+                        <label key={customer.id} className="flex items-start space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.customer_ids.includes(customer.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({ 
+                                  ...formData, 
+                                  customer_ids: [...formData.customer_ids, customer.id] 
+                                })
+                              } else {
+                                setFormData({ 
+                                  ...formData, 
+                                  customer_ids: formData.customer_ids.filter(id => id !== customer.id) 
+                                })
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate">
+                              {customer.name.toUpperCase()}
+                              {!isValidEmail(customer.email) && (
+                                <span className="text-red-500 ml-1">(sin email)</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">
+                              {customer.company || 'Sin empresa'}
+                              {deriveProvince(customer) && (
+                                <span className="ml-1">• {deriveProvince(customer)}</span>
+                              )}
+                              {deriveCity(customer) && deriveCity(customer) !== deriveProvince(customer) && (
+                                <span className="ml-1">• {deriveCity(customer)}</span>
+                              )}
+                            </div>
+                            {customer.email && (
+                              <div className="text-xs text-blue-600 truncate">{customer.email}</div>
+                            )}
+                          </div>
+                        </label>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {selectedCustomers.length > 0 && (
-              <div className="border rounded-lg p-3 bg-gray-50 text-sm text-gray-700">
-                <div className="font-semibold text-gray-900">{selectedCustomers.length} cliente(s) seleccionados</div>
-                <ul className="mt-1 list-disc list-inside space-y-0.5">
-                  {selectedCustomers.slice(0, 5).map(c => (
-                    <li key={c.id}>{c.name} — {c.company || 'Sin empresa'} ({deriveProvince(c) || '-'})</li>
-                  ))}
-                  {selectedCustomers.length > 5 && (
-                    <li className="text-gray-500">… y {selectedCustomers.length - 5} más</li>
                   )}
-                </ul>
+                </div>
               </div>
-            )}
+              
+              {/* Summary of selected customers */}
+              {formData.customer_ids.length > 0 && (
+                <div className="mt-3 border rounded-lg p-3 bg-blue-50 text-sm">
+                  <div className="font-semibold text-blue-900">
+                    {formData.customer_ids.length} cliente(s) seleccionados
+                  </div>
+                  <div className="mt-1 text-blue-800">
+                    {formData.customer_ids.map(id => {
+                      const customer = customers.find(c => c.id === id)
+                      return customer ? customer.name : 'Cliente desconocido'
+                    }).slice(0, 3).join(', ')}
+                    {formData.customer_ids.length > 3 && ` y ${formData.customer_ids.length - 3} más`}
+                  </div>
+                </div>
+              )}
+            </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
