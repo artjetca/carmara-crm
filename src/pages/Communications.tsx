@@ -325,6 +325,7 @@ export default function Communications() {
       // Extract subject and content from message
       let subject = 'Mensaje desde Casmara CRM'
       let content = message.message
+      let isHtml = false
 
       // Handle new message format: "Mensaje: content (subject)" or "SMS: content"
       if (content.startsWith('Mensaje:')) {
@@ -336,17 +337,30 @@ export default function Communications() {
           subject = subjectMatch[1]
           content = content.replace(/\s*\([^)]+\)\s*$/, '')
         }
+        
+        // Detect if content is HTML
+        isHtml = content.includes('<') && content.includes('>')
       } else if (content.startsWith('EMAIL:')) {
-        // Handle old format for backward compatibility
+        // Handle old format
         content = content.replace(/^EMAIL:\s*/, '')
         const subjectMatch = content.match(/\s*\(([^)]+)\)\s*$/)
         if (subjectMatch) {
           subject = subjectMatch[1]
           content = content.replace(/\s*\([^)]+\)\s*$/, '')
         }
+        
+        // Detect if content is HTML
+        isHtml = content.includes('<') && content.includes('>')
       }
 
-      console.log('Email details:', { to: customer.email, subject, content: content.substring(0, 100) + '...' })
+      const cleanContent = content.trim()
+
+      // Validate required fields
+      if (!customer.email || !subject || !cleanContent) {
+        throw new Error(`Missing required fields: to=${!!customer.email}, subject=${!!subject}, message=${!!cleanContent}`)
+      }
+
+      console.log('Sending email with:', { to: customer.email, subject, content: cleanContent, isHtml })
 
       // Send email
       const response = await fetch('/.netlify/functions/send-email', {
@@ -356,9 +370,10 @@ export default function Communications() {
         },
         body: JSON.stringify({
           to: customer.email,
-          subject: subject,
-          message: content.trim(),
-          type: 'email'
+          subject,
+          message: cleanContent,
+          type: 'email',
+          isHtml
         })
       })
 
@@ -713,29 +728,6 @@ export default function Communications() {
                   🧪 Probar Envío de Email
                 </h3>
                 <TestEmailForm />
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
-                  ⚡ Programador de Emails
-                </h3>
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-sm text-gray-600 mb-3">
-                    📌 <strong>Importante:</strong> Los emails programados deben enviarse manualmente porque Netlify no tiene cron jobs en el plan gratuito.
-                  </p>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Haga clic en el botón para enviar todos los emails pendientes programados para ahora.
-                  </p>
-                  <button
-                    onClick={triggerEmailScheduler}
-                    className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center space-x-2"
-                  >
-                    <Clock className="w-4 h-4" />
-                    <span>Procesar Emails Pendientes</span>
-                  </button>
-                  <div className="mt-3 text-xs text-gray-500">
-                    💡 También puede usar "Enviar ahora" en cada mensaje individual.
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -1444,6 +1436,30 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         const customer = customers.find(c => row.customer_ids.includes(c.id))
         if (customer?.email && formData.type === 'email') {
           try {
+            // Determine subject and content based on mode
+            let subject = formData.subject || 'Mensaje desde Casmara CRM'
+            let content = ''
+            let isHtml = false
+
+            if (formData.useHtml && formData.htmlContent?.trim()) {
+              // HTML mode with content
+              content = formData.htmlContent.trim()
+              isHtml = true
+            } else if (formData.message?.trim()) {
+              // Text mode or HTML mode fallback
+              content = formData.message.trim()
+              isHtml = false
+            } else {
+              console.error('No content provided for email')
+              continue
+            }
+
+            // Validate required fields
+            if (!customer.email || !subject || !content) {
+              console.error(`Missing fields: to=${!!customer.email}, subject=${!!subject}, message=${!!content}`)
+              continue
+            }
+
             const response = await fetch('/.netlify/functions/send-email', {
               method: 'POST',
               headers: {
@@ -1451,10 +1467,10 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               },
               body: JSON.stringify({
                 to: customer.email,
-                subject: formData.subject || 'Mensaje desde Casmara CRM',
-                message: formData.useHtml ? formData.htmlContent : formData.message,
+                subject: subject,
+                message: content,
                 type: 'email',
-                isHtml: formData.useHtml
+                isHtml: isHtml
               })
             })
             
@@ -1544,9 +1560,24 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         return formData.schedules.map(s => {
           const dateTimeStr = `${s.date}T${s.time}:00`
           const utcDate = fromZonedTime(dateTimeStr, 'Europe/Madrid')
+          
+          // Determine message content based on mode
+          let messageContent = ''
+          if (formData.type === 'email') {
+            if (formData.useHtml && formData.htmlContent?.trim()) {
+              // HTML mode - store HTML content with subject
+              messageContent = `Mensaje: ${formData.htmlContent}${formData.subject ? ` (${formData.subject})` : ''}`
+            } else {
+              // Text mode - store regular message with subject
+              messageContent = `Mensaje: ${formData.message}${formData.subject ? ` (${formData.subject})` : ''}`
+            }
+          } else {
+            messageContent = `SMS: ${formData.message}`
+          }
+          
           return ({
           customer_ids: [cid], // Array format for customer_ids column
-          message: `${formData.type === 'email' ? 'Mensaje' : 'SMS'}: ${formData.message}${formData.type === 'email' && formData.subject ? ` (${formData.subject})` : ''}`,
+          message: messageContent,
           scheduled_for: utcDate.toISOString(),
           status: 'pending',
           created_by: user?.id
