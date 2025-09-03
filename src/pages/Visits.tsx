@@ -54,7 +54,6 @@ export default function Visits() {
   // Per-user draft key for autosave of route planning
   const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
   console.log('[RoutePlanning] Maps API Key:', mapsApiKey ? 'Present' : 'Missing')
-  console.log('[RoutePlanning] Component rendering! customers:', customers.length, 'loading:', loading)
   if (!mapsApiKey) {
     console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
   }
@@ -1171,10 +1170,7 @@ export default function Visits() {
     return parts.join(', ') || 'Sin dirección'
   }
 
-  console.log('[RoutePlanning] Before render check - loading:', loading)
-  
   if (loading) {
-    console.log('[RoutePlanning] Rendering loading spinner!')
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1182,7 +1178,6 @@ export default function Visits() {
     )
   }
 
-  console.log('[RoutePlanning] About to render main component!')
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1341,13 +1336,9 @@ export default function Visits() {
 
       {/* Layout: Left panel with customers/route, right panel with map */}
       {/* Desktop: Side-by-side flex, Mobile: Stacked */}
-      <div className="flex flex-col lg:flex-row gap-6 bg-yellow-200 p-4 border-8 border-purple-600">
-        <div className="bg-red-500 text-white p-4 text-xl font-bold">DEBUG: CONTAINER VISIBLE</div>
+      <div className="flex flex-col lg:flex-row gap-6">
           {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div className="space-y-6 w-full lg:w-1/4 flex-shrink-0 bg-red-500 text-white p-8 min-h-[600px]">
-            <div className="text-2xl font-bold">DEBUG: LEFT PANEL HERE!</div>
-            <div className="text-lg">filteredCustomers: {filteredCustomers.length}</div>
-            <div className="text-lg">loading: {loading.toString()}</div>
+          <div className="space-y-6 w-full lg:w-1/4 flex-shrink-0">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
