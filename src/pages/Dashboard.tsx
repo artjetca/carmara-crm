@@ -125,9 +125,19 @@ export default function Dashboard() {
         visit.status === 'pending' || visit.status === 'programada'
       ).length
       
-      const completedVisits = (visitsData || []).filter(visit => 
+      let completedVisits = (visitsData || []).filter(visit => 
         visit.status === 'completed' || visit.status === 'completada'
       ).length
+      
+      // Add completed visits from route completions (localStorage)
+      try {
+        if (typeof window !== 'undefined') {
+          const completedVisitsFromRoutes = JSON.parse(localStorage.getItem('completedVisits') || '[]')
+          completedVisits += completedVisitsFromRoutes.length
+        }
+      } catch (e) {
+        console.warn('Dashboard: failed to include completed visits from routes', e)
+      }
       
       let thisWeekVisits = (visitsData || []).filter(visit => {
         const iso = getVisitDateIso(visit)
@@ -162,7 +172,8 @@ export default function Dashboard() {
           const savedPending = savedRoutes.filter(r => {
             const dt = parseRouteDate(r)
             if (!dt) return false
-            return dt >= startOfToday
+            // Only count non-completed routes as pending
+            return dt >= startOfToday && !r.completed
           }).length
 
           const savedThisWeek = savedRoutes.filter(r => {

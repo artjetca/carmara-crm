@@ -3,24 +3,23 @@ import { useAuth } from '../hooks/useAuth'
 import { Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
 import {
-  Search,
+  MapPin,
+  Users,
+  Calendar,
+  Clock,
   Plus,
   X,
-  ArrowUp,
-  ArrowDown,
-  Navigation,
-  Route,
-  MapPin,
-  Car,
-  Clock,
-  ExternalLink,
-  MapPinIcon,
   Phone,
   Mail,
-  Calendar,
-  Timer,
-  Users,
-  Trash2
+  ChevronUp,
+  ChevronDown,
+  Navigation,
+  Search,
+  Filter,
+  Route,
+  ArrowUpDown,
+  Trash2,
+  CheckCircle
 } from 'lucide-react'
 
 interface RouteCustomer extends Customer {
@@ -892,22 +891,45 @@ export default function Visits() {
   const completeRoute = async (routeData: any) => {
     try {
       const completedVisits = routeData.customers.map((customer: any) => ({
+        id: `${routeData.id}_${customer.id}_${Date.now()}`,
         customer_id: customer.id,
         customer_name: customer.name,
         customer_company: customer.company || '',
         visit_date: new Date().toISOString().split('T')[0], // Today's date
         visit_time: new Date().toTimeString().split(' ')[0].substring(0, 5), // Current time HH:MM
         notes: `Visita completada - Ruta: ${routeData.name}`,
-        status: 'completed'
+        status: 'completed',
+        route_id: routeData.id,
+        route_name: routeData.name
       }))
 
-      // Here you would typically save these completed visits to a visits/dashboard table
-      // For now, we'll show a success message and could integrate with existing dashboard
       const visitCount = completedVisits.length
       const routeName = routeData.name
       
       if (confirm(`¿Marcar como completada la ruta "${routeName}" con ${visitCount} visitas?\n\nEsto registrará todas las paradas como visitadas en el Panel de Control.`)) {
-        // Simulate successful completion - in a real implementation, you'd save to database
+        // Save completed visits to localStorage for dashboard
+        const existingVisits = JSON.parse(localStorage.getItem('completedVisits') || '[]')
+        const updatedVisits = [...existingVisits, ...completedVisits]
+        localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
+        
+        // Mark route as completed and update saved routes
+        const updatedRouteData = {
+          ...routeData,
+          completed: true,
+          completedAt: new Date().toISOString(),
+          completedVisits: completedVisits
+        }
+        
+        // Update the route in savedRoutes
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const updatedRoutes = existingRoutes.map((route: any) => 
+          route.id === routeData.id ? updatedRouteData : route
+        )
+        localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
+        
+        // Refresh saved routes list
+        await loadSavedRoutes()
+        
         console.log('Completed visits:', completedVisits)
         
         alert(`✅ Ruta "${routeName}" marcada como completada!\n\n${visitCount} visitas registradas en el Panel de Control.`)
@@ -930,12 +952,22 @@ export default function Visits() {
     }
 
     try {
+      // Find the route to be deleted to check if it has completed visits
+      const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+      const routeToDelete = existingRoutes.find((route: any) => route.id === routeId)
+      
+      // If route was completed, remove its visits from completed visits
+      if (routeToDelete && routeToDelete.completed && routeToDelete.completedVisits) {
+        const existingVisits = JSON.parse(localStorage.getItem('completedVisits') || '[]')
+        const updatedVisits = existingVisits.filter((visit: any) => visit.route_id !== routeId)
+        localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
+      }
+      
       // Check if we're in development mode or if Netlify functions are available
       const isNetlifyAvailable = window.location.hostname !== 'localhost'
       
       if (!isNetlifyAvailable) {
         // Use localStorage in development
-        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
         const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
         localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
         
@@ -955,7 +987,6 @@ export default function Visits() {
 
       if (response.status === 502 || response.status === 404) {
         // Netlify function not available, fallback to localStorage
-        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
         const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
         localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
         
@@ -979,6 +1010,15 @@ export default function Visits() {
       // Fallback to localStorage if database fails
       try {
         const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const routeToDelete = existingRoutes.find((route: any) => route.id === routeId)
+        
+        // If route was completed, remove its visits from completed visits
+        if (routeToDelete && routeToDelete.completed && routeToDelete.completedVisits) {
+          const existingVisits = JSON.parse(localStorage.getItem('completedVisits') || '[]')
+          const updatedVisits = existingVisits.filter((visit: any) => visit.route_id !== routeId)
+          localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
+        }
+        
         const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
         localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
         
@@ -1902,14 +1942,42 @@ export default function Visits() {
               ) : (
                 <div className="space-y-3">
                   {savedRoutes.map((savedRoute) => (
-                    <div key={savedRoute.id} className="border border-gray-200 rounded-lg p-4">
+                    <div 
+                      key={savedRoute.id} 
+                      className={`border rounded-lg p-4 ${
+                        savedRoute.completed 
+                          ? 'border-green-200 bg-green-50' 
+                          : 'border-gray-200 bg-white'
+                      }`}
+                    >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h4 className="font-medium text-gray-900">{savedRoute.name}</h4>
-                          <div className="text-sm text-gray-600 mt-1">
+                          <div className="flex items-center space-x-2">
+                            <h4 className={`font-medium ${
+                              savedRoute.completed ? 'text-green-800' : 'text-gray-900'
+                            }`}>
+                              {savedRoute.name}
+                            </h4>
+                            {savedRoute.completed && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Completada
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-sm mt-1 ${
+                            savedRoute.completed ? 'text-green-700' : 'text-gray-600'
+                          }`}>
                             <p>Fecha: {savedRoute.date || 'No especificada'} - Hora: {savedRoute.time || 'No especificada'}</p>
                             <p>{savedRoute.customers.length} paradas - {savedRoute.totalDistance.toFixed(1)} km - {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min</p>
-                            <p className="text-xs text-gray-500 mt-1">Guardada: {new Date(savedRoute.createdAt).toLocaleDateString('es-ES')}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Guardada: {new Date(savedRoute.createdAt).toLocaleDateString('es-ES')}
+                              {savedRoute.completed && savedRoute.completedAt && (
+                                <span className="ml-2">
+                                  | Completada: {new Date(savedRoute.completedAt).toLocaleDateString('es-ES')}
+                                </span>
+                              )}
+                            </p>
                           </div>
                         </div>
                         <div className="flex space-x-2 ml-4">
@@ -1921,9 +1989,14 @@ export default function Visits() {
                           </button>
                           <button
                             onClick={() => completeRoute(savedRoute)}
-                            className="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                            disabled={savedRoute.completed}
+                            className={`px-3 py-1.5 text-white text-sm rounded ${
+                              savedRoute.completed
+                                ? 'bg-gray-400 cursor-not-allowed'
+                                : 'bg-green-600 hover:bg-green-700'
+                            }`}
                           >
-                            Completar
+                            {savedRoute.completed ? 'Ya Completada' : 'Completar'}
                           </button>
                           <button
                             onClick={() => deleteSavedRoute(savedRoute.id)}
