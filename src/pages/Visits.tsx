@@ -1336,9 +1336,13 @@ export default function Visits() {
 
       {/* Layout: Left panel with customers/route, right panel with map */}
       {/* Desktop: Side-by-side flex, Mobile: Stacked */}
-      <div className="flex flex-col lg:flex-row gap-6">
+      <div className="flex flex-col lg:flex-row gap-6 bg-yellow-200 p-4 border-8 border-purple-600">
+        <div className="bg-red-500 text-white p-4 text-xl font-bold">DEBUG: CONTAINER VISIBLE</div>
           {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div className="space-y-6 w-full lg:w-1/4 flex-shrink-0">
+          <div className="space-y-6 w-full lg:w-1/4 flex-shrink-0 bg-red-500 text-white p-8 min-h-[600px]">
+            <div className="text-2xl font-bold">DEBUG: LEFT PANEL HERE!</div>
+            <div className="text-lg">filteredCustomers: {filteredCustomers.length}</div>
+            <div className="text-lg">loading: {loading.toString()}</div>
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
