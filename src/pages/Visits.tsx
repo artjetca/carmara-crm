@@ -1336,10 +1336,10 @@ export default function Visits() {
 
       {/* Layout: Left panel with customers/route, right panel with map */}
       <div className="space-y-6">
-        {/* Desktop: Side-by-side grid, Mobile: Stacked */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Desktop: Side-by-side flex, Mobile: Stacked */}
+        <div className="flex flex-col lg:flex-row gap-6">
           {/* Panel izquierdo - Lista de clientes y ruta */}
-          <div className="lg:col-span-1 order-1 lg:order-1 space-y-6">
+          <div className="space-y-6 lg:w-1/4">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-4 border-b border-gray-200">
@@ -1539,7 +1539,7 @@ export default function Visits() {
           </div>
 
           {/* Map panel - Desktop: Right side, Mobile: Bottom */}
-          <div className="lg:col-span-3 order-2 lg:order-2 space-y-6">
+          <div className="space-y-6 lg:w-3/4">
             {/* Mapa de la ruta */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-4 border-b border-gray-200">
@@ -1612,7 +1612,7 @@ export default function Visits() {
 
           {/* Panel de detalles del cliente */}
           {selectedCustomer && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 lg:hidden">
               <div className="p-4 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-900">Detalles del Cliente</h3>
                 <button
