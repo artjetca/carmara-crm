@@ -589,28 +589,81 @@ export default function Visits() {
     }
   }
 
+  // 遷移 localStorage 路線到資料庫
+  const migrateLocalRoutesToDatabase = async () => {
+    if (!user?.id) return
+
+    try {
+      const localRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+      if (localRoutes.length === 0) return
+
+      console.log('[RoutesMigration] Found', localRoutes.length, 'local routes to migrate')
+      
+      for (const route of localRoutes) {
+        const { error } = await supabase
+          .from('saved_routes')
+          .insert([{
+            created_by: user.id,
+            name: route.name,
+            route_date: route.date,
+            route_time: route.time,
+            customers: route.customers,
+            total_distance: route.totalDistance || 0,
+            total_duration: route.totalDuration || 0
+          }])
+        
+        if (error) {
+          console.warn('[RoutesMigration] Failed to migrate route:', route.name, error)
+        } else {
+          console.log('[RoutesMigration] Migrated route:', route.name)
+        }
+      }
+      
+      // Clear localStorage after successful migration
+      localStorage.removeItem('savedRoutes')
+      console.log('[RoutesMigration] Migration completed, localStorage cleared')
+    } catch (error) {
+      console.error('[RoutesMigration] Migration failed:', error)
+    }
+  }
+
   // 載入儲存的路線
   const loadSavedRoutes = async () => {
     try {
       setLoadingSavedRoutes(true)
       
-      // Try to load from database first, fallback to localStorage
+      // Try to load from database first
       if (user?.id) {
         const { data: dbRoutes, error } = await supabase
-          .from('routes')
+          .from('saved_routes')
           .select('*')
           .eq('created_by', user.id)
           .order('created_at', { ascending: false })
         
         if (!error && dbRoutes) {
           setSavedRoutes(dbRoutes)
+          
+          // Check if we need to migrate local routes to database
+          const localRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+          if (localRoutes.length > 0) {
+            console.log('[RoutesMigration] Starting migration of local routes to database...')
+            await migrateLocalRoutesToDatabase()
+            // Reload after migration
+            const { data: updatedRoutes } = await supabase
+              .from('saved_routes')
+              .select('*')
+              .eq('created_by', user.id)
+              .order('created_at', { ascending: false })
+            if (updatedRoutes) setSavedRoutes(updatedRoutes)
+          }
+          
           return
         } else {
           console.warn('Database routes failed, using localStorage fallback:', error)
         }
       }
       
-      // Fallback to localStorage
+      // Fallback to localStorage (only if database fails)
       const raw = localStorage.getItem('savedRoutes')
       const routes = raw ? JSON.parse(raw) : []
       setSavedRoutes(routes)
@@ -916,7 +969,7 @@ export default function Visits() {
       // Try to save to database first, fallback to localStorage
       if (user?.id) {
         const { data, error } = await supabase
-          .from('routes')
+          .from('saved_routes')
           .insert([{
             created_by: user.id,
             name: routeData.name,
@@ -1040,7 +1093,7 @@ export default function Visits() {
       // Try to delete from database first
       if (user?.id) {
         const { error } = await supabase
-          .from('routes')
+          .from('saved_routes')
           .delete()
           .eq('id', routeId)
           .eq('created_by', user.id)
@@ -1906,10 +1959,37 @@ export default function Visits() {
                   </button>
                   {/* Manual Map Refresh button */}
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       console.log('[MapRefresh] Manual refresh button clicked')
-                      const event = new CustomEvent('forceMapRender')
-                      window.dispatchEvent(event)
+                      try {
+                        // Clear map instance more gently - similar to Mi Ubicación logic
+                        if (mapInstanceRef.current) {
+                          // Clear my location marker first
+                          if (myLocationMarkerRef.current) {
+                            try { myLocationMarkerRef.current.setMap(null) } catch {}
+                            myLocationMarkerRef.current = null
+                          }
+                          if (myLocationInfoRef.current) {
+                            try { myLocationInfoRef.current.close() } catch {}
+                            myLocationInfoRef.current = null
+                          }
+                        }
+                        
+                        // Trigger map refresh event
+                        const event = new CustomEvent('mapRefresh')
+                        window.dispatchEvent(event)
+                        
+                        // Wait for map to be recreated, then recalculate route if needed
+                        setTimeout(() => {
+                          if (routeCustomers.length > 0) {
+                            console.log('[MapRefresh] Recalculating route after manual refresh')
+                            calculateRouteDistanceAndTime([...routeCustomers])
+                          }
+                        }, 300)
+                        
+                      } catch (error) {
+                        console.error('[MapRefresh] Manual refresh failed:', error)
+                      }
                     }}
                     className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
                     title="Refrescar Mapa"
