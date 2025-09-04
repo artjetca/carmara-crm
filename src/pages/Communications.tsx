@@ -68,25 +68,19 @@ interface AppointmentResponse {
 
 interface ScheduledMessage {
   id: string
-  // Runtime may have either customer_ids (array) or single customer_id
   customer_ids?: string[]
   customer_id?: string
   message: string
   scheduled_for: string
   status: 'pending' | 'sent' | 'failed'
+  type?: 'email' | 'sms'
   error_message?: string
-  created_at: string
-  created_by?: string
-  user_id?: string
-  type?: 'sms' | 'email'
-  subject?: string
-  include_confirmation?: boolean
+  created_by: string
   creator_profile?: {
-    id: string
-    name: string
-    email: string
-    full_name: string
+    full_name?: string
+    name?: string
   }
+  include_confirmation?: boolean
 }
 
 
@@ -1534,7 +1528,10 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         return formData.schedules.map(s => {
           const dateTimeStr = `${s.date}T${s.time}:00`
           const utcDate = fromZonedTime(dateTimeStr, 'Europe/Madrid')
-          
+          let messageWithMarker = formData.message
+          if (formData.type === 'email') {
+            messageWithMarker = `${formData.message}\n\n|INCLUDE_CONFIRMATION:true|`
+          }
           // Determine message content based on mode
           let messageContent = ''
           if (formData.type === 'email') {
@@ -1543,7 +1540,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               messageContent = `Mensaje: ${formData.htmlContent}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
             } else {
               // Text mode - store regular message with subject and confirmation flag
-              messageContent = `Mensaje: ${formData.message}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
+              messageContent = `Mensaje: ${messageWithMarker}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
             }
           } else {
             messageContent = `SMS: ${formData.message}`

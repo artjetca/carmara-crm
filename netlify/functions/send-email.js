@@ -23,6 +23,39 @@ function generateResponseToken(messageId, customerId, responseType) {
   return crypto.createHash('sha256').update(data).digest('hex').substring(0, 32);
 }
 
+// Generate secure token for email tracking
+function generateTrackingToken(messageId, customerId) {
+  const data = `tracking-${messageId}-${customerId}-${Date.now()}`;
+  return crypto.createHash('sha256').update(data).digest('hex').substring(0, 32);
+}
+
+// Create tracking token for email open detection
+async function createTrackingToken(messageId, customerId) {
+  if (!supabase) return null;
+  
+  try {
+    const trackingToken = generateTrackingToken(messageId, customerId);
+    
+    const { error } = await supabase
+      .from('email_tracking')
+      .insert({
+        message_id: messageId,
+        customer_id: customerId,
+        tracking_token: trackingToken
+      });
+
+    if (error) {
+      console.error('Error creating tracking token:', error);
+      return null;
+    }
+
+    return trackingToken;
+  } catch (error) {
+    console.error('Error in createTrackingToken:', error);
+    return null;
+  }
+}
+
 // Create response tokens for appointment confirmation
 async function createResponseTokens(messageId, customerId) {
   if (!supabase) return { confirmToken: null, rescheduleToken: null };
@@ -149,6 +182,12 @@ exports.handler = async (event, context) => {
       rescheduleToken = tokens.rescheduleToken;
     }
 
+    // Create tracking token for email open detection
+    let trackingToken = null;
+    if (messageId && customerId) {
+      trackingToken = await createTrackingToken(messageId, customerId);
+    }
+
     // Create email message
     const emailSubject = subject || 'Mensaje desde Casmara CRM';
     const fromEmail = process.env.GMAIL_FROM_EMAIL || 'artjet0805@gmail.com';
@@ -172,6 +211,17 @@ exports.handler = async (event, context) => {
           emailContent += confirmationButtons;
         }
       }
+      
+      // Add tracking pixel to HTML emails
+      if (trackingToken) {
+        const trackingPixel = `<img src="${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/email-tracking?token=${trackingToken}" style="width:1px;height:1px;border:0;" alt="" />`;
+        
+        if (emailContent.includes('</body>')) {
+          emailContent = emailContent.replace('</body>', trackingPixel + '</body>');
+        } else {
+          emailContent += trackingPixel;
+        }
+      }
     } else {
       // Use default template for plain text
       emailContent = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -187,6 +237,7 @@ exports.handler = async (event, context) => {
         </div>
         <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
           <p>Este mensaje fue enviado desde Casmara CRM | Asesora comercial: Charo | Tel: +34 646 11 67 04</p>
+          ${trackingToken ? `<img src="${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/email-tracking?token=${trackingToken}" style="width:1px;height:1px;border:0;" alt="" />` : ''}
         </div>
       </div>`;
     }
