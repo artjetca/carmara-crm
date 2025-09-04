@@ -564,40 +564,60 @@ export default function Visits() {
           const map = mapInstanceRef.current
           const container = mapRef.current
           
-          // Ensure container maintains its dimensions
-          if (container) {
-            container.style.height = '800px'
-            container.style.width = '100%'
-          }
-          
-          map.setCenter({ lat: 36.7213, lng: -4.4214 }) // Andalusia center
-          map.setZoom(9) // Wide view of the region
-          
-          // Force multiple resize events to ensure proper rendering
-          const triggerResize = () => {
-            try {
-              const google = (window as any).google
-              if (google?.maps && map && container) {
-                google.maps.event.trigger(map, 'resize')
-                map.setCenter({ lat: 36.7213, lng: -4.4214 })
-                map.setZoom(9)
-                
-                // Force container to recalculate dimensions
-                container.style.height = '799px'
-                setTimeout(() => {
-                  container.style.height = '800px'
+          if (map && container) {
+            // Force container dimensions with !important styles
+            container.style.cssText = 'height: 800px !important; width: 100% !important; min-height: 800px !important;'
+            
+            // Reset map view immediately
+            map.setCenter({ lat: 36.7213, lng: -4.4214 })
+            map.setZoom(9)
+            
+            // Aggressive resize and redraw strategy
+            const forceMapReset = () => {
+              try {
+                const google = (window as any).google
+                if (google?.maps && map) {
+                  // Multiple resize events
                   google.maps.event.trigger(map, 'resize')
-                }, 10)
+                  google.maps.event.trigger(map, 'idle') 
+                  
+                  // Force viewport reset
+                  map.setCenter({ lat: 36.7213, lng: -4.4214 })
+                  map.setZoom(9)
+                  
+                  // Force container recalculation with style changes
+                  const originalHeight = container.style.height
+                  container.style.height = '799px'
+                  container.style.display = 'none'
+                  
+                  // Trigger immediate reflow
+                  void container.offsetHeight
+                  
+                  container.style.display = 'block'
+                  container.style.height = '800px'
+                  
+                  // Final resize events
+                  setTimeout(() => {
+                    google.maps.event.trigger(map, 'resize')
+                    map.setCenter({ lat: 36.7213, lng: -4.4214 })
+                    map.setZoom(9)
+                  }, 10)
+                }
+              } catch (e) {
+                console.warn('[MapReset] Resize attempt failed:', e)
               }
-            } catch {}
+            }
+            
+            // Execute multiple times with increasing delays
+            forceMapReset()
+            setTimeout(forceMapReset, 100)
+            setTimeout(forceMapReset, 250)
+            setTimeout(forceMapReset, 500)
+            setTimeout(forceMapReset, 1000)
           }
-          
-          // Multiple resize triggers with different timings
-          setTimeout(triggerResize, 50)
-          setTimeout(triggerResize, 150)
-          setTimeout(triggerResize, 300)
-          
-        } catch {}
+        } catch (e) {
+          console.warn('[MapReset] Reset attempt failed:', e)
+        }
         
         console.log('[MapReset] Map reset completed')
       } catch (error) {

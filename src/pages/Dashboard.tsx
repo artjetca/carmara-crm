@@ -173,12 +173,10 @@ export default function Dashboard() {
             }))
             console.log('Dashboard: Loaded', savedRoutes.length, 'routes from database')
           } else {
-            console.warn('Dashboard: Database routes failed, using localStorage fallback:', error)
-            // Fallback to localStorage
-            if (typeof window !== 'undefined') {
-              const raw = localStorage.getItem('savedRoutes')
-              savedRoutes = raw ? JSON.parse(raw) : []
-            }
+            console.warn('Dashboard: Database routes failed, skipping saved routes due to:', error?.message)
+            // Don't fall back to localStorage when database table doesn't exist
+            // This prevents counting old/invalid routes that cause incorrect pending counts
+            savedRoutes = []
           }
         } else {
           // No user, check localStorage only
