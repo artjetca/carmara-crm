@@ -163,7 +163,10 @@ export default function Communications() {
 
       if (trackingError) {
         console.error('Error loading email tracking:', trackingError)
+        console.log('Email tracking table might not exist yet')
+        setEmailTracking([])
       } else {
+        console.log('Email tracking data loaded:', trackingData)
         setEmailTracking(trackingData || [])
       }
 
