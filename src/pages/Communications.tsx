@@ -1514,11 +1514,11 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           let messageContent = ''
           if (formData.type === 'email') {
             if (formData.useHtml && formData.htmlContent?.trim()) {
-              // HTML mode - store HTML content with subject
-              messageContent = `Mensaje: ${formData.htmlContent}${formData.subject ? ` (${formData.subject})` : ''}`
+              // HTML mode - store HTML content with subject and confirmation flag
+              messageContent = `Mensaje: ${formData.htmlContent}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
             } else {
-              // Text mode - store regular message with subject
-              messageContent = `Mensaje: ${formData.message}${formData.subject ? ` (${formData.subject})` : ''}`
+              // Text mode - store regular message with subject and confirmation flag
+              messageContent = `Mensaje: ${formData.message}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
             }
           } else {
             messageContent = `SMS: ${formData.message}`
@@ -1529,8 +1529,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           message: messageContent,
           scheduled_for: utcDate.toISOString(),
           status: 'pending',
-          created_by: user?.id,
-          include_confirmation: formData.includeConfirmation
+          created_by: user?.id
+          // Note: include_confirmation temporarily stored in message content until schema cache refreshes
           })
         })
       })

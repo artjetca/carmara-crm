@@ -129,6 +129,18 @@ exports.handler = async (event, context) => {
           }
         }
 
+        // Check for confirmation flag in message content (temporary workaround for schema cache)
+        let includeConfirmation = false;
+        if (content.includes('|INCLUDE_CONFIRMATION:true|')) {
+          includeConfirmation = true;
+          content = content.replace(/\s*\|INCLUDE_CONFIRMATION:true\|\s*$/, '');
+        }
+        
+        // Fallback to database column if available
+        if (emailRecord.include_confirmation !== undefined) {
+          includeConfirmation = emailRecord.include_confirmation;
+        }
+        
         // Clean up content by removing any trailing customer info
         content = content.replace(/\s*\|\s*Cliente:.*$/, '').trim();
 
@@ -148,7 +160,7 @@ exports.handler = async (event, context) => {
             isHtml: false, // Use default template with confirmation buttons
             messageId: emailRecord.id,
             customerId: customer.id,
-            includeConfirmation: emailRecord.include_confirmation || false
+            includeConfirmation: includeConfirmation
           })
         });
 
