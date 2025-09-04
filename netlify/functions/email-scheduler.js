@@ -132,45 +132,31 @@ exports.handler = async (event, context) => {
         // Clean up content by removing any trailing customer info
         content = content.replace(/\s*\|\s*Cliente:.*$/, '').trim();
 
-        // Create email content with template
-        const emailContent = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: #4285f4; color: white; padding: 20px; text-align: center;">
-            <h2>Casmara CRM</h2>
-          </div>
-          <div style="padding: 20px; background: #f9f9f9;">
-            <div style="background: white; padding: 20px; border-radius: 8px;">
-              ${content.replace(/\n/g, '<br>')}
-            </div>
-          </div>
-          <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
-            <p>Este mensaje fue enviado desde Casmara CRM</p>
-          </div>
-        </div>`;
-
-        // Create email message
-        const rawMessage = [
-          `From: ${fromEmail}`,
-          `To: ${customer.email}`,
-          `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
-          'Content-Type: text/html; charset=utf-8',
-          '',
-          emailContent
-        ].join('\n');
-
-        // Encode message in base64
-        const encodedMessage = Buffer.from(rawMessage)
-          .toString('base64')
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_')
-          .replace(/=+$/, '');
-
-        // Send email
-        await gmail.users.messages.send({
-          userId: 'me',
-          requestBody: {
-            raw: encodedMessage
-          }
+        // Use send-email function to handle confirmation buttons properly
+        const sendEmailUrl = `${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/send-email`;
+        
+        const emailResponse = await fetch(sendEmailUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: customer.email,
+            subject: subject,
+            message: content,
+            type: 'email',
+            isHtml: false, // Use default template with confirmation buttons
+            messageId: emailRecord.id,
+            customerId: customer.id,
+            includeConfirmation: emailRecord.include_confirmation || false
+          })
         });
+
+        const emailResult = await emailResponse.json();
+        
+        if (!emailResponse.ok || !emailResult.success) {
+          throw new Error(emailResult.error || 'Failed to send email via send-email function');
+        }
 
         // Update status to sent
         await supabase

@@ -1529,7 +1529,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           message: messageContent,
           scheduled_for: utcDate.toISOString(),
           status: 'pending',
-          created_by: user?.id
+          created_by: user?.id,
+          include_confirmation: formData.includeConfirmation
           })
         })
       })
