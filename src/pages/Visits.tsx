@@ -628,31 +628,51 @@ export default function Visits() {
 
       console.log('[RoutesMigration] Found', localRoutes.length, 'local routes to migrate')
       
+      let successCount = 0
+      let failCount = 0
+      
       for (const route of localRoutes) {
-        const { error } = await supabase
-          .from('saved_routes')
-          .insert([{
-            created_by: user.id,
-            name: route.name,
-            route_date: route.date,
-            route_time: route.time,
-            customers: route.customers,
-            total_distance: route.totalDistance || 0,
-            total_duration: route.totalDuration || 0
-          }])
-        
-        if (error) {
-          console.warn('[RoutesMigration] Failed to migrate route:', route.name, error)
-        } else {
-          console.log('[RoutesMigration] Migrated route:', route.name)
+        try {
+          const { error } = await supabase
+            .from('saved_routes')
+            .insert([{
+              created_by: user.id,
+              name: route.name,
+              route_date: route.date,
+              route_time: route.time,
+              customers: route.customers,
+              total_distance: route.totalDistance || 0,
+              total_duration: route.totalDuration || 0
+            }])
+          
+          if (error) {
+            console.warn('[RoutesMigration] Failed to migrate route:', route.name, error)
+            failCount++
+          } else {
+            console.log('[RoutesMigration] Migrated route:', route.name)
+            successCount++
+          }
+        } catch (routeError) {
+          console.warn('[RoutesMigration] Error migrating route:', route.name, routeError)
+          failCount++
         }
       }
       
-      // Clear localStorage after successful migration
-      localStorage.removeItem('savedRoutes')
-      console.log('[RoutesMigration] Migration completed, localStorage cleared')
+      // Only clear localStorage if ALL routes were successfully migrated
+      if (successCount > 0 && failCount === 0) {
+        localStorage.removeItem('savedRoutes')
+        console.log('[RoutesMigration] Migration completed successfully, localStorage cleared')
+        return true
+      } else if (successCount > 0 && failCount > 0) {
+        console.warn(`[RoutesMigration] Partial migration: ${successCount} success, ${failCount} failed. Keeping localStorage for retry.`)
+        return false
+      } else {
+        console.error('[RoutesMigration] All migrations failed. Keeping localStorage.')
+        return false
+      }
     } catch (error) {
       console.error('[RoutesMigration] Migration failed:', error)
+      return false
     }
   }
 
@@ -661,45 +681,79 @@ export default function Visits() {
     try {
       setLoadingSavedRoutes(true)
       
+      // Always load from both sources and merge them
+      let dbRoutes: any[] = []
+      let localRoutes: any[] = []
+      
       // Try to load from database first
       if (user?.id) {
-        const { data: dbRoutes, error } = await supabase
-          .from('saved_routes')
-          .select('*')
-          .eq('created_by', user.id)
-          .order('created_at', { ascending: false })
-        
-        if (!error && dbRoutes) {
-          setSavedRoutes(dbRoutes)
+        try {
+          const { data, error } = await supabase
+            .from('saved_routes')
+            .select('*')
+            .eq('created_by', user.id)
+            .order('created_at', { ascending: false })
           
-          // Check if we need to migrate local routes to database
-          const localRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-          if (localRoutes.length > 0) {
-            console.log('[RoutesMigration] Starting migration of local routes to database...')
-            await migrateLocalRoutesToDatabase()
-            // Reload after migration
-            const { data: updatedRoutes } = await supabase
+          if (!error && data) {
+            dbRoutes = data
+            console.log('[RouteLoading] Loaded', dbRoutes.length, 'routes from database')
+          } else {
+            console.warn('[RouteLoading] Database query failed:', error)
+          }
+        } catch (dbError) {
+          console.warn('[RouteLoading] Database connection failed:', dbError)
+        }
+      }
+      
+      // Always try to load from localStorage as backup
+      try {
+        const raw = localStorage.getItem('savedRoutes')
+        localRoutes = raw ? JSON.parse(raw) : []
+        console.log('[RouteLoading] Found', localRoutes.length, 'routes in localStorage')
+      } catch (localError) {
+        console.warn('[RouteLoading] Failed to read localStorage:', localError)
+        localRoutes = []
+      }
+      
+      // If we have local routes but no database routes, try migration
+      if (localRoutes.length > 0 && dbRoutes.length === 0 && user?.id) {
+        console.log('[RouteLoading] Found local routes, attempting migration...')
+        const migrationSuccess = await migrateLocalRoutesToDatabase()
+        
+        if (migrationSuccess) {
+          // Reload from database after successful migration
+          try {
+            const { data } = await supabase
               .from('saved_routes')
               .select('*')
               .eq('created_by', user.id)
               .order('created_at', { ascending: false })
-            if (updatedRoutes) setSavedRoutes(updatedRoutes)
+            
+            if (data) {
+              dbRoutes = data
+              console.log('[RouteLoading] Reloaded', dbRoutes.length, 'routes after migration')
+            }
+          } catch (reloadError) {
+            console.warn('[RouteLoading] Failed to reload after migration:', reloadError)
           }
-          
-          return
-        } else {
-          console.warn('Database routes failed, using localStorage fallback:', error)
         }
       }
       
-      // Fallback to localStorage (only if database fails)
-      const raw = localStorage.getItem('savedRoutes')
-      const routes = raw ? JSON.parse(raw) : []
-      setSavedRoutes(routes)
+      // Use database routes if available, otherwise fall back to localStorage
+      const finalRoutes = dbRoutes.length > 0 ? dbRoutes : localRoutes
+      setSavedRoutes(finalRoutes)
+      console.log('[RouteLoading] Using', finalRoutes.length, 'routes from', dbRoutes.length > 0 ? 'database' : 'localStorage')
+      
     } catch (error) {
-      // Silent fallback to localStorage to avoid console errors
-      const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-      setSavedRoutes(localSaved)
+      console.error('[RouteLoading] Unexpected error:', error)
+      // Emergency fallback to localStorage
+      try {
+        const localSaved = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        setSavedRoutes(localSaved)
+        console.log('[RouteLoading] Emergency fallback:', localSaved.length, 'routes from localStorage')
+      } catch {
+        setSavedRoutes([])
+      }
     } finally {
       setLoadingSavedRoutes(false)
     }
