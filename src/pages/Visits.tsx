@@ -1706,48 +1706,57 @@ export default function Visits() {
           <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
           <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Mobile-optimized button grid layout */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap gap-2 sm:gap-3">
           <button
             onClick={getCurrentLocation}
-            className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-xs sm:text-sm"
           >
-            <MapPin className="w-4 h-4" />
-            <span>Mi Ubicación</span>
+            <MapPin className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Mi Ubicación</span>
+            <span className="sm:hidden">Ubicación</span>
           </button>
+          
           <button
             onClick={() => setShowSaveModal(true)}
             disabled={routeCustomers.length === 0}
-            className="inline-flex items-center space-x-2 px-4 py-2 border border-green-300 text-green-700 rounded-lg hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-green-300 text-green-700 rounded-lg hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
           >
-            <Plus className="w-4 h-4" />
-            <span>Guardar Ruta</span>
+            <Plus className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Guardar Ruta</span>
+            <span className="sm:hidden">Guardar</span>
           </button>
+          
           <button
             onClick={() => setShowLoadModal(true)}
-            className="inline-flex items-center space-x-2 px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50"
+            className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 text-xs sm:text-sm"
           >
-            <Route className="w-4 h-4" />
-            <span>Cargar Ruta</span>
+            <Route className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Cargar Ruta</span>
+            <span className="sm:hidden">Cargar</span>
           </button>
+          
           <button
             onClick={clearRoute}
             disabled={routeCustomers.length === 0}
-            className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
           >
-            <X className="w-4 h-4" />
-            <span>Limpiar Ruta</span>
+            <X className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Limpiar Ruta</span>
+            <span className="sm:hidden">Limpiar</span>
           </button>
           
-          {/* Backup/Restore buttons */}
+          {/* Backup button */}
           <button
             onClick={exportRoutesBackup}
-            className="inline-flex items-center space-x-2 px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50"
+            className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 text-xs sm:text-sm"
             title="Descargar backup de todas las rutas guardadas"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
             <span>Backup</span>
           </button>
           
+          {/* Restore button with hidden file input */}
           <div className="relative">
             <input
               type="file"
@@ -1756,20 +1765,11 @@ export default function Visits() {
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               title="Restaurar rutas desde backup"
             />
-            <button className="inline-flex items-center space-x-2 px-4 py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50">
-              <Upload className="w-4 h-4" />
+            <button className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50 w-full text-xs sm:text-sm">
+              <Upload className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
               <span>Restaurar</span>
             </button>
           </div>
-          
-          <button
-            onClick={startNavigation}
-            disabled={routeCustomers.length === 0}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Navigation className="w-4 h-4" />
-            <span>Iniciar Navegación</span>
-          </button>
         </div>
       </div>
 
