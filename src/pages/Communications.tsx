@@ -969,9 +969,9 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
         const isEmailOpened = emailTrack?.opened_at
         
         return (
-          <div key={message.id} className={`border rounded-lg p-4 hover:bg-gray-50 ${isEmail ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
-            <div className="flex items-start justify-between">
-              <div className="flex items-start space-x-3">
+          <div key={message.id} className={`border rounded-lg p-3 sm:p-4 hover:bg-gray-50 ${isEmail ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between space-y-3 sm:space-y-0">
+              <div className="flex items-start space-x-2 sm:space-x-3 flex-1 min-w-0">
                 {isEmail && (
                   <div className="flex-shrink-0 pt-1">
                     <input
@@ -989,34 +989,36 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
                     <MessageSquare className="w-4 h-4 text-green-500" />
                   )}
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2">
-                    <h3 className="text-sm font-medium text-gray-900">
-                      {isEmail ? 'Mensaje' : 'SMS'} - {customerInfo.name} ({customerInfo.email})
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2">
+                    <h3 className="text-sm font-medium text-gray-900 truncate">
+                      <span className="sm:hidden">{isEmail ? 'Email' : 'SMS'}</span>
+                      <span className="hidden sm:inline">{isEmail ? 'Mensaje' : 'SMS'}</span>
+                      <span className="hidden sm:inline"> - </span>
+                      <span className="block sm:inline">{customerInfo.name}</span>
                     </h3>
-                    <span className="text-xs text-gray-500">
-                      {(message.customer_ids?.length || (message.customer_id ? 1 : 0))} destinatario(s)
-                    </span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getMessageStatusColor(message.status)}`}>
-                      {message.status === 'sent' ? 'Enviado' : message.status === 'failed' ? 'Fallido' : 'Pendiente'}
-                    </span>
+                    <div className="flex items-center space-x-2 text-xs text-gray-500">
+                      <span className="hidden sm:inline">({customerInfo.email})</span>
+                      <span>{(message.customer_ids?.length || (message.customer_id ? 1 : 0))} destinatario(s)</span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getMessageStatusColor(message.status)}`}>
+                        {message.status === 'sent' ? 'Enviado' : message.status === 'failed' ? 'Fallido' : 'Pendiente'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-1 sm:space-y-0 mt-1 text-xs text-gray-500">
                     <span>{formatDate(message.scheduled_for)}</span>
-                    <span>Creado por: {message.creator_profile?.full_name || message.creator_profile?.name || 'Usuario desconocido'}</span>
+                    <span className="hidden sm:inline">Creado por: {message.creator_profile?.full_name || message.creator_profile?.name || 'Usuario desconocido'}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                  <p className="text-sm text-gray-600 mt-1 line-clamp-2 break-words">
                     {message.message.replace(/\|INCLUDE_CONFIRMATION:true\|/g, '').trim()}
                   </p>
                   {(hasConfirmation || isEmailOpened) && (
-                    <div className="flex items-center space-x-2 mt-2 flex-wrap gap-1">
+                    <div className="flex flex-wrap items-center gap-1 mt-2">
                       {isEmail && isEmailOpened && (
                         <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
-                          📖 Email Abierto {new Date(isEmailOpened).toLocaleString('es-ES', { 
+                          📖 Abierto {new Date(isEmailOpened).toLocaleDateString('es-ES', { 
                             day: '2-digit', 
-                            month: '2-digit', 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
+                            month: '2-digit'
                           })}
                         </span>
                       )}
@@ -1032,27 +1034,28 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
                             : 'bg-orange-100 text-orange-800'
                         }`}>
                           {messageResponse.response_type === 'confirm' 
-                            ? '✅ Cliente confirmó cita' 
-                            : '📅 Cliente solicitó reprogramar'}
+                            ? '✅ Confirmado' 
+                            : '📅 Reprogramar'}
                         </span>
                       )}
                     </div>
                   )}
                   {message.error_message && (
-                    <p className="text-sm text-red-600 mt-1">{message.error_message}</p>
+                    <p className="text-sm text-red-600 mt-1 break-words">{message.error_message}</p>
                   )}
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center justify-end space-x-2 flex-shrink-0">
                 {/* Send Now button for pending email messages */}
                 {isEmail && message.status === 'pending' && (
                   <button
                     title="Enviar ahora"
-                    className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-2 sm:px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => handleSendNow(message.id)}
                     disabled={sendingMessages.includes(message.id)}
                   >
-                    {sendingMessages.includes(message.id) ? 'Enviando...' : 'Enviar ahora'}
+                    <span className="sm:hidden">Enviar</span>
+                    <span className="hidden sm:inline">{sendingMessages.includes(message.id) ? 'Enviando...' : 'Enviar ahora'}</span>
                   </button>
                 )}
                 <button

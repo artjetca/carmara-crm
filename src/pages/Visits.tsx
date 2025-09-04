@@ -562,20 +562,40 @@ export default function Visits() {
         // Force map to reset to proper initial view - same as clean page load
         try {
           const map = mapInstanceRef.current
+          const container = mapRef.current
+          
+          // Ensure container maintains its dimensions
+          if (container) {
+            container.style.height = '800px'
+            container.style.width = '100%'
+          }
+          
           map.setCenter({ lat: 36.7213, lng: -4.4214 }) // Andalusia center
           map.setZoom(9) // Wide view of the region
           
-          // Force map refresh to ensure proper rendering
-          setTimeout(() => {
+          // Force multiple resize events to ensure proper rendering
+          const triggerResize = () => {
             try {
               const google = (window as any).google
-              if (google?.maps && map) {
+              if (google?.maps && map && container) {
                 google.maps.event.trigger(map, 'resize')
                 map.setCenter({ lat: 36.7213, lng: -4.4214 })
                 map.setZoom(9)
+                
+                // Force container to recalculate dimensions
+                container.style.height = '799px'
+                setTimeout(() => {
+                  container.style.height = '800px'
+                  google.maps.event.trigger(map, 'resize')
+                }, 10)
               }
             } catch {}
-          }, 100)
+          }
+          
+          // Multiple resize triggers with different timings
+          setTimeout(triggerResize, 50)
+          setTimeout(triggerResize, 150)
+          setTimeout(triggerResize, 300)
           
         } catch {}
         

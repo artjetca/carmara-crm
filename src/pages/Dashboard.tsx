@@ -193,11 +193,20 @@ export default function Dashboard() {
 
         const parseRouteDate = (r: any): Date | null => {
           const d = (r?.date || r?.route_date || '').toString().trim()
-          const t = (r?.time || r?.route_time || '00:00').toString().trim()
-          if (!d) return null
-          const iso = `${d}T${t.length === 5 ? t + ':00' : t}`
-          const dt = new Date(iso)
-          return isNaN(dt.getTime()) ? null : dt
+          const t = (r?.time || r?.route_time || '').toString().trim()
+          
+          // Must have both date and time to be considered scheduled
+          if (!d || d === 'null' || d === 'undefined') return null
+          if (!t || t === 'null' || t === 'undefined') return null
+          
+          try {
+            const timeStr = t.length === 5 ? t + ':00' : (t.includes(':') ? t : '00:00:00')
+            const iso = `${d}T${timeStr}`
+            const dt = new Date(iso)
+            return isNaN(dt.getTime()) ? null : dt
+          } catch {
+            return null
+          }
         }
 
         const savedToday = savedRoutes.filter(r => {
@@ -215,7 +224,8 @@ export default function Dashboard() {
           if (!dt) return false
           
           // Only count if date is today or in the future
-          return dt >= startOfToday
+          const currentTime = new Date()
+          return dt >= currentTime
         }).length
 
         const savedThisWeek = savedRoutes.filter(r => {
@@ -228,7 +238,19 @@ export default function Dashboard() {
         pendingVisits += savedPending
         thisWeekVisits += savedThisWeek
         
-        console.log('Dashboard: Route stats -', { savedToday, savedPending, savedThisWeek, totalRoutes: savedRoutes.length })
+        console.log('Dashboard: Route stats -', { 
+          savedToday, 
+          savedPending, 
+          savedThisWeek, 
+          totalRoutes: savedRoutes.length,
+          routeDetails: savedRoutes.map(r => ({
+            name: r.name,
+            date: r.date || r.route_date,
+            time: r.time || r.route_time,
+            completed: r.completed,
+            parsedDate: parseRouteDate(r)
+          }))
+        })
       } catch (e) {
         console.warn('Dashboard: failed to include saved routes', e)
       }
