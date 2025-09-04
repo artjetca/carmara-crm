@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Cita - Casmara</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: white;">
+        <!-- Header -->
+        <div style="background: #4285f4; color: white; padding: 20px; text-align: center;">
+            <h2 style="margin: 0; font-size: 24px;">CASMARA</h2>
+            <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Sistema de Notificaciones de Visita</p>
+        </div>
+
+        <!-- Message Content -->
+        <div style="padding: 20px; background: #f9f9f9;">
+            <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <p>Estimado cliente,</p>
+                <p>Le confirmamos su cita para la demostración del Beauty Advisor de Casmara.</p>
+                <p><strong>Fecha:</strong> Viernes, 6 de septiembre de 2024</p>
+                <p><strong>Hora:</strong> 15:30</p>
+                <p>Por favor, confirme su asistencia utilizando los botones a continuación.</p>
+            </div>
+
+            <!-- Confirmation Buttons Section -->
+            <div style="background: #f8f9fa; padding: 30px; margin: 30px 0; border-radius: 12px; text-align: center; border: 2px solid #e9ecef;">
+                <h3 style="color: #495057; margin-bottom: 20px; font-size: 18px;">Pendiente de Confirmación</h3>
+                
+                <div style="margin: 25px 0;">
+                    <a href="https://carmara-crm.netlify.app/.netlify/functions/appointment-response?token=CONFIRM_TOKEN_HERE" 
+                       style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; margin: 0 10px; font-weight: bold; font-size: 16px;">
+                        ✅ Confirmar Cita
+                    </a>
+                    <a href="https://carmara-crm.netlify.app/.netlify/functions/appointment-response?token=RESCHEDULE_TOKEN_HERE" 
+                       style="display: inline-block; background: #17a2b8; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; margin: 0 10px; font-weight: bold; font-size: 16px;">
+                        📅 Reprogramar
+                    </a>
+                </div>
+                
+                <p style="color: #6c757d; font-size: 14px; margin-top: 20px;">
+                    Haga clic en uno de los botones para confirmar su cita o solicitar una reprogramación.
+                </p>
+            </div>
+            
+            <!-- Contact Information Section -->
+            <div style="background: #e3f2fd; padding: 25px; margin: 20px 0; border-radius: 8px; text-align: center;">
+                <h4 style="color: #1976d2; margin-bottom: 15px;">¿Necesita contactar con Charo?</h4>
+                <p style="color: #424242; margin-bottom: 15px; line-height: 1.5;">
+                    Si tiene alguna pregunta o necesita hacer algún cambio, no dude en contactar directamente con Charo, 
+                    su asesora comercial de Casmara. Está disponible para ayudarle con cualquier consulta sobre la demostración del Beauty Advisor.
+                </p>
+                
+                <div style="margin: 15px 0;">
+                    <div style="margin: 8px 0; color: #1976d2; font-weight: bold;">📞 +34 646 11 67 04</div>
+                    <div style="margin: 8px 0; color: #1976d2; font-weight: bold;">✉️ rosariog.almenglo@gmail.com</div>
+                    <div style="margin: 8px 0; color: #1976d2; font-weight: bold;">💬 WhatsApp Charo</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 20px; color: #666; font-size: 12px; background: #f9f9f9;">
+            <p style="margin: 0;">Este mensaje fue enviado desde Casmara CRM | Asesora comercial: Charo | Tel: +34 646 11 67 04</p>
+        </div>
+    </div>
+</body>
+</html>
