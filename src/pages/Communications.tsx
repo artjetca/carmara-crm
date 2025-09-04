@@ -1916,43 +1916,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               </div>
             </div>
             
-            {formData.type === 'email' && (
-              <div className="border rounded-lg p-4 bg-blue-50">
-                <div className="flex items-center space-x-3 mb-3">
-                  <input
-                    type="checkbox"
-                    id="includeConfirmation"
-                    checked={formData.includeConfirmation}
-                    onChange={(e) => setFormData({ ...formData, includeConfirmation: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="includeConfirmation" className="text-sm font-medium text-gray-900">
-                    📅 Incluir botones de confirmación de cita
-                  </label>
-                </div>
-                {formData.includeConfirmation && (
-                  <div className="text-sm text-gray-600 bg-white p-3 rounded border">
-                    <p className="font-medium text-gray-900 mb-2">Se añadirán automáticamente:</p>
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-100 text-green-800">✅ Confirmar Cita</span>
-                        <span className="text-xs text-gray-500">- Cliente confirma la cita</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-100 text-blue-800">📅 Reprogramar</span>
-                        <span className="text-xs text-gray-500">- Cliente solicita reprogramación</span>
-                      </div>
-                    </div>
-                    <div className="mt-3 p-2 bg-blue-50 rounded text-xs">
-                      <p><strong>También se incluirá:</strong></p>
-                      <p>• Información de contacto de Charo</p>
-                      <p>• Teléfono, email y WhatsApp</p>
-                      <p>• Footer con derechos de autor</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            
             
             <div className="flex justify-end space-x-3 pt-4">
               <button
