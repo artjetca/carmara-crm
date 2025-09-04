@@ -99,7 +99,12 @@ export default function Dashboard() {
       }
       
       // 调试信息：输出访问数据查询结果
-      console.log('Dashboard Debug - Visits query result:', { visitsData, visitsError })
+      console.log('Dashboard Debug - Raw visits data:', { 
+        visitsCount: visitsData?.length || 0,
+        visitsData: visitsData,
+        visitsError,
+        userInfo: { userId: user?.id, email: user?.email }
+      })
       
       const today = new Date()
       const startOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay())
@@ -124,6 +129,20 @@ export default function Dashboard() {
       let pendingVisits = (visitsData || []).filter(visit => 
         visit.status === 'pending' || visit.status === 'programada'
       ).length
+      
+      // Debug: Log actual visits data causing pending count
+      console.log('Dashboard Debug - Pending visits from API:', {
+        pendingCount: pendingVisits,
+        allVisits: visitsData?.map(v => ({ 
+          id: v.id, 
+          status: v.status, 
+          scheduled_date: v.scheduled_date, 
+          customer_name: v.customer_name 
+        })),
+        pendingVisits: (visitsData || []).filter(visit => 
+          visit.status === 'pending' || visit.status === 'programada'
+        )
+      })
       
       let completedVisits = (visitsData || []).filter(visit => 
         visit.status === 'completed' || visit.status === 'completada'
