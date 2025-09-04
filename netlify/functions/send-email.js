@@ -98,7 +98,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { to, subject, message, type, isHtml, messageId, customerId, includeConfirmation } = JSON.parse(event.body || '{}')
+    let { to, subject, message, type, isHtml, messageId, customerId, includeConfirmation } = JSON.parse(event.body || '{}')
 
     if (!to || !subject || !message) {
       return {
@@ -106,6 +106,12 @@ exports.handler = async (event, context) => {
         headers: corsHeaders,
         body: JSON.stringify({ error: 'Missing required fields: to, subject, message' })
       }
+    }
+
+    // Parse INCLUDE_CONFIRMATION flag from message content (temporary workaround)
+    if (message.includes('|INCLUDE_CONFIRMATION:true|')) {
+      includeConfirmation = true;
+      message = message.replace(/\s*\|INCLUDE_CONFIRMATION:true\|\s*$/, '').trim();
     }
 
     // Skip SMS for now - only handle email
@@ -170,16 +176,17 @@ exports.handler = async (event, context) => {
       // Use default template for plain text
       emailContent = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #4285f4; color: white; padding: 20px; text-align: center;">
-          <h2>Casmara CRM</h2>
+          <h2>CASMARA</h2>
+          <p style="margin: 5px 0 0 0; font-size: 14px;">Sistema de Notificaciones de Visita</p>
         </div>
         <div style="padding: 20px; background: #f9f9f9;">
           <div style="background: white; padding: 20px; border-radius: 8px;">
             ${message.replace(/\n/g, '<br>')}
           </div>
-          ${includeConfirmation && confirmToken && rescheduleToken ? generateAppointmentConfirmationSection(confirmToken, rescheduleToken) : ''}
+          ${includeConfirmation && confirmToken && rescheduleToken ? generateConfirmationButtons(process.env.URL || 'https://carmara-crm.netlify.app', confirmToken, rescheduleToken) : ''}
         </div>
         <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
-          <p>Este mensaje fue enviado desde Casmara CRM</p>
+          <p>Este mensaje fue enviado desde Casmara CRM | Asesora comercial: Charo | Tel: +34 646 11 67 04</p>
         </div>
       </div>`;
     }
