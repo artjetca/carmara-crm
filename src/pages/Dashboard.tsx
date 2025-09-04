@@ -147,53 +147,90 @@ export default function Dashboard() {
         return visitDate >= startOfWeek
       }).length
 
-      // Include local saved routes from Programación de Visitas (localStorage)
+      // Include saved routes from database (same as Visits page) with localStorage fallback
       try {
-        if (typeof window !== 'undefined') {
-          const raw = localStorage.getItem('savedRoutes')
-          const savedRoutes: any[] = raw ? JSON.parse(raw) : []
-          const startOfToday = new Date(today)
-          startOfToday.setHours(0, 0, 0, 0)
-
-          const parseRouteDate = (r: any): Date | null => {
-            const d = (r?.date || '').toString().trim()
-            const t = (r?.time || '00:00').toString().trim()
-            if (!d) return null
-            const iso = `${d}T${t.length === 5 ? t + ':00' : t}`
-            const dt = new Date(iso)
-            return isNaN(dt.getTime()) ? null : dt
+        let savedRoutes: any[] = []
+        
+        // Try to load from database first
+        if (user?.id) {
+          const { data: dbRoutes, error } = await supabase
+            .from('saved_routes')
+            .select('*')
+            .eq('created_by', user.id)
+          
+          if (!error && dbRoutes) {
+            // Convert database format to match expected format
+            savedRoutes = dbRoutes.map(route => ({
+              id: route.id,
+              name: route.name,
+              date: route.route_date,
+              time: route.route_time,
+              customers: route.customers,
+              totalDistance: route.total_distance,
+              totalDuration: route.total_duration,
+              completed: route.completed || false,
+              createdAt: route.created_at
+            }))
+            console.log('Dashboard: Loaded', savedRoutes.length, 'routes from database')
+          } else {
+            console.warn('Dashboard: Database routes failed, using localStorage fallback:', error)
+            // Fallback to localStorage
+            if (typeof window !== 'undefined') {
+              const raw = localStorage.getItem('savedRoutes')
+              savedRoutes = raw ? JSON.parse(raw) : []
+            }
           }
-
-          const savedToday = savedRoutes.filter(r => {
-            const dt = parseRouteDate(r)
-            if (!dt) return false
-            return dt.toISOString().startsWith(todayStr)
-          }).length
-
-          const savedPending = savedRoutes.filter(r => {
-            // Skip completed routes
-            if (r.completed) return false
-            
-            const dt = parseRouteDate(r)
-            // Skip routes without valid dates - don't count as pending
-            if (!dt) return false
-            
-            // Only count if date is today or in the future
-            return dt >= startOfToday
-          }).length
-
-          const savedThisWeek = savedRoutes.filter(r => {
-            const dt = parseRouteDate(r)
-            if (!dt) return false
-            return dt >= startOfWeek
-          }).length
-
-          todayVisits += savedToday
-          pendingVisits += savedPending
-          thisWeekVisits += savedThisWeek
+        } else {
+          // No user, check localStorage only
+          if (typeof window !== 'undefined') {
+            const raw = localStorage.getItem('savedRoutes')
+            savedRoutes = raw ? JSON.parse(raw) : []
+          }
         }
+
+        const startOfToday = new Date(today)
+        startOfToday.setHours(0, 0, 0, 0)
+
+        const parseRouteDate = (r: any): Date | null => {
+          const d = (r?.date || r?.route_date || '').toString().trim()
+          const t = (r?.time || r?.route_time || '00:00').toString().trim()
+          if (!d) return null
+          const iso = `${d}T${t.length === 5 ? t + ':00' : t}`
+          const dt = new Date(iso)
+          return isNaN(dt.getTime()) ? null : dt
+        }
+
+        const savedToday = savedRoutes.filter(r => {
+          const dt = parseRouteDate(r)
+          if (!dt) return false
+          return dt.toISOString().startsWith(todayStr)
+        }).length
+
+        const savedPending = savedRoutes.filter(r => {
+          // Skip completed routes
+          if (r.completed) return false
+          
+          const dt = parseRouteDate(r)
+          // Skip routes without valid dates - don't count as pending
+          if (!dt) return false
+          
+          // Only count if date is today or in the future
+          return dt >= startOfToday
+        }).length
+
+        const savedThisWeek = savedRoutes.filter(r => {
+          const dt = parseRouteDate(r)
+          if (!dt) return false
+          return dt >= startOfWeek
+        }).length
+
+        todayVisits += savedToday
+        pendingVisits += savedPending
+        thisWeekVisits += savedThisWeek
+        
+        console.log('Dashboard: Route stats -', { savedToday, savedPending, savedThisWeek, totalRoutes: savedRoutes.length })
       } catch (e) {
-        console.warn('Dashboard: failed to include saved routes from localStorage', e)
+        console.warn('Dashboard: failed to include saved routes', e)
       }
       
       const thisMonthCustomers = (customersData || []).filter(customer => {

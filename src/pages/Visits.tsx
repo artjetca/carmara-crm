@@ -530,15 +530,24 @@ export default function Visits() {
     }
   }, [])
 
-  // Clear map when route is empty
+  // Clear map when route is empty - force complete reset to initial state
   useEffect(() => {
     if (routeCustomers.length === 0 && mapInstanceRef.current) {
       try {
+        console.log('[MapReset] Clearing route, resetting map to initial state')
+        
+        // Clear directions renderer
         if (directionsRendererRef.current) {
           directionsRendererRef.current.set('directions', null)
         }
-        markersRef.current.forEach(m => m.setMap(null))
+        
+        // Clear all markers
+        markersRef.current.forEach(m => { 
+          try { m.setMap(null) } catch {} 
+        })
         markersRef.current = []
+        
+        // Clear location marker and info
         if (myLocationMarkerRef.current) {
           try { myLocationMarkerRef.current.setMap(null) } catch {}
           myLocationMarkerRef.current = null
@@ -547,11 +556,31 @@ export default function Visits() {
           try { myLocationInfoRef.current.close() } catch {}
           myLocationInfoRef.current = null
         }
+        
+        // Force map to reset to proper initial view - same as clean page load
         try {
-          mapInstanceRef.current.setCenter({ lat: 36.7213, lng: -4.4214 })
-          mapInstanceRef.current.setZoom(9)
+          const map = mapInstanceRef.current
+          map.setCenter({ lat: 36.7213, lng: -4.4214 }) // Andalusia center
+          map.setZoom(9) // Wide view of the region
+          
+          // Force map refresh to ensure proper rendering
+          setTimeout(() => {
+            try {
+              const google = (window as any).google
+              if (google?.maps && map) {
+                google.maps.event.trigger(map, 'resize')
+                map.setCenter({ lat: 36.7213, lng: -4.4214 })
+                map.setZoom(9)
+              }
+            } catch {}
+          }, 100)
+          
         } catch {}
-      } catch {}
+        
+        console.log('[MapReset] Map reset completed')
+      } catch (error) {
+        console.warn('[MapReset] Failed to reset map:', error)
+      }
     }
   }, [routeCustomers.length])
 
