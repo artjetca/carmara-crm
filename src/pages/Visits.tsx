@@ -409,55 +409,93 @@ export default function Visits() {
 
   // Handle page visibility changes to refresh map when user returns from navigation
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && mapInstanceRef.current && mapRef.current) {
-        // Page became visible again, refresh the map
-        setTimeout(() => {
-          try {
-            const google = (window as any).google
-            if (google?.maps) {
-              google.maps.event.trigger(mapInstanceRef.current, 'resize')
-              // Re-center the map if needed
-              if (routeCustomers.length > 0) {
-                // Trigger a re-render by forcing the effect to run
-                const event = new CustomEvent('mapRefresh')
-                window.dispatchEvent(event)
+    let refreshTimeout: NodeJS.Timeout | null = null
+    
+    const forceMapRefresh = async () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout)
+      
+      refreshTimeout = setTimeout(async () => {
+        try {
+          console.log('[MapRefresh] Attempting to refresh map after navigation return')
+          
+          // Force complete map recreation
+          if (mapInstanceRef.current) {
+            try {
+              // Clear all map elements
+              if (directionsRendererRef.current) {
+                directionsRendererRef.current.setMap(null)
+                directionsRendererRef.current = null
               }
+              markersRef.current.forEach(m => { try { m.setMap(null) } catch {} })
+              markersRef.current = []
+              if (myLocationMarkerRef.current) {
+                try { myLocationMarkerRef.current.setMap(null) } catch {}
+                myLocationMarkerRef.current = null
+              }
+              if (myLocationInfoRef.current) {
+                try { myLocationInfoRef.current.close() } catch {}
+                myLocationInfoRef.current = null
+              }
+              
+              // Clear map instance
+              mapInstanceRef.current = null
+              directionsServiceRef.current = null
+            } catch (error) {
+              console.warn('[MapRefresh] Cleanup error:', error)
             }
-          } catch (error) {
-            console.warn('Map refresh failed:', error)
           }
-        }, 100)
+          
+          // Wait a bit then force re-render
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
+          // Trigger main render effect by dispatching custom event
+          const event = new CustomEvent('forceMapRender')
+          window.dispatchEvent(event)
+          
+        } catch (error) {
+          console.error('[MapRefresh] Failed to refresh map:', error)
+        }
+      }, 200)
+    }
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden && mapRef.current) {
+        console.log('[MapRefresh] Page became visible, scheduling map refresh')
+        forceMapRefresh()
       }
     }
 
     const handleFocus = () => {
-      if (mapInstanceRef.current && mapRef.current) {
-        setTimeout(() => {
-          try {
-            const google = (window as any).google
-            if (google?.maps) {
-              google.maps.event.trigger(mapInstanceRef.current, 'resize')
-            }
-          } catch (error) {
-            console.warn('Map focus refresh failed:', error)
-          }
-        }, 100)
+      if (mapRef.current) {
+        console.log('[MapRefresh] Window focused, scheduling map refresh')
+        forceMapRefresh()
+      }
+    }
+
+    // Also handle page load/reload
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && mapRef.current) {
+        console.log('[MapRefresh] Page restored from cache, scheduling map refresh')
+        forceMapRefresh()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('focus', handleFocus)
+    window.addEventListener('pageshow', handlePageShow)
     
     return () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('pageshow', handlePageShow)
     }
   }, [routeCustomers.length])
 
   // Listen for custom map refresh events
   useEffect(() => {
     const handleMapRefresh = () => {
+      console.log('[MapRefresh] Handling mapRefresh event - clearing map instance')
       // Force re-render by clearing the map instance and letting the main effect recreate it
       if (mapInstanceRef.current) {
         try {
@@ -477,8 +515,19 @@ export default function Visits() {
       }
     }
 
+    const handleForceMapRender = () => {
+      console.log('[MapRefresh] Handling forceMapRender event - triggering map recreation')
+      // This will trigger the main map render effect to recreate everything
+      handleMapRefresh()
+    }
+
     window.addEventListener('mapRefresh', handleMapRefresh)
-    return () => window.removeEventListener('mapRefresh', handleMapRefresh)
+    window.addEventListener('forceMapRender', handleForceMapRender)
+    
+    return () => {
+      window.removeEventListener('mapRefresh', handleMapRefresh)
+      window.removeEventListener('forceMapRender', handleForceMapRender)
+    }
   }, [])
 
   // Clear map when route is empty
@@ -1854,6 +1903,20 @@ export default function Visits() {
                     title="Mi Ubicación"
                   >
                     <MapPin className="w-5 h-5 text-blue-600" />
+                  </button>
+                  {/* Manual Map Refresh button */}
+                  <button
+                    onClick={() => {
+                      console.log('[MapRefresh] Manual refresh button clicked')
+                      const event = new CustomEvent('forceMapRender')
+                      window.dispatchEvent(event)
+                    }}
+                    className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                    title="Refrescar Mapa"
+                  >
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
                   </button>
                 </div>
               ))}
