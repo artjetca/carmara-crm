@@ -145,7 +145,8 @@ export default function Communications() {
       
       if (callsError) throw callsError
       
-      // Cargar respuestas de citas
+      // Cargar respuestas de citas - TEMPORALMENTE DESHABILITADO (404 errors)
+      /* 
       const { data: responsesData, error: responsesError } = await supabase
         .from('appointment_responses')
         .select('*')
@@ -155,8 +156,11 @@ export default function Communications() {
       } else {
         setAppointmentResponses(responsesData || [])
       }
+      */
+      setAppointmentResponses([]) // Set empty array to avoid undefined
 
-      // Cargar seguimiento de emails
+      // Cargar seguimiento de emails - TEMPORALMENTE DESHABILITADO (404 errors)
+      /*
       const { data: trackingData, error: trackingError } = await supabase
         .from('email_tracking')
         .select('*')
@@ -169,6 +173,8 @@ export default function Communications() {
         console.log('Email tracking data loaded:', trackingData)
         setEmailTracking(trackingData || [])
       }
+      */
+      setEmailTracking([]) // Set empty array to avoid undefined
 
       // Cargar mensajes programados
       const { data: messagesData, error: messagesError } = await supabase

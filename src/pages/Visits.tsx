@@ -685,7 +685,8 @@ export default function Visits() {
       let dbRoutes: any[] = []
       let localRoutes: any[] = []
       
-      // Try to load from database first
+      // Try to load from database first - TEMPORALMENTE DESHABILITADO (404 errors)
+      /*
       if (user?.id) {
         try {
           const { data, error } = await supabase
@@ -704,6 +705,7 @@ export default function Visits() {
           console.warn('[RouteLoading] Database connection failed:', dbError)
         }
       }
+      */
       
       // Always try to load from localStorage as backup
       try {
@@ -1049,7 +1051,8 @@ export default function Visits() {
     }
 
     try {
-      // Try to save to database first, fallback to localStorage
+      // Try to save to database first, fallback to localStorage - TEMPORALMENTE DESHABILITADO (404 errors)
+      /*
       if (user?.id) {
         const { data, error } = await supabase
           .from('saved_routes')
@@ -1076,6 +1079,7 @@ export default function Visits() {
           console.warn('Database save failed, using localStorage fallback:', error)
         }
       }
+      */
       
       // Fallback to localStorage
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
@@ -1173,7 +1177,8 @@ export default function Visits() {
     }
 
     try {
-      // Try to delete from database first
+      // Try to delete from database first - TEMPORALMENTE DESHABILITADO (404 errors)
+      /*
       if (user?.id) {
         const { error } = await supabase
           .from('saved_routes')
@@ -1190,6 +1195,7 @@ export default function Visits() {
           console.warn('Database delete failed, using localStorage fallback:', error)
         }
       }
+      */
       
       // Fallback to localStorage
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
