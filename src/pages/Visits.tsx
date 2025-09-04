@@ -23,7 +23,9 @@ import {
   ArrowUp,
   ArrowDown,
   Car,
-  ExternalLink
+  ExternalLink,
+  Download,
+  Upload
 } from 'lucide-react'
 
 interface RouteCustomer extends Customer {
@@ -1170,6 +1172,108 @@ export default function Visits() {
     }
   }
 
+  // 匯出路線資料備份
+  const exportRoutesBackup = () => {
+    try {
+      const savedRoutes = localStorage.getItem('savedRoutes')
+      const routesData = savedRoutes ? JSON.parse(savedRoutes) : []
+      
+      if (routesData.length === 0) {
+        alert('No hay rutas guardadas para exportar')
+        return
+      }
+
+      const backup = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        routesCount: routesData.length,
+        routes: routesData
+      }
+
+      const dataStr = JSON.stringify(backup, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(dataBlob)
+      link.download = `casmara-rutas-backup-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      alert(`✅ Backup exportado con ${routesData.length} rutas`)
+    } catch (error) {
+      console.error('Error exporting routes backup:', error)
+      alert('Error al exportar el backup de rutas')
+    }
+  }
+
+  // 匯入路線資料備份
+  const importRoutesBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const backupData = JSON.parse(e.target?.result as string)
+        
+        if (!backupData.routes || !Array.isArray(backupData.routes)) {
+          throw new Error('Formato de backup inválido')
+        }
+
+        const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+        const importedCount = backupData.routes.length
+        
+        if (existingRoutes.length > 0) {
+          const shouldMerge = confirm(
+            `Ya tienes ${existingRoutes.length} rutas guardadas.\n` +
+            `¿Quieres combinar con las ${importedCount} rutas del backup?\n\n` +
+            `"Aceptar" = Combinar\n"Cancelar" = Reemplazar completamente`
+          )
+          
+          if (shouldMerge) {
+            // Combinar rutas evitando duplicados por nombre
+            const merged = [...existingRoutes]
+            backupData.routes.forEach((importedRoute: any) => {
+              const exists = merged.find(r => r.name === importedRoute.name)
+              if (!exists) {
+                merged.push({
+                  ...importedRoute,
+                  id: crypto.randomUUID(),
+                  createdAt: new Date().toISOString()
+                })
+              }
+            })
+            localStorage.setItem('savedRoutes', JSON.stringify(merged))
+            alert(`✅ Backup importado: ${merged.length - existingRoutes.length} rutas nuevas añadidas`)
+          } else {
+            // Reemplazar completamente
+            localStorage.setItem('savedRoutes', JSON.stringify(backupData.routes))
+            alert(`✅ Backup importado completamente: ${importedCount} rutas restauradas`)
+          }
+        } else {
+          // Sin rutas existentes, importar directamente
+          localStorage.setItem('savedRoutes', JSON.stringify(backupData.routes))
+          alert(`✅ Backup importado: ${importedCount} rutas restauradas`)
+        }
+        
+        // Recargar rutas guardadas
+        loadSavedRoutes()
+        
+      } catch (error) {
+        console.error('Error importing backup:', error)
+        alert('Error al importar el backup. Verifica que el archivo sea válido.')
+      }
+    }
+    
+    reader.readAsText(file)
+    
+    // Reset input
+    if (event.target) {
+      event.target.value = ''
+    }
+  }
+
   // 刪除儲存的路線
   const deleteSavedRoute = async (routeId: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar esta ruta?')) {
@@ -1593,6 +1697,31 @@ export default function Visits() {
             <X className="w-4 h-4" />
             <span>Limpiar Ruta</span>
           </button>
+          
+          {/* Backup/Restore buttons */}
+          <button
+            onClick={exportRoutesBackup}
+            className="inline-flex items-center space-x-2 px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50"
+            title="Descargar backup de todas las rutas guardadas"
+          >
+            <Download className="w-4 h-4" />
+            <span>Backup</span>
+          </button>
+          
+          <div className="relative">
+            <input
+              type="file"
+              accept=".json"
+              onChange={importRoutesBackup}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              title="Restaurar rutas desde backup"
+            />
+            <button className="inline-flex items-center space-x-2 px-4 py-2 border border-purple-300 text-purple-700 rounded-lg hover:bg-purple-50">
+              <Upload className="w-4 h-4" />
+              <span>Restaurar</span>
+            </button>
+          </div>
+          
           <button
             onClick={startNavigation}
             disabled={routeCustomers.length === 0}
