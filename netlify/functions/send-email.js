@@ -111,7 +111,7 @@ exports.handler = async (event, context) => {
     // Parse INCLUDE_CONFIRMATION flag from message content (temporary workaround)
     if (message.includes('|INCLUDE_CONFIRMATION:true|')) {
       includeConfirmation = true;
-      message = message.replace(/\s*\|INCLUDE_CONFIRMATION:true\|\s*$/, '').trim();
+      message = message.replace(/\|INCLUDE_CONFIRMATION:true\|/g, '').trim();
     }
 
     // Skip SMS for now - only handle email

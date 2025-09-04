@@ -80,6 +80,7 @@ interface ScheduledMessage {
   user_id?: string
   type?: 'sms' | 'email'
   subject?: string
+  include_confirmation?: boolean
   creator_profile?: {
     id: string
     name: string
@@ -643,7 +644,7 @@ export default function Communications() {
           {activeTab === 'calls' ? (
             <CallsList calls={filteredCalls} />
           ) : (
-            <MessagesList messages={filteredMessages} customers={customers} onDelete={handleDeleteMessage} onSendNow={handleSendNow} />
+            <MessagesList messages={filteredMessages} customers={customers} appointmentResponses={appointmentResponses} onDelete={handleDeleteMessage} onSendNow={handleSendNow} />
           )}
         </div>
       </div>
@@ -753,7 +754,7 @@ function CallsList({ calls }: { calls: Call[] }) {
 }
 
 // Componente para lista de mensajes
-function MessagesList({ messages, customers, onDelete, onSendNow }: { messages: ScheduledMessage[]; customers: Customer[]; onDelete: (id: string) => Promise<void> | void; onSendNow: (id: string) => Promise<void> | void }) {
+function MessagesList({ messages, customers, appointmentResponses, onDelete, onSendNow }: { messages: ScheduledMessage[]; customers: Customer[]; appointmentResponses: AppointmentResponse[]; onDelete: (id: string) => Promise<void> | void; onSendNow: (id: string) => Promise<void> | void }) {
   const t = translations
   const [selectedMessages, setSelectedMessages] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
@@ -933,6 +934,10 @@ function MessagesList({ messages, customers, onDelete, onSendNow }: { messages: 
         const customerInfo = extractCustomerInfo(message.message, customers)
         const isEmail = isEmailMessage(message.message)
         
+        // Check for confirmation status
+        const hasConfirmation = message.message.includes('|INCLUDE_CONFIRMATION:true|') || message.include_confirmation
+        const messageResponse = appointmentResponses.find(r => r.message_id === message.id)
+        
         return (
           <div key={message.id} className={`border rounded-lg p-4 hover:bg-gray-50 ${isEmail ? 'border-blue-200 bg-blue-50/30' : 'border-gray-200'}`}>
             <div className="flex items-start justify-between">
@@ -970,7 +975,27 @@ function MessagesList({ messages, customers, onDelete, onSendNow }: { messages: 
                     <span>{formatDate(message.scheduled_for)}</span>
                     <span>Creado por: {message.creator_profile?.full_name || message.creator_profile?.name || 'Usuario desconocido'}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">{message.message}</p>
+                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                    {message.message.replace(/\|INCLUDE_CONFIRMATION:true\|/g, '').trim()}
+                  </p>
+                  {hasConfirmation && (
+                    <div className="flex items-center space-x-2 mt-2">
+                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                        📅 Con confirmación
+                      </span>
+                      {messageResponse?.responded_at && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          messageResponse.response_type === 'confirm' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-orange-100 text-orange-800'
+                        }`}>
+                          {messageResponse.response_type === 'confirm' 
+                            ? '✅ Cliente confirmó cita' 
+                            : '📅 Cliente solicitó reprogramar'}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {message.error_message && (
                     <p className="text-sm text-red-600 mt-1">{message.error_message}</p>
                   )}
