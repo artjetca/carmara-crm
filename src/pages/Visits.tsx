@@ -730,31 +730,26 @@ export default function Visits() {
       // Try to load from database first for cross-device synchronization
       if (user?.id) {
         try {
-          const response = await fetch('/.netlify/functions/saved-routes', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-            }
-          })
+          const { data, error } = await supabase
+            .from('saved_routes')
+            .select('*')
+            .eq('created_by', user.id)
+            .order('created_at', { ascending: false })
           
-          if (response.ok) {
-            const result = await response.json()
-            if (result.success && result.data) {
-              dbRoutes = result.data.map((route: any) => ({
-                id: route.id,
-                name: route.name,
-                date: route.route_date,
-                time: route.route_time,
-                customers: route.customers,
-                totalDistance: route.total_distance,
-                totalDuration: route.total_duration,
-                createdAt: route.created_at
-              }))
-              console.log('[RouteLoading] Loaded', dbRoutes.length, 'routes from database')
-            }
+          if (!error && data) {
+            dbRoutes = data.map((route: any) => ({
+              id: route.id,
+              name: route.name,
+              date: route.route_date,
+              time: route.route_time,
+              customers: route.customers,
+              totalDistance: route.total_distance,
+              totalDuration: route.total_duration,
+              createdAt: route.created_at
+            }))
+            console.log('[RouteLoading] Loaded', dbRoutes.length, 'routes from database')
           } else {
-            console.warn('[RouteLoading] Database query failed with status:', response.status)
+            console.warn('[RouteLoading] Database query failed:', error)
           }
         } catch (dbError) {
           console.warn('[RouteLoading] Database connection failed:', dbError)
@@ -1110,30 +1105,24 @@ export default function Visits() {
       // Try to save to database first for cross-device synchronization
       if (user?.id) {
         try {
-          const response = await fetch('/.netlify/functions/saved-routes', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-            },
-            body: JSON.stringify({
+          const { data, error } = await supabase
+            .from('saved_routes')
+            .insert([{
+              created_by: user.id,
               name: routeData.name,
               route_date: routeData.date,
               route_time: routeData.time,
               customers: routeData.customers,
               total_distance: routeData.totalDistance,
               total_duration: routeData.totalDuration
-            })
-          })
+            }])
+            .select()
           
-          if (response.ok) {
-            const result = await response.json()
-            if (result.success) {
-              savedToDatabase = true
-              console.log('Route saved to database successfully')
-            }
+          if (!error && data) {
+            savedToDatabase = true
+            console.log('Route saved to database successfully')
           } else {
-            console.warn('Database save failed with status:', response.status)
+            console.warn('Database save failed:', error)
           }
         } catch (dbError) {
           console.warn('Database save failed, using localStorage fallback:', dbError)
@@ -1349,25 +1338,27 @@ export default function Visits() {
     }
 
     try {
-      // Try to delete from database first - TEMPORALMENTE DESHABILITADO (404 errors)
-      /*
+      let deletedFromDatabase = false
+      
+      // Try to delete from database first for cross-device synchronization
       if (user?.id) {
-        const { error } = await supabase
-          .from('saved_routes')
-          .delete()
-          .eq('id', routeId)
-          .eq('created_by', user.id)
-        
-        if (!error) {
-          // Database delete successful
-          await loadSavedRoutes()
-          alert('Ruta eliminada exitosamente (Base de datos)')
-          return
-        } else {
-          console.warn('Database delete failed, using localStorage fallback:', error)
+        try {
+          const { error } = await supabase
+            .from('saved_routes')
+            .delete()
+            .eq('id', routeId)
+            .eq('created_by', user.id)
+          
+          if (!error) {
+            deletedFromDatabase = true
+            console.log('Route deleted from database successfully')
+          } else {
+            console.warn('Database delete failed:', error)
+          }
+        } catch (dbError) {
+          console.warn('Database delete failed, using localStorage fallback:', dbError)
         }
       }
-      */
       
       // Fallback to localStorage
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
@@ -1385,7 +1376,9 @@ export default function Visits() {
       
       // Reload saved routes to get updated list
       await loadSavedRoutes()
-      alert('Ruta eliminada exitosamente (localStorage)')
+      
+      const deleteLocation = deletedFromDatabase ? 'Base de datos' : 'localStorage'
+      alert(`Ruta eliminada exitosamente (${deleteLocation})`)
     } catch (error) {
       console.error('Error deleting route:', error)
       alert('Error al eliminar la ruta: ' + (error as Error).message)
