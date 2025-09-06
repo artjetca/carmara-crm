@@ -1102,8 +1102,13 @@ export default function Visits() {
     try {
       let savedToDatabase = false
       
+      console.log('🚀 Starting route save operation...')
+      console.log('User:', user)
+      console.log('Route data:', routeData)
+      
       // Try to save to database first for cross-device synchronization
       if (user?.id) {
+        console.log('👤 User authenticated, attempting database save...')
         try {
           const { data, error } = await supabase
             .from('saved_routes')
