@@ -215,6 +215,7 @@ export default function Communications() {
       setScheduledMessages(messagesData || [])
       setCustomers(customersData)
       console.log(`Loaded ${messagesData?.length || 0} scheduled messages`)
+      console.log(`Loaded ${customersData?.length || 0} customers for Communications`)
     } catch (error) {
       console.error('Error loading scheduled messages:', error)
       setScheduledMessages([])
@@ -1434,6 +1435,29 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     
     return provinceOk && cityOk
   })
+
+  // Debug logging for modal filtering
+  React.useEffect(() => {
+    console.log('=== Communications Modal Debug ===')
+    console.log(`Total customers: ${customers.length}`)
+    console.log(`Selected Province: "${selectedProvince}"`)
+    console.log(`Selected City: "${selectedCity}"`)
+    console.log(`Filtered customers: ${modalFilteredCustomers.length}`)
+    
+    if (customers.length > 0) {
+      console.log('Sample customer data:')
+      customers.slice(0, 3).forEach(c => {
+        console.log(`  ${c.name}: Province="${deriveProvince(c)}", City="${deriveCity(c)}", Email="${c.email || 'Sin email'}"`)
+      })
+    }
+    
+    if (selectedProvince && selectedCity) {
+      console.log(`Customers matching Province="${selectedProvince}" AND City="${selectedCity}":`)
+      modalFilteredCustomers.forEach(c => {
+        console.log(`  ✅ ${c.name} (${c.company || 'Sin empresa'}) - ${c.email || 'Sin email'}`)
+      })
+    }
+  }, [customers.length, selectedProvince, selectedCity, modalFilteredCustomers.length])
 
   // 可加入清單（不含已選）
   const addableCustomers = modalFilteredCustomers.filter(c => !formData.customer_ids.includes(c.id))
