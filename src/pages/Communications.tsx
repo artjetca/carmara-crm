@@ -1424,7 +1424,14 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     // 確保當前已選客戶永遠在清單中，避免被過濾掉
     if (formData.customer_ids?.includes(c.id)) return true
     const provinceOk = !selectedProvince || deriveProvince(c) === selectedProvince
-    const cityOk = !selectedCity || deriveCity(c) === selectedCity
+    
+    // Improved city matching with case-insensitive comparison and accent normalization
+    const cityOk = !selectedCity || (() => {
+      const customerCity = deriveCity(c)
+      const normalizeForComparison = (str) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+      return normalizeForComparison(customerCity) === normalizeForComparison(selectedCity)
+    })()
+    
     return provinceOk && cityOk
   })
 
