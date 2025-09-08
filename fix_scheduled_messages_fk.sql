@@ -25,11 +25,11 @@ END $$;
 ALTER TABLE public.scheduled_messages 
   ALTER COLUMN user_id TYPE UUID USING user_id::UUID;
 
--- Create the correct foreign key constraint pointing to profiles table
+-- Create the correct foreign key constraint pointing to user_profiles table
 -- Note: Frontend expects this specific constraint name
 ALTER TABLE public.scheduled_messages
   ADD CONSTRAINT scheduled_messages_created_by_fkey
-  FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+  FOREIGN KEY (user_id) REFERENCES public.user_profiles(id) ON DELETE SET NULL;
 
 -- Also ensure customer_id foreign key exists
 ALTER TABLE public.scheduled_messages
