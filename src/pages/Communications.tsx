@@ -184,7 +184,7 @@ export default function Communications() {
         .from('scheduled_messages')
         .select(`
         *,
-        creator_profile:profiles!scheduled_messages_created_by_fkey (
+        creator_profile:profiles!user_id (
           id,
           name,
           email,
@@ -215,8 +215,15 @@ export default function Communications() {
       // customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
       
       setCalls(callsData || [])
-      setScheduledMessages(messagesData || [])
-      setCustomers(customersData)
+    // Normalize scheduled_messages so UI can consume customer_ids[]
+    const normalizedMessages = (messagesData || []).map((m: any) => ({
+      ...m,
+      customer_ids: Array.isArray(m.customer_ids)
+        ? m.customer_ids
+        : (m.customer_id ? [m.customer_id] : [])
+    }))
+    setScheduledMessages(normalizedMessages)
+    setCustomers(customersData)
       console.log(`Loaded ${messagesData?.length || 0} scheduled messages`)
       console.log(`Loaded ${customersData?.length || 0} customers for Communications`)
     } catch (error) {
@@ -1632,7 +1639,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           }
           
           return ({
-          customer_ids: [cid], // Array format for customer_ids column
+          // DB schema uses customer_id (single); UI normalizes to customer_ids[] after load
+          customer_id: cid,
           message: messageContent,
           scheduled_for: utcDate.toISOString(),
           status: 'pending',
