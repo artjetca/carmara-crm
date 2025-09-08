@@ -1430,14 +1430,16 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   // 當前在下拉中選擇的客戶（用於顯示聯絡方式與地址）
   const selectedCustomers = customers.filter(c => formData.customer_ids.includes(c.id))
 
-  // 依省市過濾顧客
+  // 依省市過濾顧客 - 預設顯示所有客戶
   const modalFilteredCustomers = customers.filter(c => {
     // 確保當前已選客戶永遠在清單中，避免被過濾掉
     if (formData.customer_ids?.includes(c.id)) return true
-    const provinceOk = !selectedProvince || deriveProvince(c) === selectedProvince
     
-    // Improved city matching with case-insensitive comparison and accent normalization
-    const cityOk = !selectedCity || (() => {
+    // 只有在明確選擇省份時才進行省份過濾
+    const provinceOk = !selectedProvince || selectedProvince === '' || deriveProvince(c) === selectedProvince
+    
+    // 只有在明確選擇城市時才進行城市過濾
+    const cityOk = !selectedCity || selectedCity === '' || (() => {
       const customerCity = deriveCity(c)
       const normalizeForComparison = (str) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
       return normalizeForComparison(customerCity) === normalizeForComparison(selectedCity)
