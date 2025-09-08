@@ -1,9 +1,9 @@
--- Fix scheduled_messages schema cache issues with created_by column references
--- Problem: Schema cache can't find 'created_by' column - likely RLS policies referencing wrong column
+-- Fix scheduled_messages foreign key constraint - Simple solution using auth.users
+-- Problem: Foreign key constraint violation - use direct reference to auth.users
 
 BEGIN;
 
--- 1. Drop all existing policies that might reference created_by
+-- 1. Drop all existing policies for scheduled_messages
 DO $$
 DECLARE
     policy_record RECORD;
@@ -35,21 +35,21 @@ BEGIN
     END LOOP;
 END $$;
 
--- 3. Ensure correct column structure - drop created_by if exists, ensure user_id exists
+-- 3. Ensure correct column structure
 DO $$
 BEGIN
     -- Drop created_by column if it exists
     BEGIN
         ALTER TABLE public.scheduled_messages DROP COLUMN IF EXISTS created_by;
     EXCEPTION WHEN undefined_column THEN 
-        NULL; -- Column doesn't exist, that's fine
+        NULL;
     END;
     
     -- Add user_id column if it doesn't exist
     BEGIN
         ALTER TABLE public.scheduled_messages ADD COLUMN user_id UUID;
     EXCEPTION WHEN duplicate_column THEN 
-        NULL; -- Column already exists, that's fine
+        NULL;
     END;
     
     -- Ensure user_id has correct type
@@ -57,40 +57,40 @@ BEGIN
       ALTER COLUMN user_id TYPE UUID USING user_id::UUID;
 END $$;
 
--- 4. Create the correct foreign key constraints
+-- 4. Create foreign key constraints pointing to auth.users (always exists)
 ALTER TABLE public.scheduled_messages
   ADD CONSTRAINT scheduled_messages_created_by_fkey
-  FOREIGN KEY (user_id) REFERENCES public.user_profiles(id) ON DELETE SET NULL;
+  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
 
 ALTER TABLE public.scheduled_messages
   ADD CONSTRAINT scheduled_messages_customer_id_fkey
   FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE SET NULL;
 
--- 5. Create correct RLS policies using user_id (not created_by)
+-- 5. Create simple RLS policies
 ALTER TABLE public.scheduled_messages ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "scheduled_messages_select_own_or_admin"
+CREATE POLICY "scheduled_messages_select_own"
   ON public.scheduled_messages
   FOR SELECT
-  USING (user_id = auth.uid() OR public.is_admin(auth.uid()));
+  USING (user_id = auth.uid());
 
 CREATE POLICY "scheduled_messages_insert_own"
   ON public.scheduled_messages
   FOR INSERT
   WITH CHECK (auth.uid() IS NOT NULL AND user_id = auth.uid());
 
-CREATE POLICY "scheduled_messages_update_own_or_admin"
+CREATE POLICY "scheduled_messages_update_own"
   ON public.scheduled_messages
   FOR UPDATE
-  USING (user_id = auth.uid() OR public.is_admin(auth.uid()))
-  WITH CHECK (user_id = auth.uid() OR public.is_admin(auth.uid()));
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
 
-CREATE POLICY "scheduled_messages_delete_own_or_admin"
+CREATE POLICY "scheduled_messages_delete_own"
   ON public.scheduled_messages
   FOR DELETE
-  USING (user_id = auth.uid() OR public.is_admin(auth.uid()));
+  USING (user_id = auth.uid());
 
--- 6. Create helpful indexes
+-- 6. Create indexes
 CREATE INDEX IF NOT EXISTS idx_scheduled_messages_user_id ON public.scheduled_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_messages_customer_id ON public.scheduled_messages(customer_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_messages_scheduled_for ON public.scheduled_messages(scheduled_for);
@@ -102,11 +102,9 @@ COMMIT;
 
 -- 8. Verify the fix
 SELECT 
-  'scheduled_messages schema fixed' AS status,
+  'Foreign key fixed - using auth.users' AS status,
   column_name,
-  data_type,
-  is_nullable
+  data_type
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'scheduled_messages'
-AND column_name IN ('user_id', 'created_by')
-ORDER BY column_name;
+AND column_name = 'user_id';
