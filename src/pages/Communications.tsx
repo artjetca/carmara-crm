@@ -75,7 +75,10 @@ interface ScheduledMessage {
   status: 'pending' | 'sent' | 'failed'
   type?: 'email' | 'sms'
   error_message?: string
-  created_by: string
+  // Align with DB schema: use user_id instead of created_by
+  user_id?: string
+  // kept for backward compatibility if any legacy rows exist
+  created_by?: string
   creator_profile?: {
     full_name?: string
     name?: string
@@ -1633,7 +1636,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           message: messageContent,
           scheduled_for: utcDate.toISOString(),
           status: 'pending',
-          created_by: user?.id
+          // Use user_id column per scheduled_messages schema
+          user_id: user?.id
           // Note: include_confirmation temporarily stored in message content until schema cache refreshes
           })
         })
