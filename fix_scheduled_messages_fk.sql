@@ -3,9 +3,6 @@
 
 BEGIN;
 
--- First, check current table structure and constraints
-\d public.scheduled_messages;
-
 -- Drop all existing foreign key constraints on scheduled_messages
 DO $$
 DECLARE
