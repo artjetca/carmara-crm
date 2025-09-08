@@ -184,7 +184,7 @@ export default function Communications() {
         .from('scheduled_messages')
         .select(`
         *,
-        creator_profile:profiles!user_id (
+        creator_profile:user_profiles!user_id (
           id,
           name,
           email,
