@@ -1,0 +1,7 @@
+nombre,empresa,teléfono,email,dirección,ciudad,provincia,contrato,notas
+Juan Pérez,Empresa ABC,600123456,juan@empresa.com,Calle Mayor 123,,Huelva,Activo,Cliente potencial
+María García,Empresa XYZ,700789012,maria@empresa.com,Avenida Principal 456,Cádiz,Cádiz,Pendiente,Cliente VIP
+Pedro Rodríguez,Compañía DEF,650456789,pedro@compania.com,Paseo del Mar 789,,Huelva,Activo,Oficina en Cádiz
+Ana López,Servicios GHI,680987654,ana@servicios.com,Plaza Central 321,Madrid,Madrid,Inactivo,Cliente desde 2020
+Carlos Martín,Tecnología JKL,600123456,carlos@tech.com,Calle Nueva 654,,Cádiz,Activo,Expandiendo a Huelva
+Juan Pérez,Empresa ABC,600123456,juan@empresa.com,Calle Mayor 123,,Huelva,Activo,Cliente potencial duplicado

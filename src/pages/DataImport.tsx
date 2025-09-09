@@ -393,6 +393,80 @@ export default function DataImport() {
     }
   }
 
+  // 检查客戶是否已存在，根据 email 或 name+company 組合
+  const checkExistingCustomer = async (customerData: CustomerData) => {
+    if (!user) return null
+    
+    // 優先使用 email 檢查（如果有的話）
+    if (customerData.email && customerData.email.trim()) {
+      const { data: existingByEmail } = await supabase
+        .from('customers')
+        .select('id, name, company, email')
+        .eq('created_by', user.id)
+        .eq('email', customerData.email.trim())
+        .limit(1)
+      
+      if (existingByEmail && existingByEmail.length > 0) {
+        return existingByEmail[0]
+      }
+    }
+    
+    // 備選：使用 name + company 組合檢查
+    if (customerData.name && customerData.name.trim()) {
+      const { data: existingByName } = await supabase
+        .from('customers')
+        .select('id, name, company, email')
+        .eq('created_by', user.id)
+        .eq('name', customerData.name.trim())
+        .eq('company', customerData.company?.trim() || null)
+        .limit(1)
+      
+      if (existingByName && existingByName.length > 0) {
+        return existingByName[0]
+      }
+    }
+    
+    return null
+  }
+
+  // 基於省份和筆記自動填充城市
+  const autoFillCityFromProvinceAndNotes = (customerData: CustomerData): string | null => {
+    // 如果已經有城市，不覆蓋
+    if (customerData.city && normalizeCity(customerData.city)) {
+      return normalizeCity(customerData.city)
+    }
+    
+    const province = customerData.provincia ? toCanonicalProvince(customerData.provincia) : null
+    const notes = customerData.notes ? customerData.notes.toLowerCase() : ''
+    
+    // 根據省份自動填充城市
+    if (province === 'Huelva') {
+      // 檢查筆記中是否包含 Cádiz 相關信息
+      if (notes.includes('cadiz') || notes.includes('cádiz')) {
+        return 'Cádiz'
+      }
+      return 'Huelva'
+    }
+    
+    if (province === 'Cádiz') {
+      // 檢查筆記中是否包含 Huelva 相關信息
+      if (notes.includes('huelva')) {
+        return 'Huelva'
+      }
+      return 'Cádiz'
+    }
+    
+    // 如果省份不是 Huelva 或 Cádiz，檢查筆記中的城市線索
+    if (notes.includes('huelva')) {
+      return 'Huelva'
+    }
+    if (notes.includes('cadiz') || notes.includes('cádiz')) {
+      return 'Cádiz'
+    }
+    
+    return null
+  }
+
   const importData = async () => {
     if (!file || !user) {
       console.log('Import aborted: file or user missing', { file: !!file, user: !!user })
@@ -425,6 +499,18 @@ export default function DataImport() {
         const customer = data[i]
         
         try {
+          // 檢查是否為重複客戶
+          const existingCustomer = await checkExistingCustomer(customer)
+          if (existingCustomer) {
+            console.log(`Skipping duplicate customer: ${customer.name} (${customer.email || 'no email'})`, existingCustomer)
+            result.errorDetails.push({
+              row: i + 2,
+              error: `Cliente duplicado encontrado: ${existingCustomer.name} (${existingCustomer.email || 'sin email'})`,
+              data: customer
+            })
+            result.errors++
+            continue
+          }
           // 准备 notes：只保存原始 notes 和无法映射到专用列的信息
           const notesToSave: string[] = []
           if (customer.notes) notesToSave.push(customer.notes)
@@ -442,6 +528,10 @@ export default function DataImport() {
             notesToSave.push(`Provincia: ${customer.provincia}`)
           }
 
+          // 自動填充城市基於省份和筆記
+          const autoFilledCity = autoFillCityFromProvinceAndNotes(customer)
+          const finalCity = autoFilledCity || customer.city
+
           const finalNotes = notesToSave.join(' | ')
 
           // 使用 API 端点而不是直接 Supabase 调用，确保后端标准化逻辑生效
@@ -452,7 +542,7 @@ export default function DataImport() {
             email: customer.email || null,
             address: customer.address || null,
             postal_code: customer.postal_code || null,
-            city: customer.city || null, // 让后端处理城市标准化
+            city: finalCity || null, // 使用自動填充的城市或原始城市
             province: normalizedProvince,
             contrato: customer.contrato || null,
             notes: finalNotes || null,
