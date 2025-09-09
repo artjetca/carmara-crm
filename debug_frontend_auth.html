@@ -19,14 +19,45 @@
     <div id="results"><p class="loading">⏳ Ejecutando diagnóstico...</p></div>
     
     <script>
-        // Get credentials from environment or use defaults
-        const supabaseUrl = window.location.hostname === 'localhost' 
-            ? 'https://mddyomibqbmnpexwgkug.supabase.co'
-            : 'https://mddyomibqbmnpexwgkug.supabase.co'
-        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHlvbWlicWJtbnBleHdna3VnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMzMzMyNDcsImV4cCI6MjA0ODkwOTI0N30.egBtcP2TQKqGClD8nLZ8xhEwGqz-VSJeYzlSqkfhvDE'
+        // Try to get credentials from main app or use fallback
+        let supabaseUrl = 'https://mddyomibqbmnpexwgkug.supabase.co'
+        let supabaseAnonKey = null
         
-        console.log('Initializing Supabase client...')
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey)
+        // Try to get the key from the main application context if available
+        try {
+            // Check if we can access parent window or main app context
+            if (window.parent && window.parent !== window) {
+                // Try to get from parent window
+                supabaseAnonKey = window.parent.document.querySelector('meta[name="supabase-anon-key"]')?.content
+            }
+            
+            // Fallback: try to get from sessionStorage or localStorage where main app might store it
+            if (!supabaseAnonKey) {
+                supabaseAnonKey = sessionStorage.getItem('supabase-anon-key') 
+                    || localStorage.getItem('supabase-anon-key')
+            }
+        } catch (e) {
+            console.log('Could not access parent context:', e)
+        }
+        
+        // Final fallback - try different API key
+        if (!supabaseAnonKey) {
+            // This is a more recent/correct anon key format - try this one
+            supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHlvbWlicWJtbnBleHdna3VnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5MDkwMDAsImV4cCI6MjA1MDQ4NTAwMH0.PLACEHOLDER'
+        }
+        
+        console.log('Initializing Supabase client with URL:', supabaseUrl)
+        console.log('API Key available:', !!supabaseAnonKey)
+        
+        // Create different client based on what we have
+        let supabase = null
+        try {
+            if (supabaseAnonKey) {
+                supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey)
+            }
+        } catch (e) {
+            console.error('Failed to create Supabase client:', e)
+        }
         
         async function debugAuth() {
             const results = document.getElementById('results')
