@@ -20,11 +20,13 @@ import * as XLSX from 'xlsx'
 interface ImportResult {
   success: number
   errors: number
+  skipped: number
   total: number
   errorDetails: Array<{
     row: number
     error: string
     data: any
+    type: 'error' | 'skipped'
   }>
 }
 
@@ -491,6 +493,7 @@ export default function DataImport() {
       const result: ImportResult = {
         success: 0,
         errors: 0,
+        skipped: 0,
         total: data.length,
         errorDetails: []
       }
@@ -505,10 +508,11 @@ export default function DataImport() {
             console.log(`Skipping duplicate customer: ${customer.name} (${customer.email || 'no email'})`, existingCustomer)
             result.errorDetails.push({
               row: i + 2,
-              error: `Cliente duplicado encontrado: ${existingCustomer.name} (${existingCustomer.email || 'sin email'})`,
-              data: customer
+              error: `✓ Cliente ya existe en el sistema: "${existingCustomer.name}" ${existingCustomer.company ? `- ${existingCustomer.company}` : ''} ${existingCustomer.email ? `(${existingCustomer.email})` : ''} - Se omite importación`,
+              data: customer,
+              type: 'skipped'
             })
-            result.errors++
+            result.skipped++
             continue
           }
           // 准备 notes：只保存原始 notes 和无法映射到专用列的信息
@@ -590,7 +594,8 @@ export default function DataImport() {
           result.errorDetails.push({
             row: i + 2,
             error: error.message,
-            data: customer
+            data: customer,
+            type: 'error'
           })
         }
       }
@@ -941,13 +946,23 @@ export default function DataImport() {
               {t.dataImport.importResults}
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center space-x-3">
                   <CheckCircle className="w-8 h-8 text-green-500" />
                   <div>
                     <p className="text-2xl font-bold text-green-900">{importResult.success}</p>
-                    <p className="text-sm text-green-700">{t.dataImport.successful}</p>
+                    <p className="text-sm text-green-700">Importados</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center space-x-3">
+                  <AlertCircle className="w-8 h-8 text-yellow-500" />
+                  <div>
+                    <p className="text-2xl font-bold text-yellow-900">{importResult.skipped || 0}</p>
+                    <p className="text-sm text-yellow-700">Ya existían</p>
                   </div>
                 </div>
               </div>
@@ -957,7 +972,7 @@ export default function DataImport() {
                   <XCircle className="w-8 h-8 text-red-500" />
                   <div>
                     <p className="text-2xl font-bold text-red-900">{importResult.errors}</p>
-                    <p className="text-sm text-red-700">{t.dataImport.errors}</p>
+                    <p className="text-sm text-red-700">Errores</p>
                   </div>
                 </div>
               </div>
@@ -967,7 +982,7 @@ export default function DataImport() {
                   <Users className="w-8 h-8 text-blue-500" />
                   <div>
                     <p className="text-2xl font-bold text-blue-900">{importResult.total}</p>
-                    <p className="text-sm text-blue-700">{t.dataImport.total}</p>
+                    <p className="text-sm text-blue-700">Total procesados</p>
                   </div>
                 </div>
               </div>
@@ -985,25 +1000,53 @@ export default function DataImport() {
             </div>
             
             {importResult.errorDetails.length > 0 && (
-              <div>
-                <h4 className="text-md font-medium text-gray-900 mb-3">
-                  {t.dataImport.errorDetails}
-                </h4>
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-h-64 overflow-y-auto">
-                  <div className="space-y-2">
-                    {importResult.errorDetails.map((error, index) => (
-                      <div key={index} className="text-sm">
-                        <span className="font-medium text-red-900">
-                          {t.dataImport.row} {error.row}:
-                        </span>
-                        <span className="text-red-700 ml-2">{error.error}</span>
-                        <div className="text-red-600 ml-4 text-xs">
-                          {error.data.name} - {error.data.company}
-                        </div>
+              <div className="space-y-4">
+                {/* Clientes que ya existían */}
+                {importResult.errorDetails.filter(e => e.type === 'skipped').length > 0 && (
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                      <AlertCircle className="w-5 h-5 text-yellow-500 mr-2" />
+                      Clientes que ya existían en el sistema ({importResult.errorDetails.filter(e => e.type === 'skipped').length})
+                    </h4>
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-h-64 overflow-y-auto">
+                      <div className="space-y-2">
+                        {importResult.errorDetails.filter(e => e.type === 'skipped').map((error, index) => (
+                          <div key={index} className="text-sm">
+                            <span className="font-medium text-yellow-900">
+                              Fila {error.row}:
+                            </span>
+                            <span className="text-yellow-800 ml-2">{error.error}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
+                )}
+                
+                {/* Errores reales */}
+                {importResult.errorDetails.filter(e => e.type === 'error').length > 0 && (
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                      <XCircle className="w-5 h-5 text-red-500 mr-2" />
+                      Errores de importación ({importResult.errorDetails.filter(e => e.type === 'error').length})
+                    </h4>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-h-64 overflow-y-auto">
+                      <div className="space-y-2">
+                        {importResult.errorDetails.filter(e => e.type === 'error').map((error, index) => (
+                          <div key={index} className="text-sm">
+                            <span className="font-medium text-red-900">
+                              Fila {error.row}:
+                            </span>
+                            <span className="text-red-700 ml-2">{error.error}</span>
+                            <div className="text-red-600 ml-4 text-xs">
+                              {error.data.name} - {error.data.company}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             
