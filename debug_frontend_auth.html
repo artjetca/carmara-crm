@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Frontend Authentication</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Diagnóstico de Autenticación Frontend</h1>
+    <div id="results"></div>
+    
+    <script>
+        const supabaseUrl = 'https://mddyomibqbmnpexwgkug.supabase.co'
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHlvbWlicWJtbnBleHdna3VnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMzMzMyNDcsImV4cCI6MjA0ODkwOTI0N30.egBtcP2TQKqGClD8nLZ8xhEwGqz-VSJeYzlSqkfhvDE'
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey)
+        
+        async function debugAuth() {
+            const results = document.getElementById('results')
+            let html = '<h2>Resultados:</h2>'
+            
+            try {
+                // 1. Check current session
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+                
+                html += '<h3>1. Sesión Actual:</h3>'
+                if (sessionError) {
+                    html += `<p style="color: red;">❌ Error: ${sessionError.message}</p>`
+                } else if (session?.user) {
+                    html += `<p style="color: green;">✅ Usuario autenticado: ${session.user.id}</p>`
+                    html += `<p>Email: ${session.user.email}</p>`
+                    html += `<p>Expiración: ${new Date(session.expires_at * 1000).toLocaleString()}</p>`
+                } else {
+                    html += '<p style="color: orange;">⚠️ No hay sesión activa</p>'
+                }
+                
+                // 2. Check user from auth
+                const { data: { user }, error: userError } = await supabase.auth.getUser()
+                
+                html += '<h3>2. Usuario Actual:</h3>'
+                if (userError) {
+                    html += `<p style="color: red;">❌ Error: ${userError.message}</p>`
+                } else if (user) {
+                    html += `<p style="color: green;">✅ Usuario: ${user.id}</p>`
+                    html += `<p>Email: ${user.email}</p>`
+                } else {
+                    html += '<p style="color: orange;">⚠️ No hay usuario autenticado</p>'
+                }
+                
+                // 3. Test database query
+                html += '<h3>3. Prueba de Consulta a BD:</h3>'
+                const { data: testData, error: testError } = await supabase
+                    .from('customers')
+                    .select('id, name')
+                    .limit(1)
+                
+                if (testError) {
+                    html += `<p style="color: red;">❌ Error BD: ${testError.message}</p>`
+                } else {
+                    html += `<p style="color: green;">✅ Consulta exitosa (${testData?.length || 0} registros)</p>`
+                }
+                
+                // 4. Test insert simulation (without actually inserting)
+                html += '<h3>4. Simulación de Insert:</h3>'
+                if (user?.id) {
+                    const testInsert = {
+                        customer_id: testData?.[0]?.id || 'test-id',
+                        message: 'Test message',
+                        scheduled_for: new Date().toISOString(),
+                        status: 'pending',
+                        user_id: user.id
+                    }
+                    html += `<p>Datos a insertar: <code>${JSON.stringify(testInsert, null, 2)}</code></p>`
+                    
+                    // Check if user_profiles exists for this user
+                    const { data: profileData, error: profileError } = await supabase
+                        .from('user_profiles')
+                        .select('id, name')
+                        .eq('id', user.id)
+                        .single()
+                    
+                    if (profileError) {
+                        html += `<p style="color: red;">❌ Perfil no encontrado: ${profileError.message}</p>`
+                        html += '<p><strong>SOLUCIÓN: El usuario necesita un perfil en user_profiles</strong></p>'
+                    } else {
+                        html += `<p style="color: green;">✅ Perfil encontrado: ${profileData.name}</p>`
+                    }
+                } else {
+                    html += '<p style="color: red;">❌ No se puede simular sin user.id</p>'
+                }
+                
+            } catch (error) {
+                html += `<p style="color: red;">❌ Error general: ${error.message}</p>`
+            }
+            
+            html += '<h3>Recomendaciones:</h3>'
+            html += '<ul>'
+            html += '<li>Si no hay sesión: Cerrar sesión y volver a iniciar</li>'
+            html += '<li>Si falta perfil: Crear registro en user_profiles</li>'
+            html += '<li>Si hay error de JWT: Limpiar localStorage y cookies</li>'
+            html += '</ul>'
+            
+            results.innerHTML = html
+        }
+        
+        // Run diagnosis on page load
+        debugAuth()
+    </script>
+</body>
+</html>
