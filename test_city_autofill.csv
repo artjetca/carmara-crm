@@ -1,0 +1,7 @@
+nombre,empresa,teléfono,email,dirección,ciudad,provincia,contrato,notas
+TEST Pedro Rodríguez,TEST-CSV-Sin Ciudad 1,650333333,test-autofill1@csvtest.com,TEST Paseo del Mar 789,,Huelva,Activo,測試數據 - 應該自動填充Huelva城市
+TEST Ana López,TEST-CSV-Sin Ciudad 2,680444444,test-autofill2@csvtest.com,TEST Plaza Central 321,,Cádiz,Pendiente,測試數據 - 應該自動填充Cádiz城市
+TEST Carlos Martín,TEST-CSV-Notes Override,600555555,test-autofill3@csvtest.com,TEST Calle Nueva 654,,Huelva,Activo,測試數據 - 辦公室在Cádiz
+TEST Isabel Fernández,TEST-CSV-Notes Override 2,700666666,test-autofill4@csvtest.com,TEST Avenida Sur 987,,Cádiz,Activo,測試數據 - 總部在Huelva
+TEST Roberto Silva,TEST-CSV-Sin Provincia,650777777,test-autofill5@csvtest.com,TEST Calle Norte 159,,,Activo,測試數據 - 客戶來自Huelva地區
+TEST Carmen Ruiz,TEST-CSV-Ciudad Existente,680888888,test-autofill6@csvtest.com,TEST Plaza Mayor 753,Huelva,Huelva,Pendiente,測試數據 - 已有城市不應被覆蓋
