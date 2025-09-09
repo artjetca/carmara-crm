@@ -57,10 +57,10 @@ BEGIN
       ALTER COLUMN user_id TYPE UUID USING user_id::UUID;
 END $$;
 
--- 4. Create foreign key constraints pointing to auth.users (always exists)
+-- 4. Create foreign key constraints pointing to user_profiles (needed for frontend queries)
 ALTER TABLE public.scheduled_messages
   ADD CONSTRAINT scheduled_messages_created_by_fkey
-  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+  FOREIGN KEY (user_id) REFERENCES public.user_profiles(id) ON DELETE SET NULL;
 
 ALTER TABLE public.scheduled_messages
   ADD CONSTRAINT scheduled_messages_customer_id_fkey
