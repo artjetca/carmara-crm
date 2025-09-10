@@ -5,6 +5,8 @@ on:
     # 每5分鐘執行一次 (免費GitHub Actions限制)
     - cron: '*/5 * * * *'
   workflow_dispatch: # 允許手動觸發
+  repository_dispatch:
+    types: [netlify-deploy-succeeded]
 
 jobs:
   trigger-email-scheduler:
