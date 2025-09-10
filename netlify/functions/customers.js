@@ -86,6 +86,11 @@ exports.handler = async (event, context) => {
       const insertBody = { ...requestBody };
       delete insertBody.num;
       delete insertBody.numero;
+      
+      // Handle CP field mapping - try both cp and postal_code
+      if (insertBody.cp && !insertBody.postal_code) {
+        insertBody.postal_code = insertBody.cp;
+      }
       // 城市處理：若值為省份名稱則正規化，否則保留原城市（允許任意 municipio）
       if (Object.prototype.hasOwnProperty.call(insertBody, 'city')) {
         const norm = String(insertBody.city || '')
@@ -267,6 +272,11 @@ exports.handler = async (event, context) => {
       delete normalFields.numero; // 避免與特殊處理重複
       delete normalFields.customer_number;
       delete normalFields.postal_code;
+      
+      // Handle CP field mapping for updates
+      if (updateData.cp && !updateData.postal_code) {
+        updateData.postal_code = updateData.cp;
+      }
 
       // 執行更新，優先更新一般欄位，再更新特殊欄位（或反之皆可）
       if (Object.keys(normalFields).length > 0) {

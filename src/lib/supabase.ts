@@ -26,6 +26,7 @@ export interface Customer {
   city?: string
   province?: string
   postal_code?: string
+  cp?: string
   country?: string
   latitude?: number
   longitude?: number

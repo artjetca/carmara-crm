@@ -1010,23 +1010,21 @@ export default function Customers() {
                   onChange={e => handleEditChange('email', e.target.value)}
                 />
               </div>
-              <div>
-                <label className="block text-sm text-gray-700 mb-1">C.P</label>
-                <input
-                  className="w-full px-3 py-2 border rounded"
-                  value={(editData as any).postal_code || ''}
-                  onChange={e => handleEditChange('postal_code', e.target.value)}
-                  inputMode="numeric"
-                  pattern="\\d{5}"
-                  maxLength={5}
-                />
-              </div>
               <div className="sm:col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Dirección</label>
                 <input
                   className="w-full px-3 py-2 border rounded"
                   value={editData.address || ''}
                   onChange={e => handleEditChange('address', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">C.P</label>
+                <input
+                  className="w-full px-3 py-2 border rounded"
+                  value={(editData as any).cp || ''}
+                  onChange={e => handleEditChange('cp', e.target.value)}
+                  placeholder="Código postal"
                 />
               </div>
               <div>
