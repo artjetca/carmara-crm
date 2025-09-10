@@ -1116,24 +1116,48 @@ export default function Visits() {
       if (user?.id) {
         console.log('👤 User authenticated, attempting database save...')
         try {
-          const { data, error } = await supabase
-            .from('saved_routes')
-            .insert([{
-              created_by: user.id,
-              name: routeData.name,
-              route_date: routeData.date,
-              route_time: routeData.time,
-              customers: routeData.customers,
-              total_distance: routeData.totalDistance,
-              total_duration: routeData.totalDuration
-            }])
-            .select()
-          
-          if (!error && data) {
-            savedToDatabase = true
-            console.log('Route saved to database successfully')
+          if (isUpdating) {
+            // Update existing route by ID
+            const { data, error } = await supabase
+              .from('saved_routes')
+              .update({
+                name: routeData.name,
+                route_date: routeData.date,
+                route_time: routeData.time,
+                customers: routeData.customers,
+                total_distance: routeData.totalDistance,
+                total_duration: routeData.totalDuration
+              })
+              .eq('id', editingRouteId)
+              .select()
+
+            if (!error && data && Array.isArray(data) && data.length > 0) {
+              savedToDatabase = true
+              console.log('[RouteSave] Updated route in database', editingRouteId)
+            } else {
+              console.warn('[RouteSave] Database update failed:', error)
+            }
           } else {
-            console.warn('Database save failed:', error)
+            // Insert new route
+            const { data, error } = await supabase
+              .from('saved_routes')
+              .insert([{
+                created_by: user.id,
+                name: routeData.name,
+                route_date: routeData.date,
+                route_time: routeData.time,
+                customers: routeData.customers,
+                total_distance: routeData.totalDistance,
+                total_duration: routeData.totalDuration
+              }])
+              .select()
+
+            if (!error && data && Array.isArray(data) && data.length > 0) {
+              savedToDatabase = true
+              console.log('[RouteSave] Inserted new route into database')
+            } else {
+              console.warn('[RouteSave] Database insert failed:', error)
+            }
           }
         } catch (dbError) {
           console.warn('Database save failed, using localStorage fallback:', dbError)
