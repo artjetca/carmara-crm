@@ -1317,14 +1317,6 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               type="email"
             />
           </div>
-          <div className="sm:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Dirección</label>
-            <input
-              className="w-full px-3 py-2 border rounded"
-              value={formData.address}
-              onChange={e => handleChange('address', e.target.value)}
-            />
-          </div>
           <div>
             <label className="block text-sm text-gray-700 mb-1">C.P</label>
             <input
@@ -1332,6 +1324,14 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
               value={(formData as any).cp || ''}
               onChange={e => handleChange('cp', e.target.value)}
               placeholder="Código postal"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm text-gray-700 mb-1">Dirección</label>
+            <input
+              className="w-full px-3 py-2 border rounded"
+              value={formData.address}
+              onChange={e => handleChange('address', e.target.value)}
             />
           </div>
           <div>
