@@ -88,16 +88,37 @@ exports.handler = async (event, context) => {
     // Process each email
     for (const emailRecord of pendingEmails) {
       try {
-        // Find customer for this email
-        const customer = customers?.find(c => emailRecord.customer_ids.includes(c.id));
+        // Find customer for this email - handle both array and single customer_id formats
+        let customer;
+        if (emailRecord.customer_ids && Array.isArray(emailRecord.customer_ids)) {
+          // New format: customer_ids array
+          customer = customers?.find(c => emailRecord.customer_ids.includes(c.id));
+        } else if (emailRecord.customer_id) {
+          // Legacy format: single customer_id
+          customer = customers?.find(c => c.id === emailRecord.customer_id);
+        }
         
-        if (!customer?.email) {
-          console.log(`Skipping email ${emailRecord.id} - no customer email found`);
+        if (!customer) {
+          console.log(`Skipping email ${emailRecord.id} - customer not found in database`);
+          console.log(`Customer IDs: ${JSON.stringify(emailRecord.customer_ids || emailRecord.customer_id)}`);
           await supabase
             .from('scheduled_messages')
             .update({ 
               status: 'failed',
-              error_message: 'Customer email not found'
+              error_message: 'Customer not found in database'
+            })
+            .eq('id', emailRecord.id);
+          failed++;
+          continue;
+        }
+        
+        if (!customer.email) {
+          console.log(`Skipping email ${emailRecord.id} - customer ${customer.name} has no email address`);
+          await supabase
+            .from('scheduled_messages')
+            .update({ 
+              status: 'failed',
+              error_message: `Customer ${customer.name} has no email address`
             })
             .eq('id', emailRecord.id);
           failed++;

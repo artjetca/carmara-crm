@@ -1328,6 +1328,15 @@ function AddCustomerModal({ onClose, onSave }: { onClose: () => void, onSave: (c
             />
           </div>
           <div>
+            <label className="block text-sm text-gray-700 mb-1">C.P</label>
+            <input
+              className="w-full px-3 py-2 border rounded"
+              value={(formData as any).cp || ''}
+              onChange={e => handleChange('cp', e.target.value)}
+              placeholder="Código postal"
+            />
+          </div>
+          <div>
             <label className="block text-sm text-gray-700 mb-1">Provincia</label>
             <select
               className="w-full px-3 py-2 border rounded"

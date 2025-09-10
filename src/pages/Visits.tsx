@@ -53,6 +53,11 @@ export default function Visits() {
   const [showLoadModal, setShowLoadModal] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
   const [loadingSavedRoutes, setLoadingSavedRoutes] = useState(false)
+  // Filtering states for saved routes modal
+  const [savedRoutesProvince, setSavedRoutesProvince] = useState('')
+  const [savedRoutesCity, setSavedRoutesCity] = useState('')
+  // Edit mode for save functionality
+  const [editingRouteId, setEditingRouteId] = useState<string | null>(null)
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
@@ -1081,22 +1086,23 @@ export default function Visits() {
     try { localStorage.removeItem(draftKey) } catch {}
   }
 
-  // 儲存路線
-  const saveRoute = async () => {
+  // 儲存路線 (新增或更新)
+  const saveRoute = async (saveAsNew = false) => {
     if (!routeName.trim()) {
       alert('Por favor ingresa un nombre para la ruta')
       return
     }
     
+    const isUpdating = editingRouteId && !saveAsNew
     const routeData = {
-      id: Date.now().toString(),
+      id: isUpdating ? editingRouteId : Date.now().toString(),
       name: routeName,
       date: routeDate || null,
       time: routeTime || null,
       customers: routeCustomers,
       totalDistance: totalDistance,
       totalDuration: totalDuration,
-      createdAt: new Date().toISOString()
+      createdAt: isUpdating ? (savedRoutes.find(r => r.id === editingRouteId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
     }
 
     try {
@@ -1134,9 +1140,20 @@ export default function Visits() {
         }
       }
       
-      // Always save to localStorage as backup/fallback
+      // Save to localStorage as backup/fallback
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-      const updatedRoutes = [...existingRoutes, routeData]
+      let updatedRoutes
+      
+      if (isUpdating) {
+        // Update existing route
+        updatedRoutes = existingRoutes.map((route: any) => 
+          route.id === editingRouteId ? routeData : route
+        )
+      } else {
+        // Add new route
+        updatedRoutes = [...existingRoutes, routeData]
+      }
+      
       localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
       
       // Reload saved routes to get updated list
@@ -1155,9 +1172,11 @@ export default function Visits() {
       
       setShowSaveModal(false)
       setRouteName('')
+      setEditingRouteId(null)
       
+      const action = isUpdating ? 'actualizada' : 'guardada'
       const saveLocation = savedToDatabase ? 'Base de datos' : 'localStorage'
-      alert(`Ruta guardada exitosamente (${saveLocation})`)
+      alert(`Ruta ${action} exitosamente (${saveLocation})`)
     } catch (error) {
       console.error('Error saving route:', error)
       alert('Error al guardar la ruta: ' + (error as Error).message)
@@ -1172,9 +1191,15 @@ export default function Visits() {
     setRouteTime(routeData.time)
     setTotalDistance(routeData.totalDistance)
     setTotalDuration(routeData.totalDuration)
+    setRouteName(routeData.name)
+    setEditingRouteId(routeData.id) // Set editing mode
     setShowLoadModal(false)
     calculateRouteDistanceAndTime(routeData.customers)
   }
+  
+  // Wrapper functions for button handlers (fixing TypeScript error ID: 7f1cb7fe-eb10-4cc1-8a70-62125cbf893a)
+  const handleSaveRoute = () => saveRoute(false)
+  const handleSaveAsNew = () => saveRoute(true)
 
   // 完成路線並記錄到儀表板
   const completeRoute = async (routeData: any) => {
@@ -2363,12 +2388,29 @@ export default function Visits() {
               >
                 Cancelar
               </button>
-              <button
-                onClick={saveRoute}
-                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                Guardar
-              </button>
+              {editingRouteId ? (
+                <>
+                  <button
+                    onClick={handleSaveRoute}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Actualizar Ruta
+                  </button>
+                  <button
+                    onClick={handleSaveAsNew}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
+                    Guardar Como Nueva
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleSaveRoute}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  Guardar
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2378,27 +2420,115 @@ export default function Visits() {
       {showLoadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-4 sm:p-6 max-w-2xl w-full max-h-[85vh] sm:max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4 sm:mb-6">
-              <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Rutas Guardadas</h3>
-              <button
-                onClick={() => setShowLoadModal(false)}
-                className="text-gray-400 hover:text-gray-600 p-1"
-              >
-                <X className="w-6 h-6" />
-              </button>
+            <div className="flex flex-col gap-4 mb-4 sm:mb-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Rutas Guardadas</h3>
+                <button
+                  onClick={() => setShowLoadModal(false)}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              {/* Province and City filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+                  <select
+                    value={savedRoutesProvince}
+                    onChange={(e) => {
+                      setSavedRoutesProvince(e.target.value)
+                      setSavedRoutesCity('')
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">Todas las Provincias</option>
+                    <option value="Cádiz">Cádiz</option>
+                    <option value="Huelva">Huelva</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+                  <select
+                    value={savedRoutesCity}
+                    onChange={(e) => setSavedRoutesCity(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">Todas las Ciudades</option>
+                    {savedRoutesProvince === 'Cádiz' && [
+                      'Cádiz', 'Jerez de la Frontera', 'Algeciras', 'San Fernando', 'El Puerto de Santa María',
+                      'Chiclana de la Frontera', 'Sanlúcar de Barrameda', 'La Línea de la Concepción',
+                      'Puerto Real', 'Rota', 'Barbate', 'Los Barrios', 'Medina-Sidonia', 'Conil de la Frontera',
+                      'Tarifa', 'Ubrique', 'Arcos de la Frontera', 'Olvera', 'Villamartín', 'Bornos',
+                      'El Gastor', 'Algodonales', 'Zahara', 'Grazalema', 'Villaluenga del Rosario',
+                      'Benaocaz', 'Prado del Rey', 'Setenil de las Bodegas', 'Alcalá del Valle',
+                      'Torre Alháquime', 'Espera', 'Puerto Serrano', 'Algar', 'San José del Valle'
+                    ].map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                    {savedRoutesProvince === 'Huelva' && [
+                      'Huelva', 'Lepe', 'Almonte', 'Ayamonte', 'Moguer', 'Isla Cristina', 'Valverde del Camino',
+                      'Cartaya', 'Punta Umbría', 'Bollullos Par del Condado', 'La Palma del Condado',
+                      'Aljaraque', 'San Juan del Puerto', 'Trigueros', 'Gibraleón', 'Palos de la Frontera',
+                      'Rociana del Condado', 'Bonares', 'Lucena del Puerto', 'Villanueva de los Castillejos',
+                      'Beas', 'Niebla', 'Calañas', 'El Cerro de Andévalo', 'Puebla de Guzmán',
+                      'Zalamea la Real', 'Minas de Riotinto', 'Nerva', 'El Campillo', 'Berrocal',
+                      'Campofrío', 'La Granada de Río-Tinto', 'Alosno', 'El Granado', 'Sanlúcar de Guadiana',
+                      'Villanueva de las Cruces', 'San Bartolomé de la Torre', 'Villablanca', 'San Silvestre de Guzmán',
+                      'Paymogo', 'Rosal de la Frontera', 'Aroche', 'Cortegana', 'Jabugo', 'Galaroza',
+                      'Fuenteheridos', 'Castaño del Robledo', 'Los Marines', 'Valdelarco', 'Corteconcepción',
+                      'Hinojales', 'Cumbres de San Bartolomé', 'Cumbres Mayores', 'Encinasola', 'Cumbres de Enmedio',
+                      'La Nava', 'Arroyomolinos de León', 'Cañaveral de León', 'Fregenal de la Sierra', 'Bodonal de la Sierra',
+                      'Segura de León', 'Fuentes de León', 'Monesterio', 'Cabeza la Vaca', 'Oliva de la Frontera',
+                      'Valencia del Ventoso', 'Zahínos', 'Higuera la Real', 'La Codosera', 'Alconchel',
+                      'Cheles', 'Táliga', 'Valuengo', 'Olivenza', 'Barcarrota', 'Salvaleón', 'Salvatierra de los Barros'
+                    ].map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                    {savedRoutesProvince === '' && savedRoutes.length > 0 && [
+                      ...new Set(savedRoutes.flatMap(route => 
+                        route.customers?.map((c: any) => displayCity(c)).filter((city: string) => city)
+                      ))
+                    ].sort().map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
             
             {/* Rutas Guardadas */}
             <div className="mb-6">
               <h4 className="text-md font-medium text-gray-800 mb-3">Rutas Guardadas</h4>
-              {savedRoutes.length === 0 ? (
-                <div className="text-center py-4">
-                  <Route className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600 text-sm">No hay rutas guardadas</p>
-                </div>
-              ) : (
-                <div className="space-y-3 sm:space-y-4">
-                  {savedRoutes.map((savedRoute) => (
+{(() => {
+                // Filter saved routes by province and city
+                const filteredRoutes = savedRoutes.filter(route => {
+                  if (!savedRoutesProvince && !savedRoutesCity) return true
+                  
+                  const routeProvinces = route.customers?.map((c: any) => displayProvince(c)).filter((p: string) => p) || []
+                  const routeCities = route.customers?.map((c: any) => displayCity(c)).filter((c: string) => c) || []
+                  
+                  const matchesProvince = !savedRoutesProvince || routeProvinces.includes(savedRoutesProvince)
+                  const matchesCity = !savedRoutesCity || routeCities.includes(savedRoutesCity)
+                  
+                  return matchesProvince && matchesCity
+                })
+                
+                if (filteredRoutes.length === 0) {
+                  return (
+                    <div className="text-center py-4">
+                      <Route className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-gray-600 text-sm">
+                        {savedRoutes.length === 0 ? 'No hay rutas guardadas' : 'No hay rutas que coincidan con los filtros'}
+                      </p>
+                    </div>
+                  )
+                }
+                
+                return (
+                  <div className="space-y-3 sm:space-y-4">
+                    {filteredRoutes.map((savedRoute) => (
                     <div 
                       key={savedRoute.id} 
                       className={`border rounded-lg p-3 sm:p-4 ${
@@ -2477,9 +2607,10 @@ export default function Visits() {
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>
