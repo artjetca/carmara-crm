@@ -190,7 +190,7 @@ exports.handler = async (event, context) => {
 
     // Create email message
     const emailSubject = subject || 'Mensaje desde Casmara CRM';
-    const fromEmail = process.env.GMAIL_FROM_EMAIL || 'artjet0805@gmail.com';
+    const fromEmail = process.env.GMAIL_FROM_EMAIL || 'rosariog.almenglo@gmail.com';
     
     let emailContent;
     
@@ -199,7 +199,7 @@ exports.handler = async (event, context) => {
       emailContent = message;
       
       if (includeConfirmation && confirmToken && rescheduleToken) {
-        const baseUrl = process.env.URL || 'https://carmara-crm.netlify.app';
+        const baseUrl = process.env.URL || 'https://casmara-charo.netlify.app';
         const confirmationButtons = generateConfirmationButtons(baseUrl, confirmToken, rescheduleToken);
         
         // Try to insert before closing body or div tag, or append at the end
@@ -214,7 +214,7 @@ exports.handler = async (event, context) => {
       
       // Add tracking pixel to HTML emails
       if (trackingToken) {
-        const trackingPixel = `<img src="${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/email-tracking?token=${trackingToken}" style="width:1px;height:1px;border:0;" alt="" />`;
+        const trackingPixel = `<img src="${process.env.URL || 'https://casmara-charo.netlify.app'}/.netlify/functions/email-tracking?token=${trackingToken}" style="width:1px;height:1px;border:0;" alt="" />`;
         
         if (emailContent.includes('</body>')) {
           emailContent = emailContent.replace('</body>', trackingPixel + '</body>');
@@ -233,11 +233,11 @@ exports.handler = async (event, context) => {
           <div style="background: white; padding: 20px; border-radius: 8px;">
             ${message.replace(/\n/g, '<br>')}
           </div>
-          ${includeConfirmation && confirmToken && rescheduleToken ? generateConfirmationButtons(process.env.URL || 'https://carmara-crm.netlify.app', confirmToken, rescheduleToken) : ''}
+          ${includeConfirmation && confirmToken && rescheduleToken ? generateConfirmationButtons(process.env.URL || 'https://casmara-charo.netlify.app', confirmToken, rescheduleToken) : ''}
         </div>
         <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
           <p>Este mensaje fue enviado desde Casmara CRM | Asesora comercial: Charo | Tel: +34 646 11 67 04</p>
-          ${trackingToken ? `<img src="${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/email-tracking?token=${trackingToken}" style="width:1px;height:1px;border:0;" alt="" />` : ''}
+          ${trackingToken ? `<img src="${process.env.URL || 'https://casmara-charo.netlify.app'}/.netlify/functions/email-tracking?token=${trackingToken}" style="width:1px;height:1px;border:0;" alt="" />` : ''}
         </div>
       </div>`;
     }
@@ -346,7 +346,7 @@ function generateConfirmationButtons(baseUrl, confirmToken, rescheduleToken) {
 
 // Generate appointment confirmation section for plain text emails
 function generateAppointmentConfirmationSection(confirmToken, rescheduleToken) {
-  const baseUrl = process.env.URL || 'https://carmara-crm.netlify.app';
+  const baseUrl = process.env.URL || 'https://casmara-charo.netlify.app';
   
   return `
     <div style="background: #f8f9fa; padding: 25px; margin: 20px 0; border-radius: 8px; text-align: center; border: 2px solid #e9ecef;">
