@@ -797,6 +797,25 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
   const [isDeleting, setIsDeleting] = useState(false)
   const [sendingMessages, setSendingMessages] = useState<string[]>([])
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+  const totalPages = Math.max(1, Math.ceil(messages.length / pageSize))
+
+  useEffect(() => {
+    // keep current page within bounds when totalPages changes
+    if (currentPage > totalPages) setCurrentPage(totalPages)
+  }, [totalPages])
+
+  useEffect(() => {
+    // reset to first page when data set or page size changes
+    setCurrentPage(1)
+  }, [messages, pageSize])
+
+  const startIndex = (currentPage - 1) * pageSize
+  const endIndex = startIndex + pageSize
+  const pageMessages = messages.slice(startIndex, endIndex)
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-ES', {
       day: '2-digit',
@@ -912,6 +931,11 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
   const hasSentMessages = sentMessages.length > 0
   const hasEmailMessages = emailMessages.length > 0
 
+  // Page-scoped email list for selection on current page
+  const pageEmailMessages = pageMessages.filter(m => isEmailMessage(m.message))
+  const selectedCountOnPage = pageEmailMessages.filter(m => selectedMessages.includes(m.id)).length
+  const allSelectedOnPage = selectedCountOnPage === pageEmailMessages.length && pageEmailMessages.length > 0
+
   if (messages.length === 0) {
     return (
       <div className="text-center py-12">
@@ -925,30 +949,33 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
   return (
     <div className="space-y-4">
       {/* Batch Actions Header - Show for email messages */}
-      {hasEmailMessages && (
+      {pageEmailMessages.length > 0 && (
         <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
           <div className="flex items-center space-x-4">
             <Mail className="w-5 h-5 text-blue-600" />
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
-                checked={selectedMessages.length === emailMessages.length && emailMessages.length > 0}
+                checked={allSelectedOnPage}
                 onChange={() => {
-                  if (selectedMessages.length === emailMessages.length) {
-                    setSelectedMessages([])
+                  if (allSelectedOnPage) {
+                    // Unselect only this page's email messages
+                    setSelectedMessages(prev => prev.filter(id => !pageEmailMessages.some(m => m.id === id)))
                   } else {
-                    setSelectedMessages(emailMessages.map(m => m.id))
+                    // Select only this page's email messages
+                    const toAdd = pageEmailMessages.map(m => m.id).filter(id => !selectedMessages.includes(id))
+                    setSelectedMessages(prev => [...prev, ...toAdd])
                   }
                 }}
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm font-medium text-gray-700">
-                Seleccionar todos los emails ({emailMessages.length})
+                Seleccionar todos los emails de esta página ({pageEmailMessages.length})
               </span>
             </label>
             {selectedMessages.length > 0 && (
               <span className="text-sm text-blue-600">
-                {selectedMessages.length} email(s) seleccionado(s)
+                {selectedCountOnPage} email(s) seleccionado(s) en esta página
               </span>
             )}
           </div>
@@ -966,8 +993,8 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
         </div>
       )}
 
-      {/* Messages List */}
-      {messages.map((message) => {
+      {/* Messages List (paginated) */}
+      {pageMessages.map((message) => {
         const customerInfo = extractCustomerInfo(message.message, customers)
         const isEmail = isEmailMessage(message.message)
         
@@ -1082,6 +1109,55 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
           </div>
         )
       })}
+
+      {/* Pagination footer */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
+        <div className="text-sm text-gray-600">
+          Mostrando {messages.length === 0 ? 0 : (startIndex + 1)}–{Math.min(endIndex, messages.length)} de {messages.length}
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            className="px-2 py-1 border border-gray-300 rounded-md text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={5}>5 / página</option>
+            <option value={10}>10 / página</option>
+            <option value={20}>20 / página</option>
+          </select>
+          <div className="flex items-center gap-1">
+            <button
+              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              « Primera
+            </button>
+            <button
+              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              ‹ Anterior
+            </button>
+            <span className="px-2 text-sm text-gray-700">Página {currentPage} de {totalPages}</span>
+            <button
+              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Siguiente ›
+            </button>
+            <button
+              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              Última »
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

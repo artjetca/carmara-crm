@@ -60,7 +60,9 @@ exports.handler = async (event) => {
   const tokenFromQuery = query.get('token') || ''
 
   // Validate Netlify signature if secret is configured
-  const signature = (event.headers && (event.headers['x-netlify-signature'] || event.headers['X-Netlify-Signature'])) || ''
+  const webhookSig = (event.headers && (event.headers['x-webhook-signature'] || event.headers['X-Webhook-Signature'])) || ''
+  const netlifySig = (event.headers && (event.headers['x-netlify-signature'] || event.headers['X-Netlify-Signature'])) || ''
+  const signature = webhookSig || netlifySig
   if (NETLIFY_WEBHOOK_SECRET) {
     if (!signature) {
       return {
@@ -69,11 +71,15 @@ exports.handler = async (event) => {
         body: JSON.stringify({ success: false, error: 'Missing Netlify signature' })
       }
     }
-    const expected = crypto
+    const expectedRaw = crypto
       .createHmac('sha256', NETLIFY_WEBHOOK_SECRET)
       .update(event.body || '', 'utf8')
       .digest('hex')
-    if (!safeCompare(signature, expected)) {
+    const expected = `sha256=${expectedRaw}`
+    // Some providers send just the hex, some prefix with "sha256=" — accept both
+    const normalizedIncoming = String(signature || '')
+    const matches = safeCompare(normalizedIncoming, expected) || safeCompare(normalizedIncoming, expectedRaw)
+    if (!matches) {
       return {
         statusCode: 401,
         headers: baseHeaders,

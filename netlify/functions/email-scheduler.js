@@ -47,13 +47,35 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // Also fetch overall pending (for debug: next upcoming time)
+    const { data: allPending, error: allPendingErr } = await supabase
+      .from('scheduled_messages')
+      .select('id, scheduled_for')
+      .eq('status', 'pending')
+      .order('scheduled_for', { ascending: true })
+      .limit(50);
+
+    if (allPendingErr) {
+      console.error('Error fetching all pending:', allPendingErr);
+    }
+
+    const pendingTotalCount = allPending?.length || 0;
+    const nextPendingAt = pendingTotalCount > 0 ? allPending[0].scheduled_for : null;
+
     console.log(`Found ${pendingEmails?.length || 0} emails to send`);
+    console.log('Pending total:', pendingTotalCount, 'Next pending at:', nextPendingAt, 'Now:', now);
 
     if (!pendingEmails || pendingEmails.length === 0) {
       return {
         statusCode: 200,
         headers: corsHeaders,
-        body: JSON.stringify({ message: 'No emails to send', processed: 0 })
+        body: JSON.stringify({ 
+          message: 'No emails to send', 
+          processed: 0,
+          pending_total: pendingTotalCount,
+          next_pending_at: nextPendingAt,
+          now
+        })
       };
     }
 
@@ -186,7 +208,7 @@ exports.handler = async (event, context) => {
         content = content.replace(/\s*\|\s*Cliente:.*$/, '').trim();
 
         // Use send-email function to handle confirmation buttons properly
-        const sendEmailUrl = `${process.env.URL || 'https://carmara-crm.netlify.app'}/.netlify/functions/send-email`;
+        const sendEmailUrl = `${process.env.URL || 'https://casmara-charo.netlify.app'}/.netlify/functions/send-email`;
         
         const emailResponse = await fetch(sendEmailUrl, {
           method: 'POST',
@@ -247,7 +269,11 @@ exports.handler = async (event, context) => {
         message: 'Email scheduler completed',
         processed,
         failed,
-        total: pendingEmails.length
+        total: pendingEmails.length,
+        due_ids: (pendingEmails || []).map(e => e.id),
+        pending_total: pendingTotalCount,
+        next_pending_at: nextPendingAt,
+        now
       })
     };
 
