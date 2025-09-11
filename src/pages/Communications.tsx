@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
@@ -90,7 +90,7 @@ interface ScheduledMessage {
 
 export default function Communications() {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<'calls' | 'messages'>('calls')
+  const [activeTab, setActiveTab] = useState<'calls' | 'messages'>('messages')
   const [calls, setCalls] = useState<Call[]>([])
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([])
   const [appointmentResponses, setAppointmentResponses] = useState<AppointmentResponse[]>([])
@@ -191,7 +191,7 @@ export default function Communications() {
           full_name
         )
       `)
-      .order('scheduled_for', { ascending: true })
+      .order('scheduled_for', { ascending: false })
       
       if (messagesError) throw messagesError
       
@@ -316,6 +316,9 @@ export default function Communications() {
 
       console.log('Sending email with:', { to: customer.email, subject, content: cleanContent, isHtml })
 
+      // Determine confirmation inclusion from message content or DB column
+      const includeConfirm = message.message.includes('|INCLUDE_CONFIRMATION:true|') || (message as any).include_confirmation === true
+
       // Send email
       const response = await fetch('/.netlify/functions/send-email', {
         method: 'POST',
@@ -330,7 +333,7 @@ export default function Communications() {
           isHtml,
           messageId: messageId,
           customerId: customer.id,
-          includeConfirmation: true // Always include confirmation for manual sends
+          includeConfirmation: includeConfirm
         })
       })
 
@@ -567,11 +570,13 @@ export default function Communications() {
            contactEmail.toLowerCase().includes(searchTerm.toLowerCase())
   })
 
-  const filteredMessages = scheduledMessages.filter(message => 
-    message.creator_profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    message.creator_profile?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    message.message.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredMessages = scheduledMessages
+    .filter(message => 
+      message.creator_profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      message.creator_profile?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      message.message.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => new Date(b.scheduled_for).getTime() - new Date(a.scheduled_for).getTime())
 
   if (loading) {
     return (
@@ -796,6 +801,7 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
   const [selectedMessages, setSelectedMessages] = useState<string[]>([])
   const [isDeleting, setIsDeleting] = useState(false)
   const [sendingMessages, setSendingMessages] = useState<string[]>([])
+  const [isBatchSending, setIsBatchSending] = useState(false)
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -897,6 +903,32 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
     }
   }
 
+  const handleBatchSendNow = async () => {
+    // Only send email-type messages that are selected on this page and still pending
+    const toSend = pageEmailMessages
+      .filter(m => selectedMessages.includes(m.id))
+      .filter(m => m.status === 'pending')
+      .map(m => m.id)
+
+    if (toSend.length === 0) return
+
+    const confirmSend = confirm(`¿Enviar ahora ${toSend.length} email(s) seleccionados?`)
+    if (!confirmSend) return
+
+    setIsBatchSending(true)
+    try {
+      for (const id of toSend) {
+        await handleSendNow(id)
+      }
+      alert('✅ Envío por lotes completado')
+    } catch (e) {
+      console.error('Batch send error:', e)
+      alert('❌ Algunos correos no se pudieron enviar')
+    } finally {
+      setIsBatchSending(false)
+    }
+  }
+
   // Extract customer name and email from message content
   const extractCustomerInfo = (message: string, customers: Customer[]) => {
     // Extract customer ID from message customer_ids or get first customer
@@ -981,14 +1013,25 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
           </div>
           
           {selectedMessages.length > 0 && (
-            <button
-              onClick={handleBatchDelete}
-              disabled={isDeleting}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>{isDeleting ? 'Eliminando...' : `Eliminar ${selectedMessages.length} email(s)`}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBatchSendNow}
+                disabled={isBatchSending}
+                className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Enviar ahora los seleccionados"
+              >
+                <Send className="w-4 h-4" />
+                <span>{isBatchSending ? 'Enviando...' : `Enviar ahora (${selectedCountOnPage})`}</span>
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'Eliminando...' : `Eliminar ${selectedMessages.length} email(s)`}</span>
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1409,6 +1452,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   
   const [formData, setFormData] = useState(loadSavedFormData())
   const [loading, setLoading] = useState(false)
+  const editorRef = useRef<HTMLDivElement | null>(null)
   
   // Auto-save form data to localStorage whenever formData changes
   React.useEffect(() => {
@@ -1499,6 +1543,93 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     if (city) return city
     return ''
   }
+
+  // Basic sanitizer to avoid unsafe tags/attributes in HTML emails
+  const sanitizeHtml = (html: string) => {
+    try {
+      const allowedTags = new Set(['div','p','span','strong','em','u','br','ul','ol','li','a','img','h1','h2','h3','h4','hr','table','tbody','tr','td','blockquote'])
+      const allowedAttrs: Record<string, Set<string>> = {
+        'a': new Set(['href','target','rel']),
+        'img': new Set(['src','alt','width','height'])
+      }
+      const temp = document.createElement('div')
+      temp.innerHTML = html || ''
+      const walk = (node: Node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement
+          const tag = el.tagName.toLowerCase()
+          if (!allowedTags.has(tag)) {
+            // Replace unknown tags with their text content
+            const text = document.createTextNode(el.textContent || '')
+            el.replaceWith(text)
+            return
+          }
+          // Strip event handlers and disallowed attributes
+          ;[...el.attributes].forEach(attr => {
+            const name = attr.name.toLowerCase()
+            if (name.startsWith('on')) {
+              el.removeAttribute(attr.name)
+              return
+            }
+            if ((tag in allowedAttrs)) {
+              if (!allowedAttrs[tag].has(name)) el.removeAttribute(attr.name)
+            } else {
+              // For tags without specific whitelist, remove all attributes except title
+              if (name !== 'title') el.removeAttribute(attr.name)
+            }
+          })
+          // For links, enforce safe target/rel
+          if (tag === 'a') {
+            const href = el.getAttribute('href') || '#'
+            el.setAttribute('href', href)
+            el.setAttribute('target', '_blank')
+            el.setAttribute('rel', 'noopener noreferrer')
+          }
+        }
+        // Recurse
+        node.childNodes.forEach(walk)
+      }
+      temp.childNodes.forEach(walk)
+      return temp.innerHTML
+    } catch {
+      return html || ''
+    }
+  }
+
+  // Rich editor toolbar actions (uses execCommand for simplicity)
+  const exec = (cmd: string, val?: string) => {
+    try { document.execCommand(cmd, false, val) } catch {}
+    // Sync content to state
+    const html = editorRef.current?.innerHTML || ''
+    setFormData(prev => ({ ...prev, htmlContent: html }))
+  }
+  const insertHtml = (html: string) => {
+    try { document.execCommand('insertHTML', false, html) } catch {}
+    const cur = editorRef.current?.innerHTML || ''
+    setFormData(prev => ({ ...prev, htmlContent: cur }))
+  }
+  const insertImage = () => {
+    const url = prompt('URL de la imagen')?.trim()
+    if (!url) return
+    insertHtml(`<img src="${url}" alt="" />`)
+  }
+  const insertLink = () => {
+    const url = prompt('URL del enlace')?.trim()
+    if (!url) return
+    const text = prompt('Texto del enlace (opcional)')?.trim() || url
+    insertHtml(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`)
+  }
+  const insertDivider = () => insertHtml('<hr />')
+
+  // Initialize editor content when switching to HTML mode
+  React.useEffect(() => {
+    if (formData.useHtml && editorRef.current) {
+      const current = editorRef.current.innerHTML
+      if ((formData.htmlContent || '') !== current) {
+        editorRef.current.innerHTML = formData.htmlContent || '<p></p>'
+      }
+    }
+  }, [formData.useHtml])
 
   // Email helper validation
   const isValidEmail = (email?: string) => !!email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -1699,18 +1830,17 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
           const dateTimeStr = `${s.date}T${s.time}:00`
           const utcDate = fromZonedTime(dateTimeStr, 'Europe/Madrid')
           let messageWithMarker = formData.message
-          if (formData.type === 'email') {
-            messageWithMarker = `${formData.message}\n\n|INCLUDE_CONFIRMATION:true|`
-          }
           // Determine message content based on mode
           let messageContent = ''
           if (formData.type === 'email') {
             if (formData.useHtml && formData.htmlContent?.trim()) {
               // HTML mode - store HTML content with subject and confirmation flag
-              messageContent = `Mensaje: ${formData.htmlContent}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
+              const safeHtml = sanitizeHtml(formData.htmlContent)
+              messageContent = `Mensaje: ${safeHtml}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
             } else {
               // Text mode - store regular message with subject and confirmation flag
-              messageContent = `Mensaje: ${messageWithMarker}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
+              const base = formData.message || ''
+              messageContent = `Mensaje: ${base}${formData.subject ? ` (${formData.subject})` : ''}${formData.includeConfirmation ? ' |INCLUDE_CONFIRMATION:true|' : ''}`
             }
           } else {
             messageContent = `SMS: ${formData.message}`
@@ -1962,6 +2092,15 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                   onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
+                <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={!!formData.includeConfirmation}
+                    onChange={(e) => setFormData({ ...formData, includeConfirmation: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Incluir botones de confirmación de cita
+                </label>
               </div>
             )}
             
@@ -1998,16 +2137,30 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
               </label>
               {formData.type === 'email' && formData.useHtml ? (
                 <div>
-                  <textarea
-                    required
-                    rows={8}
-                    value={formData.htmlContent}
-                    onChange={(e) => setFormData({ ...formData, htmlContent: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                    placeholder="Pegue aquí su código HTML para crear emails promocionales atractivos..."
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button type="button" onClick={() => exec('bold')} className="px-2 py-1 text-xs border rounded">Negrita</button>
+                    <button type="button" onClick={() => exec('italic')} className="px-2 py-1 text-xs border rounded">Cursiva</button>
+                    <button type="button" onClick={() => exec('underline')} className="px-2 py-1 text-xs border rounded">Subrayado</button>
+                    <button type="button" onClick={() => exec('insertUnorderedList')} className="px-2 py-1 text-xs border rounded">• Lista</button>
+                    <button type="button" onClick={() => exec('insertOrderedList')} className="px-2 py-1 text-xs border rounded">1. Lista</button>
+                    <button type="button" onClick={() => exec('formatBlock','h2')} className="px-2 py-1 text-xs border rounded">H2</button>
+                    <button type="button" onClick={() => exec('formatBlock','h3')} className="px-2 py-1 text-xs border rounded">H3</button>
+                    <button type="button" onClick={insertImage} className="px-2 py-1 text-xs border rounded">Imagen</button>
+                    <button type="button" onClick={insertLink} className="px-2 py-1 text-xs border rounded">Enlace</button>
+                    <button type="button" onClick={insertDivider} className="px-2 py-1 text-xs border rounded">Separador</button>
+                  </div>
+                  <div
+                    ref={editorRef}
+                    contentEditable
+                    className="w-full min-h-[200px] p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    onInput={(e) => {
+                      const html = (e.target as HTMLDivElement).innerHTML
+                      setFormData(prev => ({ ...prev, htmlContent: html }))
+                    }}
+                    dangerouslySetInnerHTML={{ __html: formData.htmlContent || '<p></p>' }}
                   />
                   <div className="mt-2 text-xs text-gray-600">
-                    <p>💡 <strong>Consejo:</strong> Puede pegar código HTML completo para crear emails promocionales con diseños atractivos, imágenes, botones y estilos personalizados.</p>
+                    <p>💡 <strong>Consejo:</strong> Inserte imágenes, enlaces y formatos básicos. El contenido se sanitiza automáticamente para mayor seguridad.</p>
                   </div>
                 </div>
               ) : (

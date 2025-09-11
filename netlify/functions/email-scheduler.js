@@ -207,6 +207,9 @@ exports.handler = async (event, context) => {
         // Clean up content by removing any trailing customer info
         content = content.replace(/\s*\|\s*Cliente:.*$/, '').trim();
 
+        // Detect if content contains HTML tags (for rich HTML mode)
+        const isHtml = /<[^>]+>/.test(content)
+
         // Use send-email function to handle confirmation buttons properly
         const sendEmailUrl = `${process.env.URL || 'https://casmara-charo.netlify.app'}/.netlify/functions/send-email`;
         
@@ -220,7 +223,7 @@ exports.handler = async (event, context) => {
             subject: subject,
             message: content,
             type: 'email',
-            isHtml: false, // Use default template with confirmation buttons
+            isHtml,
             messageId: emailRecord.id,
             customerId: customer.id,
             includeConfirmation: includeConfirmation

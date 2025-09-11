@@ -10,7 +10,7 @@ export const translations = {
     dataImport: 'Importar Datos',
     customerVerification: 'Verificación de Clientes',
     logout: 'Cerrar Sesión',
-    superSalesman: 'Super Vendedor'
+    superSalesman: 'BELLEZA SIN LÍMITES'
   },
 
   // Autenticación

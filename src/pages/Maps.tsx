@@ -1062,6 +1062,12 @@ export default function Maps() {
                             <MapPin className="w-3 h-3 text-gray-400 mr-1" />
                             <span className="text-xs text-gray-500">{displayCity(customer) || customer.city || customer.province}</span>
                           </div>
+                          <div className="mt-1 text-xs text-gray-500 truncate">
+                            <span className="font-medium">Contrato:</span> {customer.contrato || '—'}
+                          </div>
+                          <div className="mt-0.5 text-xs text-gray-500 line-clamp-1">
+                            <span className="font-medium">Notas:</span> {customer.notes || '—'}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1247,6 +1253,12 @@ export default function Maps() {
                           <div className="flex items-center space-x-2">
                             <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
                             <div className="text-sm text-gray-500">{displayCity(c) || c.city || c.province}</div>
+                          </div>
+                          <div className="text-sm text-gray-700">
+                            <span className="font-medium">Contrato:</span> {c.contrato || '—'}
+                          </div>
+                          <div className="text-sm text-gray-700 break-words">
+                            <span className="font-medium">Notas:</span> {c.notes || '—'}
                           </div>
                           
                           {(c.phone || c.mobile_phone) && (

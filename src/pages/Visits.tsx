@@ -1993,6 +1993,12 @@ export default function Visits() {
                               <MapPin className="w-3 h-3 text-gray-400 mr-1" />
                               <span className="text-xs text-gray-500">{displayCity(customer) || customer.city || customer.province}</span>
                             </div>
+                            <div className="mt-1 text-xs text-gray-500 truncate">
+                              <span className="font-medium">Contrato:</span> {customer.contrato || '—'}
+                            </div>
+                            <div className="mt-0.5 text-xs text-gray-500 line-clamp-1">
+                              <span className="font-medium">Notas:</span> {customer.notes || '—'}
+                            </div>
                           </div>
                           <button
                             onClick={() => addCustomerToRoute(customer)}
@@ -2084,6 +2090,12 @@ export default function Visits() {
                           <div className="flex items-center mt-1">
                             <MapPin className="w-3 h-3 text-gray-400 mr-1" />
                             <span className="text-xs text-gray-500">{displayCity(customer) || customer.city}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500 truncate">
+                            <span className="font-medium">Contrato:</span> {customer.contrato || '—'}
+                          </div>
+                          <div className="mt-0.5 text-xs text-gray-500 line-clamp-1">
+                            <span className="font-medium">Notas:</span> {customer.notes || '—'}
                           </div>
                           {customer.distance && customer.duration && (
                             <div className="flex items-center mt-1 space-x-2 text-xs text-gray-500">
