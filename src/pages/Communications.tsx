@@ -1418,6 +1418,7 @@ interface MessageModalProps {
 
 function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
   const { user } = useAuth()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Load saved form data from localStorage
   const loadSavedFormData = () => {
@@ -1550,7 +1551,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
       const allowedTags = new Set(['div','p','span','strong','em','u','br','ul','ol','li','a','img','h1','h2','h3','h4','hr','table','tbody','tr','td','blockquote'])
       const allowedAttrs: Record<string, Set<string>> = {
         'a': new Set(['href','target','rel']),
-        'img': new Set(['src','alt','width','height'])
+        // Allow CID inline attributes for server-side attachment resolution
+        'img': new Set(['src','alt','width','height','data-bucket','data-path','data-cid','data-type'])
       }
       const temp = document.createElement('div')
       temp.innerHTML = html || ''
@@ -1613,6 +1615,67 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     if (!url) return
     insertHtml(`<img src="${url}" alt="" />`)
   }
+
+  // Trigger hidden file input to upload an image and insert as CID inline
+  const triggerCidUpload = () => fileInputRef.current?.click()
+
+  const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const result = String(reader.result || '')
+        const base64 = result.includes(',') ? result.split(',')[1] : result
+        resolve(base64)
+      } catch (e) { reject(e) }
+    }
+    reader.onerror = (e) => reject(e)
+    reader.readAsDataURL(file)
+  })
+
+  const handleCidFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0]
+      if (!file) return
+      if (!file.type.startsWith('image/')) {
+        alert('Solo se permiten imágenes')
+        e.target.value = ''
+        return
+      }
+      const max = 5 * 1024 * 1024
+      if (file.size > max) {
+        alert('La imagen es demasiado grande. Máximo 5MB')
+        e.target.value = ''
+        return
+      }
+
+      // Convert to base64 and upload via Netlify function (uses Supabase service role)
+      const base64 = await fileToBase64(file)
+      const resp = await fetch('/.netlify/functions/upload-email-asset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type,
+          base64,
+          userId: user?.id || null
+        })
+      })
+      const result = await resp.json()
+      if (!resp.ok || !result.success) {
+        throw new Error(result.error || 'No se pudo subir la imagen')
+      }
+
+      const { bucket, path, cid, contentType } = result
+      // Insert inline CID reference with data-* for server to resolve
+      insertHtml(`<img src="cid:${cid}" data-bucket="${bucket}" data-path="${path}" data-cid="${cid}" data-type="${contentType || file.type}" alt="" />`)
+    } catch (err: any) {
+      console.error('CID upload error:', err)
+      alert(`❌ Error al subir la imagen: ${err?.message || err}`)
+    } finally {
+      if (e?.target) e.target.value = ''
+    }
+  }
+
   const insertLink = () => {
     const url = prompt('URL del enlace')?.trim()
     if (!url) return
@@ -2146,9 +2209,18 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                     <button type="button" onClick={() => exec('formatBlock','h2')} className="px-2 py-1 text-xs border rounded">H2</button>
                     <button type="button" onClick={() => exec('formatBlock','h3')} className="px-2 py-1 text-xs border rounded">H3</button>
                     <button type="button" onClick={insertImage} className="px-2 py-1 text-xs border rounded">Imagen</button>
+                    <button type="button" onClick={triggerCidUpload} className="px-2 py-1 text-xs border rounded bg-emerald-50 hover:bg-emerald-100">Subir imagen (CID)</button>
                     <button type="button" onClick={insertLink} className="px-2 py-1 text-xs border rounded">Enlace</button>
                     <button type="button" onClick={insertDivider} className="px-2 py-1 text-xs border rounded">Separador</button>
                   </div>
+                  {/* Hidden file input for CID uploads */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCidFileChange}
+                    className="hidden"
+                  />
                   <div
                     ref={editorRef}
                     contentEditable
@@ -2160,7 +2232,7 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
                     dangerouslySetInnerHTML={{ __html: formData.htmlContent || '<p></p>' }}
                   />
                   <div className="mt-2 text-xs text-gray-600">
-                    <p>💡 <strong>Consejo:</strong> Inserte imágenes, enlaces y formatos básicos. El contenido se sanitiza automáticamente para mayor seguridad.</p>
+                    <p>💡 <strong>Consejo:</strong> Puede pegar URL de imagen o usar <em>Subir imagen (CID)</em> para incrustarla en el correo. El contenido se sanitiza automáticamente para mayor seguridad.</p>
                   </div>
                 </div>
               ) : (

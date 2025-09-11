@@ -96,6 +96,112 @@ async function createResponseTokens(messageId, customerId) {
   }
 }
 
+// Guess a basic content type from filename when not provided
+function guessContentType(filename) {
+  const lower = (filename || '').toLowerCase()
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  return 'application/octet-stream'
+}
+
+// Extract inline CID attachment descriptors from HTML content
+function extractCidDescriptors(html) {
+  const descriptors = []
+  if (!html) return descriptors
+  // Find all <img ...> tags
+  const imgRegex = /<img\b[^>]*>/gi
+  let match
+  while ((match = imgRegex.exec(html)) !== null) {
+    const tag = match[0]
+    const getAttr = (name) => {
+      const m = new RegExp(name + '\\s*=\\s*"([^"]+)"', 'i').exec(tag)
+      return m ? m[1] : null
+    }
+    const bucket = getAttr('data-bucket')
+    const path = getAttr('data-path')
+    const cidAttr = getAttr('data-cid')
+    const src = getAttr('src')
+    const cid = cidAttr || (src && src.toLowerCase().startsWith('cid:') ? src.slice(4) : null)
+    const contentType = getAttr('data-type')
+    if (bucket && path && cid) {
+      const filename = path.split('/').pop() || `${cid}.bin`
+      descriptors.push({ bucket, path, cid, contentType: contentType || guessContentType(filename), filename })
+    }
+  }
+  return descriptors
+}
+
+// Download file from Supabase Storage and return base64 string
+async function downloadFromStorageBase64(supabase, bucket, path) {
+  try {
+    const { data, error } = await supabase.storage.from(bucket).download(path)
+    if (error) {
+      console.error('Storage download error:', error)
+      return null
+    }
+    // data is a Blob (Node 18 supports arrayBuffer)
+    const buffer = Buffer.from(await data.arrayBuffer())
+    return buffer.toString('base64')
+  } catch (e) {
+    console.error('downloadFromStorageBase64 error:', e)
+    return null
+  }
+}
+
+// Build a raw MIME email. If inlineAttachments provided, build multipart/related
+function buildRawEmail({ fromEmail, to, subject, html, inlineAttachments = [] }) {
+  const encodedSubject = `=?UTF-8?B?${Buffer.from(subject || '').toString('base64')}?=`
+  if (!inlineAttachments || inlineAttachments.length === 0) {
+    const rawMessage = [
+      `From: ${fromEmail}`,
+      `To: ${to}`,
+      `Subject: ${encodedSubject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      html
+    ].join('\n')
+    return Buffer.from(rawMessage).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  }
+
+  const boundary = '=_Part_' + Math.random().toString(36).slice(2)
+  const lines = []
+  lines.push(`From: ${fromEmail}`)
+  lines.push(`To: ${to}`)
+  lines.push(`Subject: ${encodedSubject}`)
+  lines.push('MIME-Version: 1.0')
+  lines.push(`Content-Type: multipart/related; boundary="${boundary}"`)
+  lines.push('')
+  // HTML body part
+  lines.push(`--${boundary}`)
+  lines.push('Content-Type: text/html; charset="UTF-8"')
+  lines.push('Content-Transfer-Encoding: 7bit')
+  lines.push('')
+  lines.push(html)
+  // Inline attachments
+  for (const att of inlineAttachments) {
+    lines.push(`--${boundary}`)
+    lines.push(`Content-Type: ${att.contentType || 'application/octet-stream'}`)
+    lines.push('Content-Transfer-Encoding: base64')
+    lines.push(`Content-ID: <${att.cid}>`)
+    lines.push(`Content-Disposition: inline; filename="${att.filename || att.cid}"`)
+    lines.push('')
+    // Split base64 into lines <= 76 chars (RFC 2045)
+    const b64 = att.base64 || ''
+    for (let i = 0; i < b64.length; i += 76) {
+      lines.push(b64.slice(i, i + 76))
+    }
+    lines.push('')
+  }
+  lines.push(`--${boundary}--`)
+
+  const raw = lines.join('\n')
+  return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 exports.handler = async (event, context) => {
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -241,22 +347,26 @@ exports.handler = async (event, context) => {
         </div>
       </div>`;
     }
-    
-    const rawMessage = [
-      `From: ${fromEmail}`,
-      `To: ${to}`,
-      `Subject: =?UTF-8?B?${Buffer.from(emailSubject).toString('base64')}?=`,
-      'Content-Type: text/html; charset=utf-8',
-      '',
-      emailContent
-    ].join('\n');
 
-    // Encode message in base64
-    const encodedMessage = Buffer.from(rawMessage)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
+    // Check for inline CID images referencing Supabase Storage
+    let inlineAttachments = []
+    if (isHtml && supabase) {
+      const descriptors = extractCidDescriptors(emailContent)
+      // Download and build base64 attachments
+      for (const d of descriptors) {
+        const base64 = await downloadFromStorageBase64(supabase, d.bucket, d.path)
+        if (base64) inlineAttachments.push({ ...d, base64 })
+      }
+    }
+
+    // Build raw MIME email with or without inline attachments
+    const encodedMessage = buildRawEmail({
+      fromEmail,
+      to,
+      subject: emailSubject,
+      html: emailContent,
+      inlineAttachments
+    })
 
     // Send email
     const result = await gmail.users.messages.send({
