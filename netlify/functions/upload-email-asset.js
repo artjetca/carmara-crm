@@ -74,11 +74,19 @@ exports.handler = async (event) => {
 
     // Generate a short CID
     const cid = 'img_' + Math.random().toString(36).slice(2, 10) + '_' + rand
+    // Try to create a signed URL for preview in the editor (1 hour)
+    let previewUrl = null
+    try {
+      const { data: signed, error: signedErr } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
+      if (!signedErr && signed?.signedUrl) previewUrl = signed.signedUrl
+    } catch (e) {
+      console.warn('Signed URL creation failed:', e?.message || e)
+    }
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ success: true, bucket, path, cid, contentType })
+      body: JSON.stringify({ success: true, bucket, path, cid, contentType, previewUrl })
     }
   } catch (error) {
     console.error('upload-email-asset error:', error)

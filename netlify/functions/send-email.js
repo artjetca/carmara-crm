@@ -202,6 +202,26 @@ function buildRawEmail({ fromEmail, to, subject, html, inlineAttachments = [] })
   return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// Force <img> tags that carry data-cid to reference src="cid:<cid>"
+function forceCidSrcForDescriptors(html, descriptors) {
+  if (!html || !descriptors || descriptors.length === 0) return html
+  let out = html
+  for (const d of descriptors) {
+    const cid = d.cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // escape for regex
+    const tagRegex = new RegExp(`<img([^>]*data-cid="${cid}"[^>]*)>`, 'gi')
+    out = out.replace(tagRegex, (full, attrs) => {
+      // Replace any existing src with cid or inject if missing
+      if (/\bsrc\s*=\s*"[^"]*"/i.test(attrs)) {
+        attrs = attrs.replace(/\bsrc\s*=\s*"[^"]*"/i, `src="cid:${d.cid}"`)
+      } else {
+        attrs = ` src="cid:${d.cid}"` + attrs
+      }
+      return `<img${attrs}>`
+    })
+  }
+  return out
+}
+
 exports.handler = async (event, context) => {
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -352,6 +372,10 @@ exports.handler = async (event, context) => {
     let inlineAttachments = []
     if (isHtml && supabase) {
       const descriptors = extractCidDescriptors(emailContent)
+      // Ensure HTML references cid: for inline parts
+      if (descriptors.length > 0) {
+        emailContent = forceCidSrcForDescriptors(emailContent, descriptors)
+      }
       // Download and build base64 attachments
       for (const d of descriptors) {
         const base64 = await downloadFromStorageBase64(supabase, d.bucket, d.path)

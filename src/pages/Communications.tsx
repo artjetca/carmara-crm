@@ -1606,6 +1606,8 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
     setFormData(prev => ({ ...prev, htmlContent: html }))
   }
   const insertHtml = (html: string) => {
+    // Ensure editor has focus so execCommand can insert at caret
+    try { editorRef.current?.focus() } catch {}
     try { document.execCommand('insertHTML', false, html) } catch {}
     const cur = editorRef.current?.innerHTML || ''
     setFormData(prev => ({ ...prev, htmlContent: cur }))
@@ -1647,30 +1649,39 @@ function MessageModal({ customers, onClose, onSave }: MessageModalProps) {
         e.target.value = ''
         return
       }
-
-      // Convert to base64 and upload via Netlify function (uses Supabase service role)
+      // Convert to base64 for guaranteed preview
       const base64 = await fileToBase64(file)
-      const resp = await fetch('/.netlify/functions/upload-email-asset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          contentType: file.type,
-          base64,
-          userId: user?.id || null
+      let bucket = 'email-assets', path = '', cid = '', contentType = file.type, previewUrl: string | null = null
+      try {
+        // Try to upload via Netlify function (uses Supabase service role)
+        const resp = await fetch('/.netlify/functions/upload-email-asset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            contentType: file.type,
+            base64,
+            userId: user?.id || null
+          })
         })
-      })
-      const result = await resp.json()
-      if (!resp.ok || !result.success) {
-        throw new Error(result.error || 'No se pudo subir la imagen')
+        const result = await resp.json()
+        if (resp.ok && result.success) {
+          bucket = result.bucket
+          path = result.path
+          cid = result.cid
+          contentType = result.contentType || file.type
+          previewUrl = result.previewUrl || null
+        } else {
+          console.warn('Upload function error:', result)
+        }
+      } catch (uploadErr) {
+        console.warn('Upload function unreachable, using local preview only', uploadErr)
       }
 
-      const { bucket, path, cid, contentType } = result
-      // Insert inline CID reference with data-* for server to resolve
-      insertHtml(`<img src="cid:${cid}" data-bucket="${bucket}" data-path="${path}" data-cid="${cid}" data-type="${contentType || file.type}" alt="" />`)
-    } catch (err: any) {
-      console.error('CID upload error:', err)
-      alert(`❌ Error al subir la imagen: ${err?.message || err}`)
+      const src = previewUrl || `data:${contentType};base64,${base64}`
+      const cidAttr = cid || `cid_${Date.now().toString(36)}`
+      // Insert inline CID reference with data-* for server to resolve when sending
+      insertHtml(`<img src="${src}" data-bucket="${bucket}" data-path="${path}" data-cid="${cidAttr}" data-type="${contentType}" alt="" />`)
     } finally {
       if (e?.target) e.target.value = ''
     }
