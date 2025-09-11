@@ -57,8 +57,15 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Get customers data
-    const customerIds = [...new Set(pendingEmails.flatMap(email => email.customer_ids))];
+    // Get customers data (support both new: customer_ids[] and legacy: customer_id)
+    const customerIds = [...new Set(
+      (pendingEmails || []).flatMap((email) => {
+        if (Array.isArray(email?.customer_ids)) return email.customer_ids.filter(Boolean)
+        if (typeof email?.customer_ids === 'string' && email.customer_ids) return [email.customer_ids]
+        if (email?.customer_id) return [email.customer_id]
+        return []
+      })
+    )];
     const { data: customers, error: customerError } = await supabase
       .from('customers')
       .select('id, name, email, company')
@@ -88,19 +95,32 @@ exports.handler = async (event, context) => {
     // Process each email
     for (const emailRecord of pendingEmails) {
       try {
-        // Find customer for this email - handle both array and single customer_id formats
-        let customer;
-        if (emailRecord.customer_ids && Array.isArray(emailRecord.customer_ids)) {
-          // New format: customer_ids array
-          customer = customers?.find(c => emailRecord.customer_ids.includes(c.id));
-        } else if (emailRecord.customer_id) {
-          // Legacy format: single customer_id
-          customer = customers?.find(c => c.id === emailRecord.customer_id);
+        // Resolve target customer IDs (robust to both formats)
+        const targetIds = Array.isArray(emailRecord?.customer_ids)
+          ? emailRecord.customer_ids.filter(Boolean)
+          : (emailRecord?.customer_ids && typeof emailRecord.customer_ids === 'string')
+            ? [emailRecord.customer_ids]
+            : (emailRecord?.customer_id ? [emailRecord.customer_id] : [])
+
+        // Find customer in pre-fetched list
+        let customer = customers?.find(c => targetIds.includes(c.id));
+
+        // Fallback: fetch individually if not found (e.g., legacy row inserted earlier)
+        if (!customer && targetIds.length > 0) {
+          try {
+            const { data: single, error: singleErr } = await supabase
+              .from('customers')
+              .select('id, name, email, company')
+              .eq('id', targetIds[0])
+              .single();
+            if (!singleErr && single) customer = single;
+          } catch (_) {}
         }
+
         
         if (!customer) {
-          console.log(`Skipping email ${emailRecord.id} - customer not found in database`);
-          console.log(`Customer IDs: ${JSON.stringify(emailRecord.customer_ids || emailRecord.customer_id)}`);
+          console.log(`[Scheduler] Skipping email ${emailRecord.id} - customer not found in database`);
+          console.log(`[Scheduler] Candidate IDs: ${JSON.stringify(targetIds)}`);
           await supabase
             .from('scheduled_messages')
             .update({ 
