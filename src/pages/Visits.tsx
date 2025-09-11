@@ -1761,7 +1761,7 @@ export default function Visits() {
     const province = displayProvince(customer)
     if (province) parts.push(province)
     // Add country to improve geocoding stability
-    parts.push('Spain')
+    parts.push('España')
     return parts.join(', ') || 'Sin dirección'
   }
 
@@ -1989,9 +1989,9 @@ export default function Visits() {
                                 {customer.phone || (customer as any).mobile_phone}
                               </a>
                             )}
-                            <div className="flex items-center mt-1">
-                              <MapPin className="w-3 h-3 text-gray-400 mr-1" />
-                              <span className="text-xs text-gray-500">{displayCity(customer) || customer.city || customer.province}</span>
+                            <div className="flex items-start mt-1">
+                              <MapPin className="w-3 h-3 text-gray-400 mr-1 mt-0.5 flex-shrink-0" />
+                              <span className="text-xs text-gray-600 break-words">{getAddress(customer)}</span>
                             </div>
                             <div className="mt-1 text-xs text-gray-500 truncate">
                               <span className="font-medium">Contrato:</span> {customer.contrato || '—'}
@@ -2087,9 +2087,9 @@ export default function Visits() {
                               {customer.phone || (customer as any).mobile_phone}
                             </a>
                           )}
-                          <div className="flex items-center mt-1">
-                            <MapPin className="w-3 h-3 text-gray-400 mr-1" />
-                            <span className="text-xs text-gray-500">{displayCity(customer) || customer.city}</span>
+                          <div className="flex items-start mt-1">
+                            <MapPin className="w-3 h-3 text-gray-400 mr-1 mt-0.5 flex-shrink-0" />
+                            <span className="text-xs text-gray-600 break-words">{getAddress(customer)}</span>
                           </div>
                           <div className="mt-1 text-xs text-gray-500 truncate">
                             <span className="font-medium">Contrato:</span> {customer.contrato || '—'}
