@@ -951,6 +951,23 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
     }
   }
 
+  // Auto-batch send helper: send all given ids concurrently without confirmation
+  const autoSendNowForIds = async (ids: string[]) => {
+    if (!ids || ids.length === 0) return
+    setIsBatchSending(true)
+    try {
+      ;(window as any).__batchSendSilent = true
+      await Promise.all(ids.map((id) => handleSendNow(id)))
+      alert(`✅ Envío automático completado (${ids.length})`)
+    } catch (e) {
+      console.error('Auto batch send error:', e)
+      alert('❌ Algunos correos no se pudieron enviar')
+    } finally {
+      ;(window as any).__batchSendSilent = false
+      setIsBatchSending(false)
+    }
+  }
+
   // Extract customer name and email from message content
   const extractCustomerInfo = (message: string, customers: Customer[]) => {
     // Extract customer ID from message customer_ids or get first customer
