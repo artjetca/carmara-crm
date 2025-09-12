@@ -58,6 +58,16 @@ export default function Visits() {
   const [savedRoutesCity, setSavedRoutesCity] = useState('')
   // Edit mode for save functionality
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null)
+  // Detect if a saved route already exists with the same name (case-insensitive)
+  const existingRouteSameName = useMemo(() => {
+    try {
+      const name = String(routeName || '').trim().toLowerCase()
+      if (!name) return null
+      return (savedRoutes || []).find((r: any) => String(r?.name || '').trim().toLowerCase() === name) || null
+    } catch {
+      return null
+    }
+  }, [routeName, savedRoutes])
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
@@ -1087,22 +1097,27 @@ export default function Visits() {
   }
 
   // 儲存路線 (新增或更新)
-  const saveRoute = async (saveAsNew = false) => {
+  const saveRoute = async (saveAsNew = false, updateRouteId?: string) => {
     if (!routeName.trim()) {
       alert('Por favor ingresa un nombre para la ruta')
       return
     }
     
-    const isUpdating = editingRouteId && !saveAsNew
+    const targetUpdateId = !saveAsNew ? (updateRouteId || editingRouteId || null) : null
+    const isUpdating = !!targetUpdateId
     const routeData = {
-      id: isUpdating ? editingRouteId : Date.now().toString(),
+      id: isUpdating ? (targetUpdateId as string) : Date.now().toString(),
       name: routeName,
       date: routeDate || null,
       time: routeTime || null,
       customers: routeCustomers,
       totalDistance: totalDistance,
       totalDuration: totalDuration,
-      createdAt: isUpdating ? (savedRoutes.find(r => r.id === editingRouteId)?.createdAt || new Date().toISOString()) : new Date().toISOString()
+      createdAt: isUpdating
+        ? ((savedRoutes.find((r: any) => r.id === targetUpdateId)?.createdAt)
+          || (savedRoutes.find((r: any) => String(r?.name || '').trim().toLowerCase() === String(routeName || '').trim().toLowerCase())?.createdAt)
+          || new Date().toISOString())
+        : new Date().toISOString()
     }
 
     try {
@@ -1128,7 +1143,7 @@ export default function Visits() {
                 total_distance: routeData.totalDistance,
                 total_duration: routeData.totalDuration
               })
-              .eq('id', editingRouteId)
+              .eq('id', targetUpdateId as string)
               .select()
 
             if (!error && data && Array.isArray(data) && data.length > 0) {
@@ -1171,7 +1186,7 @@ export default function Visits() {
       if (isUpdating) {
         // Update existing route
         updatedRoutes = existingRoutes.map((route: any) => 
-          route.id === editingRouteId ? routeData : route
+          route.id === targetUpdateId ? routeData : route
         )
       } else {
         // Add new route
@@ -1221,8 +1236,8 @@ export default function Visits() {
     calculateRouteDistanceAndTime(routeData.customers)
   }
   
-  // Wrapper functions for button handlers (fixing TypeScript error ID: 7f1cb7fe-eb10-4cc1-8a70-62125cbf893a)
-  const handleSaveRoute = () => saveRoute(false)
+  // Wrapper functions for button handlers (support optional updateRouteId for same-name updates)
+  const handleSaveRoute = (updateRouteId?: string) => saveRoute(false, updateRouteId)
   const handleSaveAsNew = () => saveRoute(true)
 
   // 完成路線並記錄到儀表板
@@ -2416,6 +2431,12 @@ export default function Visits() {
                   <li>Distancia: {totalDistance.toFixed(1)} km</li>
                 </ul>
               </div>
+              {!!existingRouteSameName && (!editingRouteId || editingRouteId !== existingRouteSameName.id) && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                  Ya existe una ruta con este nombre. Puedes <span className="font-semibold">Actualizar Ruta</span> para sobrescribirla
+                  o <span className="font-semibold">Guardar Como Nueva</span> para crear una copia.
+                </div>
+              )}
             </div>
             <div className="flex space-x-3 mt-6">
               <button
@@ -2424,16 +2445,16 @@ export default function Visits() {
               >
                 Cancelar
               </button>
-              {editingRouteId ? (
+              {(editingRouteId || existingRouteSameName) ? (
                 <>
                   <button
-                    onClick={handleSaveRoute}
+                    onClick={() => handleSaveRoute(editingRouteId || (existingRouteSameName as any)?.id)}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     Actualizar Ruta
                   </button>
                   <button
-                    onClick={handleSaveAsNew}
+                    onClick={() => handleSaveAsNew()}
                     className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                   >
                     Guardar Como Nueva
@@ -2441,7 +2462,7 @@ export default function Visits() {
                 </>
               ) : (
                 <button
-                  onClick={handleSaveRoute}
+                  onClick={() => handleSaveRoute()}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >
                   Guardar
