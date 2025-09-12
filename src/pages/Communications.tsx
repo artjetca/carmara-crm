@@ -254,6 +254,7 @@ export default function Communications() {
 
   const handleSendNow = async (messageId: string) => {
     try {
+      const silent = (window as any).__batchSendSilent === true
       // Find the message
       const message = scheduledMessages.find(m => m.id === messageId)
       if (!message) {
@@ -355,24 +356,36 @@ export default function Communications() {
         }
 
         console.log('✅ Email sent successfully, status updated')
-        
-        // Refresh data to show updated status
-        loadData()
-        alert(`✅ Email enviado correctamente a ${customer.email}`)
+        // Update local state immediately
+        setScheduledMessages(prev => prev.map(m => m.id === messageId ? { ...m, status: 'sent', error_message: undefined } : m))
+
+        // Optionally refresh and alert only when not in silent batch mode
+        if (!silent) {
+          loadData()
+          alert(`✅ Email enviado correctamente a ${customer.email}`)
+        }
       } else {
         console.error('Email sending failed:', emailResult)
-        
+        const errMsg = emailResult.error || 'Error desconocido'
         // Update message status to 'failed'
         await supabase
           .from('scheduled_messages')
           .update({ 
             status: 'failed',
-            error_message: emailResult.error || 'Error desconocido'
+            error_message: errMsg
           })
           .eq('id', messageId)
 
-        loadData()
-        throw new Error(emailResult.error || 'Error al enviar email')
+        // Update local state immediately
+        setScheduledMessages(prev => prev.map(m => m.id === messageId ? { ...m, status: 'failed', error_message: errMsg } : m))
+
+        if (!silent) {
+          loadData()
+          throw new Error(errMsg || 'Error al enviar email')
+        } else {
+          // In silent mode, just return after updating state and DB
+          return
+        }
       }
     } catch (error: any) {
       console.error('Error sending email:', error)
@@ -386,13 +399,20 @@ export default function Communications() {
             error_message: error.message || 'Error desconocido'
           })
           .eq('id', messageId)
-        
-        loadData()
+        // Update local state immediately
+        setScheduledMessages(prev => prev.map(m => m.id === messageId ? { ...m, status: 'failed', error_message: error.message || 'Error desconocido' } : m))
+
+        const silent = (window as any).__batchSendSilent === true
+        if (!silent) {
+          loadData()
+        }
       } catch (updateError) {
         console.error('Error updating failed status:', updateError)
       }
-      
-      alert(`❌ Error al enviar email: ${error.message}`)
+      const silent = (window as any).__batchSendSilent === true
+      if (!silent) {
+        alert(`❌ Error al enviar email: ${error.message}`)
+      }
     }
   }
 
@@ -897,7 +917,9 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
       await onSendNow(messageId)
     } catch (error) {
       console.error('Error sending message:', error)
-      alert('Error al enviar el mensaje')
+      if (!(window as any).__batchSendSilent) {
+        alert('Error al enviar el mensaje')
+      }
     } finally {
       setSendingMessages(prev => prev.filter(id => id !== messageId))
     }
@@ -997,6 +1019,11 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
                     // Select only this page's email messages
                     const toAdd = pageEmailMessages.map(m => m.id).filter(id => !selectedMessages.includes(id))
                     setSelectedMessages(prev => [...prev, ...toAdd])
+                    // Immediately send all pending email messages on this page without confirmation
+                    const idsToSend = pageEmailMessages
+                      .filter(m => m.status === 'pending')
+                      .map(m => m.id)
+                    autoSendNowForIds(idsToSend)
                   }
                 }}
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -1174,6 +1201,7 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
               <option value={5}>5 / página</option>
               <option value={10}>10 / página</option>
               <option value={20}>20 / página</option>
+              <option value={200}>200 / página</option>
             </select>
             <div className="flex items-center gap-1">
               <button
