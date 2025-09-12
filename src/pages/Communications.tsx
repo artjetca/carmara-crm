@@ -982,10 +982,10 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
     <div className="space-y-4">
       {/* Batch Actions Header - Show for email messages */}
       {pageEmailMessages.length > 0 && (
-        <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center space-x-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
             <Mail className="w-5 h-5 text-blue-600" />
-            <label className="flex items-center space-x-2">
+            <label className="flex items-center space-x-2 max-w-full">
               <input
                 type="checkbox"
                 checked={allSelectedOnPage}
@@ -1001,12 +1001,12 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
                 }}
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              <span className="text-sm font-medium text-gray-700">
+              <span className="text-xs sm:text-sm font-medium text-gray-700 break-words">
                 Seleccionar todos los emails de esta página ({pageEmailMessages.length})
               </span>
             </label>
             {selectedMessages.length > 0 && (
-              <span className="text-sm text-blue-600">
+              <span className="text-xs sm:text-sm text-blue-600">
                 {selectedCountOnPage} email(s) seleccionado(s) en esta página
               </span>
             )}
@@ -1154,50 +1154,67 @@ function MessagesList({ messages, customers, appointmentResponses, emailTracking
       })}
 
       {/* Pagination footer */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-        <div className="text-sm text-gray-600">
-          Mostrando {messages.length === 0 ? 0 : (startIndex + 1)}–{Math.min(endIndex, messages.length)} de {messages.length}
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            className="px-2 py-1 border border-gray-300 rounded-md text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            <option value={5}>5 / página</option>
-            <option value={10}>10 / página</option>
-            <option value={20}>20 / página</option>
-          </select>
-          <div className="flex items-center gap-1">
-            <button
-              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
+      <div className="pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 flex-wrap">
+          <div className="text-xs sm:text-sm text-gray-600">
+            <span className="sm:hidden">
+              {messages.length === 0 ? 0 : (startIndex + 1)}–{Math.min(endIndex, messages.length)} / {messages.length} · Pág {currentPage}/{totalPages}
+            </span>
+            <span className="hidden sm:inline">
+              Mostrando {messages.length === 0 ? 0 : (startIndex + 1)}–{Math.min(endIndex, messages.length)} de {messages.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+            <select
+              className="px-2 py-1 border border-gray-300 rounded-md text-xs sm:text-sm"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              aria-label="Tamaño de página"
             >
-              « Primera
-            </button>
-            <button
-              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              ‹ Anterior
-            </button>
-            <span className="px-2 text-sm text-gray-700">Página {currentPage} de {totalPages}</span>
-            <button
-              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Siguiente ›
-            </button>
-            <button
-              className="px-2 py-1 border rounded-md text-sm disabled:opacity-50"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-            >
-              Última »
-            </button>
+              <option value={5}>5 / página</option>
+              <option value={10}>10 / página</option>
+              <option value={20}>20 / página</option>
+            </select>
+            <div className="flex items-center gap-1">
+              <button
+                className="hidden sm:inline-flex px-2 py-1 border rounded-md text-sm disabled:opacity-50"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                aria-label="Primera página"
+              >
+                « Primera
+              </button>
+              <button
+                className="px-2 py-1 border rounded-md text-xs sm:text-sm disabled:opacity-50"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                aria-label="Anterior"
+              >
+                <span className="sm:hidden">‹</span>
+                <span className="hidden sm:inline">‹ Anterior</span>
+              </button>
+              <span className="px-2 text-xs sm:text-sm text-gray-700">
+                <span className="sm:hidden">Pág {currentPage}/{totalPages}</span>
+                <span className="hidden sm:inline">Página {currentPage} de {totalPages}</span>
+              </span>
+              <button
+                className="px-2 py-1 border rounded-md text-xs sm:text-sm disabled:opacity-50"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                aria-label="Siguiente"
+              >
+                <span className="sm:hidden">›</span>
+                <span className="hidden sm:inline">Siguiente ›</span>
+              </button>
+              <button
+                className="hidden sm:inline-flex px-2 py-1 border rounded-md text-sm disabled:opacity-50"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                aria-label="Última página"
+              >
+                Última »
+              </button>
+            </div>
           </div>
         </div>
       </div>
