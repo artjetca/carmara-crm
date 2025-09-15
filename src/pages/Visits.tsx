@@ -76,8 +76,8 @@ export default function Visits() {
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-  // Map provider switch: 'google' (default) or 'leaflet'
-  const mapProvider: 'google' | 'leaflet' = (import.meta as any).env?.VITE_MAP_PROVIDER === 'leaflet' ? 'leaflet' : 'google'
+  // Map provider switch: 'google' or 'leaflet' (default to 'leaflet')
+  const mapProvider: 'google' | 'leaflet' = (import.meta as any).env?.VITE_MAP_PROVIDER === 'google' ? 'google' : 'leaflet'
   // Per-user draft key for autosave of route planning
   const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
   if (mapProvider === 'google') {
@@ -2418,9 +2418,11 @@ export default function Visits() {
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
                       Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
                     </span>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
-                      Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
-                    </span>
+                    {mapProvider !== 'leaflet' && (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
+                        Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
+                      </span>
+                    )}
                     <div className="ml-auto flex items-center gap-2">
                       <button
                         onClick={reorderRouteByCurrentLocation}
@@ -2543,10 +2545,12 @@ export default function Visits() {
                     <div className="text-xs text-blue-700">Distancia</div>
                     <div className="font-semibold text-blue-700">{totalDistance.toFixed(1)} km</div>
                   </div>
-                  <div className="bg-green-50 rounded-lg p-2">
-                    <div className="text-xs text-green-700">Tiempo</div>
-                    <div className="font-semibold text-green-700">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</div>
-                  </div>
+                  {mapProvider !== 'leaflet' && (
+                    <div className="bg-green-50 rounded-lg p-2">
+                      <div className="text-xs text-green-700">Tiempo</div>
+                      <div className="font-semibold text-green-700">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</div>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button onClick={reorderRouteByCurrentLocation} className="inline-flex items-center justify-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
@@ -2781,7 +2785,10 @@ export default function Visits() {
                           </div>
                           <div>
                             <span className="font-medium">
-                              {savedRoute.customers.length} paradas • {savedRoute.totalDistance.toFixed(1)} km • {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min
+                              {savedRoute.customers.length} paradas • {savedRoute.totalDistance.toFixed(1)} km
+                              {mapProvider !== 'leaflet' && (
+                                <> • {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min</>
+                              )}
                             </span>
                           </div>
                           <div className="text-xs text-gray-500">
