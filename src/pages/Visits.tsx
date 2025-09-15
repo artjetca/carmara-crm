@@ -28,6 +28,11 @@ import {
   Upload
 } from 'lucide-react'
 
+// Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
+// Note: remember to `npm i leaflet @types/leaflet` in the project
+import * as L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
 interface RouteCustomer extends Customer {
   order: number
   distance?: number // km
@@ -71,11 +76,15 @@ export default function Visits() {
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  // Map provider switch: 'google' (default) or 'leaflet'
+  const mapProvider: 'google' | 'leaflet' = (import.meta as any).env?.VITE_MAP_PROVIDER === 'leaflet' ? 'leaflet' : 'google'
   // Per-user draft key for autosave of route planning
   const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
-  console.log('[RoutePlanning] Maps API Key:', mapsApiKey ? 'Present' : 'Missing')
-  if (!mapsApiKey) {
-    console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
+  if (mapProvider === 'google') {
+    console.log('[RoutePlanning] Maps API Key:', mapsApiKey ? 'Present' : 'Missing')
+    if (!mapsApiKey) {
+      console.warn('[RoutePlanning] VITE_GOOGLE_MAPS_API_KEY is missing on frontend. Map embed will not render directions.')
+    }
   }
 
   // Helpers for tel: links and safe HTML in InfoWindow
@@ -154,6 +163,13 @@ export default function Visits() {
   const myLocationInfoRef = useRef<any>(null)
   const bottomSheetRef = useRef<HTMLDivElement | null>(null)
 
+  // Leaflet map refs/state (for OSM rendering)
+  const leafletMapInstanceRef = useRef<L.Map | null>(null)
+  const leafletMarkersRef = useRef<L.Marker[]>([])
+  const leafletPolylineRef = useRef<L.Polyline | null>(null)
+  // Cache coords per customer id when in Leaflet mode to avoid re-geocoding
+  const leafletCoordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
+
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
     if ((window as any).google?.maps) return (window as any).google
@@ -182,6 +198,8 @@ export default function Visits() {
 
   // Render route on Google Maps with numbered markers
   useEffect(() => {
+    // Only run Google Maps renderer when provider is 'google'
+    if (mapProvider !== 'google') return
     const render = async () => {
       try {
         // Require API key
@@ -404,7 +422,110 @@ export default function Visits() {
     }
     render()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapsApiKey, routeCustomers])
+  }, [mapsApiKey, routeCustomers, mapProvider])
+
+  // Render route on Leaflet (OSM) with numbered markers and polyline
+  useEffect(() => {
+    if (mapProvider !== 'leaflet') return
+
+    const renderLeaflet = async () => {
+      try {
+        if (!mapRef.current) return
+
+        // Init Leaflet map once
+        if (!leafletMapInstanceRef.current) {
+          const map = L.map(mapRef.current, {
+            zoomControl: true,
+          })
+          leafletMapInstanceRef.current = map
+
+          // Basic OSM tile layer (note: for production consider a tile provider with SLA)
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19,
+          }).addTo(map)
+
+          map.setView([36.7213, -4.4214], routeCustomers.length ? 10 : 7)
+        }
+
+        const map = leafletMapInstanceRef.current!
+
+        // Clear existing markers/polyline
+        try {
+          leafletMarkersRef.current.forEach(m => m.remove())
+          leafletMarkersRef.current = []
+          if (leafletPolylineRef.current) {
+            leafletPolylineRef.current.remove()
+            leafletPolylineRef.current = null
+          }
+        } catch {}
+
+        if (routeCustomers.length === 0) {
+          map.setView([36.7213, -4.4214], 8)
+          return
+        }
+
+        // Geocode all stops to coordinates (uses existing serverless geocode)
+        const coords = await Promise.all(
+          routeCustomers.map(async (c) => {
+            // reuse cached coords if present
+            const cached = leafletCoordsRef.current[c.id]
+            if (cached) return cached
+            const addr = getAddress(c)
+            const gc = await geocodeAddress(addr)
+            if (gc) {
+              const val = { lat: gc.lat, lng: gc.lng }
+              leafletCoordsRef.current[c.id] = val
+              return val
+            }
+            return null
+          })
+        )
+        const positions = coords.filter(Boolean) as Array<{ lat: number; lng: number }>
+
+        if (positions.length === 0) {
+          // No geocoded points
+          map.setView([36.7213, -4.4214], 8)
+          return
+        }
+
+        // Helper: numbered divIcon
+        const createLeafletNumberedIcon = (n: number) =>
+          L.divIcon({
+            html: `<div style="width:34px;height:34px;border-radius:17px;background:#2563EB;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,0.25)">${n}</div>`,
+            className: '',
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+          })
+
+        // Place markers and build polyline path
+        const latlngs: L.LatLngExpression[] = []
+        positions.forEach((pos, idx) => {
+          latlngs.push([pos.lat, pos.lng])
+          const marker = L.marker([pos.lat, pos.lng], { icon: createLeafletNumberedIcon(idx + 1) })
+          marker.addTo(map)
+          leafletMarkersRef.current.push(marker)
+        })
+
+        // Draw polyline connecting stops
+        if (latlngs.length >= 2) {
+          leafletPolylineRef.current = L.polyline(latlngs, { color: '#2563EB', weight: 5, opacity: 0.9 })
+          leafletPolylineRef.current.addTo(map)
+        }
+
+        // Fit bounds with padding
+        try {
+          const bounds = L.latLngBounds(latlngs as any)
+          map.fitBounds(bounds, { padding: [16, 16] })
+        } catch {}
+      } catch (e) {
+        console.warn('[RoutePlanning][Leaflet] render failed', e)
+      }
+    }
+
+    renderLeaflet()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapProvider, routeCustomers])
 
   // Adjust map padding dynamically when the bottom sheet opens/closes
   useEffect(() => {
@@ -972,6 +1093,28 @@ export default function Visits() {
 
     try {
       console.log('[RoutePlanning] Calculating distances for route:', route.length, 'customers')
+      // In Leaflet (OSM) mode: avoid any paid APIs and compute approximate distance offline
+      if (mapProvider === 'leaflet') {
+        // Use cached coordinates computed by Leaflet render to avoid extra geocoding
+        let totalKm = 0
+        const updatedRoute = [...route]
+        for (let i = 0; i < route.length - 1; i++) {
+          const a = leafletCoordsRef.current[route[i].id]
+          const b = leafletCoordsRef.current[route[i + 1].id]
+          if (a && b) {
+            const segKm = haversineDistance(a.lat, a.lng, b.lat, b.lng)
+            totalKm += segKm
+            if (i + 1 < updatedRoute.length) {
+              updatedRoute[i + 1].distance = Number(segKm.toFixed(2))
+              updatedRoute[i + 1].duration = undefined as any
+            }
+          }
+        }
+        setTotalDistance(Number(totalKm.toFixed(1)))
+        setTotalDuration(0)
+        setRouteCustomers(updatedRoute)
+        return
+      }
       
       const waypoints = route.map(customer => {
         const address = getAddress(customer)
@@ -981,7 +1124,7 @@ export default function Visits() {
 
       console.log('[RoutePlanning] Sending request with waypoints:', waypoints)
 
-      // 使用本地 Express API
+      // 使用本地 Express API（Google provider only）
       const response = await fetch('/api/distance/calculate', {
         method: 'POST',
         headers: {
@@ -2298,68 +2441,75 @@ export default function Visits() {
                     <p className="text-gray-600">Agrega clientes de la lista izquierda para crear una ruta</p>
                   </div>
                 </div>
-              ) : (!mapsApiKey ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center max-w-md">
-                    <Route className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Falta la clave de Google Maps</h3>
-                    <p className="text-gray-600 text-sm">Configura <code>VITE_GOOGLE_MAPS_API_KEY</code> en tu archivo <code>.env.local</code> y reinicia el servidor de Vite para visualizar el mapa de la ruta.</p>
-                  </div>
-                </div>
               ) : (
-                <div className="h-full relative">
-                  <div ref={mapRef} className="w-full h-full rounded-lg border" />
-                  {/* My Location button on map */}
-                  <button
-                    onClick={getCurrentLocation}
-                    className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
-                    title="Mi Ubicación"
-                  >
-                    <MapPin className="w-5 h-5 text-blue-600" />
-                  </button>
-                  {/* Manual Map Refresh button */}
-                  <button
-                    onClick={async () => {
-                      console.log('[MapRefresh] Manual refresh button clicked')
-                      try {
-                        // Clear map instance more gently - similar to Mi Ubicación logic
-                        if (mapInstanceRef.current) {
-                          // Clear my location marker first
-                          if (myLocationMarkerRef.current) {
-                            try { myLocationMarkerRef.current.setMap(null) } catch {}
-                            myLocationMarkerRef.current = null
+                mapProvider === 'leaflet' ? (
+                  <div className="h-full relative">
+                    <div ref={mapRef} className="w-full h-full rounded-lg border" />
+                    {/* Leaflet mode: no Google-specific controls */}
+                  </div>
+                ) : (!mapsApiKey ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center max-w-md">
+                      <Route className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Falta la clave de Google Maps</h3>
+                      <p className="text-gray-600 text-sm">Configura <code>VITE_GOOGLE_MAPS_API_KEY</code> en tu archivo <code>.env.local</code> y reinicia el servidor de Vite para visualizar el mapa de la ruta.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full relative">
+                    <div ref={mapRef} className="w-full h-full rounded-lg border" />
+                    {/* My Location button on map (Google only) */}
+                    <button
+                      onClick={getCurrentLocation}
+                      className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                      title="Mi Ubicación"
+                    >
+                      <MapPin className="w-5 h-5 text-blue-600" />
+                    </button>
+                    {/* Manual Map Refresh button (Google only) */}
+                    <button
+                      onClick={async () => {
+                        console.log('[MapRefresh] Manual refresh button clicked')
+                        try {
+                          // Clear map instance more gently - similar to Mi Ubicación logic
+                          if (mapInstanceRef.current) {
+                            // Clear my location marker first
+                            if (myLocationMarkerRef.current) {
+                              try { myLocationMarkerRef.current.setMap(null) } catch {}
+                              myLocationMarkerRef.current = null
+                            }
+                            if (myLocationInfoRef.current) {
+                              try { myLocationInfoRef.current.close() } catch {}
+                              myLocationInfoRef.current = null
+                            }
                           }
-                          if (myLocationInfoRef.current) {
-                            try { myLocationInfoRef.current.close() } catch {}
-                            myLocationInfoRef.current = null
-                          }
+                          
+                          // Trigger map refresh event
+                          const event = new CustomEvent('mapRefresh')
+                          window.dispatchEvent(event)
+                          
+                          // Wait for map to be recreated, then recalculate route if needed
+                          setTimeout(() => {
+                            if (routeCustomers.length > 0) {
+                              console.log('[MapRefresh] Recalculating route after manual refresh')
+                              calculateRouteDistanceAndTime([...routeCustomers])
+                            }
+                          }, 300)
+                          
+                        } catch (error) {
+                          console.error('[MapRefresh] Manual refresh failed:', error)
                         }
-                        
-                        // Trigger map refresh event
-                        const event = new CustomEvent('mapRefresh')
-                        window.dispatchEvent(event)
-                        
-                        // Wait for map to be recreated, then recalculate route if needed
-                        setTimeout(() => {
-                          if (routeCustomers.length > 0) {
-                            console.log('[MapRefresh] Recalculating route after manual refresh')
-                            calculateRouteDistanceAndTime([...routeCustomers])
-                          }
-                        }, 300)
-                        
-                      } catch (error) {
-                        console.error('[MapRefresh] Manual refresh failed:', error)
-                      }
-                    }}
-                    className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
-                    title="Refrescar Mapa"
-                  >
-                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
+                      }}
+                      className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                      title="Refrescar Mapa"
+                    >
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  </div>
+                ))
+              )}
           </div>
         </div>
       </div>
