@@ -1199,7 +1199,6 @@ export default function Maps() {
                   <Marker 
                     key={c.id} 
                     position={[pos.lat, pos.lng]} 
-                    // @ts-expect-error react-leaflet icon prop typing issue
                     icon={customerIcon as any}
                     ref={(ref) => {
                       // 為標記添加自定義屬性，方便查找
@@ -1236,7 +1235,6 @@ export default function Maps() {
                       }
                     }}
                   >
-                    {/* @ts-expect-error Leaflet PopupOptions supports minWidth */}
                     <Popup minWidth={280 as any} maxWidth={320 as any}>
                       <div className="space-y-3">
                         <div className="border-b border-gray-200 pb-2">
@@ -1306,7 +1304,6 @@ export default function Maps() {
                 ))}
 
                 {myLocation && (
-                  // @ts-expect-error react-leaflet typings may not include 'icon' though Leaflet MarkerOptions supports it
                   <Marker position={[myLocation.lat, myLocation.lng]} icon={myLocationIcon as any}>
                     <Popup>Mi Ubicación</Popup>
                   </Marker>
