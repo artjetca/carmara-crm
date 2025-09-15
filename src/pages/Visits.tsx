@@ -518,6 +518,14 @@ export default function Visits() {
           const bounds = L.latLngBounds(latlngs as any)
           map.fitBounds(bounds, { padding: [16, 16] })
         } catch {}
+
+        // After render, compute offline distances if not set yet
+        try {
+          const needCalc = routeCustomers.some((c: any) => c && (c as any).distance == null)
+          if (needCalc && routeCustomers.length >= 2) {
+            await calculateRouteDistanceAndTime([...routeCustomers])
+          }
+        } catch {}
       } catch (e) {
         console.warn('[RoutePlanning][Leaflet] render failed', e)
       }
