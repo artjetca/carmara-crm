@@ -23,7 +23,6 @@ interface RouteCustomer extends Customer {
   distance?: number // km
   duration?: number // minutes
 }
-
 export default function RoutePlanning() {
   const { user } = useAuth()
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -35,6 +34,8 @@ export default function RoutePlanning() {
   const [totalDistance, setTotalDistance] = useState(0)
   const [totalDuration, setTotalDuration] = useState(0)
   const t = translations
+  // Map provider switch: default to Leaflet for zero-cost mode
+  const mapProvider: 'google' | 'leaflet' = (import.meta as any).env?.VITE_MAP_PROVIDER === 'google' ? 'google' : 'leaflet'
 
   useEffect(() => {
     if (!user?.id) return
@@ -56,7 +57,6 @@ export default function RoutePlanning() {
       if (!response.ok || !result.success) {
         throw new Error(result.error || 'Failed to load customers')
       }
-
       let customersData = result.data || []
       // 過濾只顯示當前用戶創建的客戶
       customersData = customersData.filter((customer: any) => customer.created_by === user?.id)
@@ -69,7 +69,7 @@ export default function RoutePlanning() {
       setLoading(false)
     }
   }
-
+`;
   // 城市和省份處理邏輯 - 與 Maps 頁面完全一致
   const extractCityForDisplay = (notes?: string): string => {
     if (!notes) return ''
@@ -245,50 +245,23 @@ export default function RoutePlanning() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
-          <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
-        </div>
-        <div className="flex space-x-2">
-          <button
-            onClick={clearRoute}
-            disabled={routeCustomers.length === 0}
-            className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <X className="w-4 h-4" />
-            <span>Limpiar Ruta</span>
-          </button>
-          <button
-            onClick={startNavigation}
-            disabled={routeCustomers.length === 0}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Navigation className="w-4 h-4" />
-            <span>Iniciar Navegación</span>
-          </button>
-        </div>
+    <div className="p-6">
+      <h1 className="text-xl font-semibold text-gray-900">Planificación de Rutas (legado)</h1>
+      <p className="text-sm text-gray-600 mt-2">
+        Esta pantalla ha sido desactivada. Usa la página <strong>Visitas</strong> para la planificación con Leaflet + OSM.
+      </p>
+      <div className="mt-4 text-sm text-gray-700">
+        Distancia total (estimada): {totalDistance.toFixed(1)} km
+        {mapProvider !== 'leaflet' && (
+          <>
+            {' '}• Tiempo estimado: {Math.floor(totalDuration / 60)}h {totalDuration % 60}min
+          </>
+        )}
       </div>
-
-      {/* Filtros */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex flex-col lg:flex-row gap-4 mb-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar clientes por nombre o empresa..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-          <div className="sm:w-48">
-            <select
+    </div>
+  )
+}
+const __LEGACY__ = `
               value={selectedProvince}
               onChange={(e) => {
                 setSelectedProvince(e.target.value)
@@ -438,43 +411,10 @@ export default function RoutePlanning() {
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Estadísticas de la ruta */}
-            {routeCustomers.length > 0 && (
-              <div className="p-4 border-t border-gray-200 bg-gray-50">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total paradas:</span>
-                    <span className="font-medium">{routeCustomers.length}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Distancia total:</span>
-                    <span className="font-medium">{totalDistance.toFixed(1)} km</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Tiempo estimado:</span>
-                    <span className="font-medium">{Math.floor(totalDuration / 60)}h {totalDuration % 60}min</span>
-                  </div>
-                </div>
-                <button
-                  onClick={startNavigation}
-                  className="w-full mt-3 inline-flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  <Navigation className="w-4 h-4" />
-                  <span>Iniciar Navegación</span>
-                </button>
               </div>
             )}
           </div>
         </div>
-
-        {/* Panel derecho - Mapa de la ruta */}
-        <div className="lg:col-span-3">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
               <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>

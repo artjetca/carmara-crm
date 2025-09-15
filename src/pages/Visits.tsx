@@ -2299,12 +2299,14 @@ export default function Visits() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Distancia total:</span>
-                    <span className="font-medium text-blue-600">{totalDistance > 0 ? `${totalDistance.toFixed(1)} km` : 'Calculando...'}</span>
+                    <span className="font-medium text-blue-600">{totalDistance.toFixed(1)} km</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Tiempo estimado:</span>
-                    <span className="font-medium text-green-600">{totalDuration > 0 ? `${Math.floor(totalDuration / 60)}h ${Math.round(totalDuration % 60)}min` : 'Calculando...'}</span>
-                  </div>
+                  {mapProvider !== 'leaflet' && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Tiempo estimado:</span>
+                      <span className="font-medium text-green-600">{totalDuration > 0 ? `${Math.floor(totalDuration / 60)}h ${Math.round(totalDuration % 60)}min` : 'Calculando...'}</span>
+                    </div>
+                  )}
                   {/* Mostrar detalles individuales de cada parada */}
                   <div className="pt-2 border-t border-gray-300">
                     <h4 className="text-xs font-medium text-gray-700 mb-2">Detalles por parada:</h4>
@@ -2313,9 +2315,13 @@ export default function Visits() {
                         <div key={customer.id} className="flex justify-between text-xs">
                           <span className="text-gray-600">{index + 1}. {customer.name}</span>
                           <span className="text-gray-500">
-                            {customer.distance && customer.duration 
-                              ? `${customer.distance.toFixed(1)}km, ${Math.round(customer.duration)}min`
-                              : index === 0 ? 'Origen' : 'Calculando...'
+                            {mapProvider === 'leaflet'
+                              ? (index === 0
+                                  ? 'Origen'
+                                  : (typeof customer.distance === 'number' ? `${customer.distance.toFixed(1)}km` : '—'))
+                              : (customer.distance && typeof customer.duration === 'number'
+                                  ? `${customer.distance.toFixed(1)}km, ${Math.round(customer.duration)}min`
+                                  : (index === 0 ? 'Origen' : 'Calculando...'))
                             }
                           </span>
                         </div>
