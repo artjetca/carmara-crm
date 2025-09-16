@@ -775,32 +775,94 @@ export default function Visits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
 
-  // 全屏切換（使用瀏覽器 Fullscreen API，讓整個路由規劃區域進入全屏）
-  const toggleDocumentFullscreen = async () => {
-    try {
-      const el = fullContainerRef.current || document.documentElement
-      if (!document.fullscreenElement) {
-        await (el as any)?.requestFullscreen?.()
-      } else {
-        await (document as any).exitFullscreen?.()
-      }
-    } catch (e) {
-      console.warn('[Fullscreen] toggle failed:', e)
-    } finally {
-      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 100)
-      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 300)
-    }
+  // 地圖全屏切換（僅地圖容器）
+  const toggleMapFullscreen = () => {
+    setLeafletFullscreen(v => !v)
+    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 50)
+    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 250)
   }
 
-  // PDF 導出（使用瀏覽器列印為 PDF）
-  const printRoutePdf = async () => {
+  // PDF 獨立導出（非截圖方式）
+  const generateIndependentPdf = async () => {
     try {
-      // 先保證顯示全部點位
-      try { fitLeafletToAllStops() } catch {}
-      await new Promise(r => setTimeout(r, 200))
-      window.print()
+      if (!routeCustomers.length) {
+        alert('沒有路線可以導出')
+        return
+      }
+      
+      // 動態載入 html2pdf.js
+      if (!(window as any).html2pdf) {
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+        document.head.appendChild(script)
+        await new Promise((resolve, reject) => {
+          script.onload = resolve
+          script.onerror = reject
+        })
+      }
+
+      // 創建 PDF 內容
+      const pdfContent = `
+        <div style="width: 297mm; height: 210mm; padding: 15mm; font-family: Arial, sans-serif; display: flex;">
+          <!-- 左側：客戶詳細列表 -->
+          <div style="width: 40%; padding-right: 10mm;">
+            <h2 style="margin: 0 0 10mm 0; color: #1f2937; font-size: 18pt;">Ruta Planificada</h2>
+            <div style="margin-bottom: 5mm;">
+              <strong>Paradas:</strong> ${routeCustomers.length}<br>
+              ${totalDistance > 0 ? `<strong>Distancia total:</strong> ${totalDistance.toFixed(1)} km<br>` : ''}
+              ${totalDuration > 0 ? `<strong>Tiempo total:</strong> ${Math.round(totalDuration)} min<br>` : ''}
+              <strong>Fecha:</strong> ${new Date().toLocaleDateString('es-ES')}
+            </div>
+            <div style="font-size: 10pt; line-height: 1.3;">
+              ${routeCustomers.map((customer, index) => `
+                <div style="margin-bottom: 4mm; padding-bottom: 2mm; border-bottom: 1px solid #e5e7eb;">
+                  <div style="font-weight: bold; color: #2563eb; margin-bottom: 1mm;">
+                    ${index + 1}. ${customer.name}
+                  </div>
+                  <div style="color: #6b7280; margin-bottom: 1mm;">${customer.company || '—'}</div>
+                  <div style="margin-bottom: 1mm;">${getAddress(customer)}</div>
+                  ${customer.phone || (customer as any).mobile_phone ? 
+                    `<div style="color: #059669;">📞 ${customer.phone || (customer as any).mobile_phone}</div>` : ''}
+                  ${customer.distance && customer.duration ? 
+                    `<div style="color: #7c3aed; font-size: 9pt;">
+                      🚗 ${customer.distance.toFixed(1)} km • ⏱️ ${Math.round(customer.duration)} min
+                    </div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          
+          <!-- 右側：地圖區域 -->
+          <div style="width: 60%; position: relative;">
+            <div style="width: 100%; height: 160mm; border: 2px solid #d1d5db; border-radius: 8px; background: #f9fafb; display: flex; align-items: center; justify-content: center;">
+              <div style="text-align: center; color: #6b7280;">
+                <div style="font-size: 48pt; margin-bottom: 5mm;">🗺️</div>
+                <div style="font-size: 14pt;">Mapa de la Ruta</div>
+                <div style="font-size: 10pt; margin-top: 2mm;">
+                  ${routeCustomers.length} paradas planificadas
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `
+      
+      const element = document.createElement('div')
+      element.innerHTML = pdfContent
+      
+      const opt = {
+        margin: 0,
+        filename: `Ruta_${routeName || 'Planificada'}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      }
+      
+      await (window as any).html2pdf().set(opt).from(element).save()
+      
     } catch (e) {
-      alert('無法調用列印。請使用瀏覽器的列印到 PDF 功能。')
+      console.error('[PDF] Generation failed:', e)
+      alert('PDF 生成失敗，請稍後再試')
     }
   }
 
@@ -2904,7 +2966,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className={`h-[800px] relative`}>
+              <div className={`${leafletFullscreen ? 'fixed inset-0 z-[1200] bg-white' : 'h-[800px]'} relative`}>
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -2945,20 +3007,20 @@ export default function Visits() {
                         <span className="text-xs text-gray-700 sm:hidden">Reset</span>
                       </button>
                       <button
-                        onClick={toggleDocumentFullscreen}
-                        title={isDocFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                        onClick={toggleMapFullscreen}
+                        title={leafletFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa del mapa'}
                         className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
                       >
-                        {isDocFullscreen ? (
+                        {leafletFullscreen ? (
                           <Minimize2 className="w-4 h-4 text-gray-700" />
                         ) : (
                           <Maximize2 className="w-4 h-4 text-gray-700" />
                         )}
-                        <span className="text-xs text-gray-700 hidden sm:inline">{isDocFullscreen ? 'Salir' : 'Completa'}</span>
+                        <span className="text-xs text-gray-700 hidden sm:inline">{leafletFullscreen ? 'Salir' : 'Completa'}</span>
                       </button>
                       <button
-                        onClick={printRoutePdf}
-                        title="Descargar PDF"
+                        onClick={generateIndependentPdf}
+                        title="Generar PDF independiente"
                         className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
                       >
                         <FileDown className="w-4 h-4 text-gray-700" />
