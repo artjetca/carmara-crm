@@ -325,6 +325,89 @@ export default function Visits() {
     return (window as any).google
   }
 
+  // 動態載入 leaflet-image 並生成離屏地圖圖片（用於 PDF，非 UI 截圖）
+  const ensureLeafletImageLoaded = async () => {
+    if ((window as any).leafletImage) return
+    await new Promise<void>((resolve, reject) => {
+      const existing = document.querySelector('script[data-role="leaflet-image"]') as HTMLScriptElement | null
+      if (existing) {
+        existing.addEventListener('load', () => resolve())
+        existing.addEventListener('error', () => reject(new Error('leaflet-image failed to load')))
+        return
+      }
+      const s = document.createElement('script')
+      s.src = 'https://unpkg.com/leaflet-image/leaflet-image.js'
+      s.setAttribute('data-role', 'leaflet-image')
+      s.async = true
+      s.onload = () => resolve()
+      s.onerror = () => reject(new Error('leaflet-image failed to load'))
+      document.head.appendChild(s)
+    })
+  }
+
+  const buildOffscreenMapImage = async (width = 1200, height = 800): Promise<string> => {
+    // 收集座標（使用現有快取/回退）
+    const entries = await Promise.all(
+      routeCustomers.map(async (c, idx) => ({ c, idx, pos: await resolveCustomerCoords(c) }))
+    )
+    const coords: { lat: number; lng: number }[] = entries.map(e => e.pos || { lat: 36.7213, lng: -4.4214 })
+
+    // 建立離屏容器
+    const container = document.createElement('div')
+    Object.assign(container.style, {
+      position: 'fixed', left: '-10000px', top: '-10000px', width: `${width}px`, height: `${height}px`, zIndex: '0'
+    } as CSSStyleDeclaration)
+    document.body.appendChild(container)
+
+    // 建立離屏地圖
+    const map = L.map(container, { zoomControl: false })
+    const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true as any })
+    tile.addTo(map)
+
+    // 標記與折線
+    const latlngs: L.LatLngExpression[] = []
+    const createLeafletNumberedIconLocal = (n: number) => L.divIcon({
+      html: `<div style="width:34px;height:34px;border-radius:17px;background:#2563EB;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,0.25)">${n}</div>`,
+      className: '', iconSize: [34, 34], iconAnchor: [17, 17],
+    })
+    coords.forEach((p, i) => {
+      latlngs.push([p.lat, p.lng])
+      const m = L.marker([p.lat, p.lng], { icon: createLeafletNumberedIconLocal(i + 1) })
+      m.addTo(map)
+    })
+    if (latlngs.length >= 2) {
+      L.polyline(latlngs, { color: '#2563EB', weight: 5, opacity: 0.9 }).addTo(map)
+    }
+
+    // 調整視野
+    try {
+      const b = L.latLngBounds(latlngs as any)
+      map.fitBounds(b, { padding: [20, 20] })
+    } catch {
+      try { map.setView([coords[0].lat, coords[0].lng], 12) } catch {}
+    }
+
+    await ensureLeafletImageLoaded()
+    // 等待圖磚載入完成再導出
+    await new Promise<void>((resolve) => tile.once('load', () => resolve()))
+
+    const dataUrl = await new Promise<string>((resolve) => {
+      try {
+        (window as any).leafletImage(map, (err: any, canvas: HTMLCanvasElement) => {
+          let url = ''
+          try { url = canvas?.toDataURL?.('image/png') || '' } catch {}
+          resolve(url)
+        })
+      } catch {
+        resolve('')
+      }
+    })
+
+    try { map.remove() } catch {}
+    try { document.body.removeChild(container) } catch {}
+    return dataUrl
+  }
+
   // Small helper to await next tick or a short delay
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -572,10 +655,13 @@ export default function Visits() {
           leafletMapInstanceRef.current = map
 
           // Basic OSM tile layer (note: for production consider a tile provider with SLA)
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          const tl = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19,
+            crossOrigin: true as any,
           }).addTo(map)
+          // 當圖磚載入完成後，強制刷新尺寸避免白屏
+          try { tl.on('load', () => { try { map.invalidateSize() } catch {} }) } catch {}
           // Fix occasional blank tiles by invalidating size after mount
           try { setTimeout(() => map.invalidateSize(), 0) } catch {}
           try { setTimeout(() => map.invalidateSize(), 250) } catch {}
@@ -775,11 +861,50 @@ export default function Visits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
 
-  // 地圖全屏切換（僅地圖容器）
+  // 地圖全屏切換（僅地圖容器）- 強化白屏修復
   const toggleMapFullscreen = () => {
+    const wasFullscreen = leafletFullscreen
     setLeafletFullscreen(v => !v)
-    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 50)
-    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 250)
+    
+    // 多層次修復全屏白屏問題
+    const fixMapSize = () => {
+      try {
+        const map = leafletMapInstanceRef.current
+        if (!map) return
+        
+        // 強制重新計算容器尺寸
+        map.invalidateSize({ animate: false })
+        
+        // 如果有路線點，重新調整視野
+        if (routeCustomers.length > 0) {
+          const latlngs: L.LatLngExpression[] = []
+          for (const c of routeCustomers) {
+            const pos = leafletCoordsRef.current[c.id]
+            if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
+              latlngs.push([pos.lat, pos.lng])
+            }
+          }
+          if (latlngs.length > 0) {
+            const bounds = L.latLngBounds(latlngs as any)
+            map.fitBounds(bounds, { padding: [20, 20], animate: false })
+          }
+        }
+        
+        // 強制觸發重繪
+        map.fire('resize')
+      } catch (e) {
+        console.warn('[Fullscreen] Map size fix failed:', e)
+      }
+    }
+    
+    // 立即修復
+    setTimeout(fixMapSize, 0)
+    // 短延遲修復（DOM 更新後）
+    setTimeout(fixMapSize, 50)
+    // 較長延遲修復（動畫完成後）
+    setTimeout(fixMapSize, 300)
+    // 最終修復（確保完全載入）
+    setTimeout(fixMapSize, 600)
   }
 
   // PDF 獨立導出（非截圖方式）
@@ -789,67 +914,66 @@ export default function Visits() {
         alert('沒有路線可以導出')
         return
       }
-      
+
       // 動態載入 html2pdf.js
       if (!(window as any).html2pdf) {
-        const script = document.createElement('script')
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
-        document.head.appendChild(script)
-        await new Promise((resolve, reject) => {
-          script.onload = resolve
-          script.onerror = reject
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+          script.onload = () => resolve()
+          script.onerror = () => reject(new Error('Failed to load html2pdf.js'))
+          document.head.appendChild(script)
         })
       }
 
-      // 創建 PDF 內容
+      // 生成離屏地圖圖片
+      const mapDataUrl = await buildOffscreenMapImage(1250, 850)
+
+      // 準備左側客戶詳情 HTML
+      const customerListHtml = routeCustomers.map((customer, index) => {
+        const phone = (customer as any).phone || (customer as any).mobile_phone
+        const distDur = (customer as any).distance && (customer as any).duration
+          ? `🚗 ${(customer as any).distance.toFixed(1)} km • ⏱️ ${Math.round((customer as any).duration)} min`
+          : ''
+        const company = customer.company || '—'
+        const address = getAddress(customer)
+        return `
+          <div style="margin-bottom: 4mm; padding-bottom: 2mm; border-bottom: 1px solid #e5e7eb;">
+            <div style="font-weight: bold; color: #2563eb; margin-bottom: 1mm;">${index + 1}. ${escapeHtml(customer.name || '')}</div>
+            <div style="color: #6b7280; margin-bottom: 1mm;">${escapeHtml(String(company))}</div>
+            <div style="margin-bottom: 1mm;">${escapeHtml(address)}</div>
+            ${phone ? `<div style="color: #059669;">📞 ${escapeHtml(String(phone))}</div>` : ''}
+            ${distDur ? `<div style="color: #7c3aed; font-size: 9pt;">${distDur}</div>` : ''}
+          </div>
+        `
+      }).join('')
+
+      const statsHtml = `
+        <strong>Paradas:</strong> ${routeCustomers.length}<br>
+        ${totalDistance > 0 ? `<strong>Distancia total:</strong> ${totalDistance.toFixed(1)} km<br>` : ''}
+        ${totalDuration > 0 ? `<strong>Tiempo total:</strong> ${Math.round(totalDuration)} min<br>` : ''}
+        <strong>Fecha:</strong> ${new Date().toLocaleDateString('es-ES')}
+      `
+
+      // 拼裝 PDF HTML
       const pdfContent = `
         <div style="width: 297mm; height: 210mm; padding: 15mm; font-family: Arial, sans-serif; display: flex;">
-          <!-- 左側：客戶詳細列表 -->
           <div style="width: 40%; padding-right: 10mm;">
             <h2 style="margin: 0 0 10mm 0; color: #1f2937; font-size: 18pt;">Ruta Planificada</h2>
-            <div style="margin-bottom: 5mm;">
-              <strong>Paradas:</strong> ${routeCustomers.length}<br>
-              ${totalDistance > 0 ? `<strong>Distancia total:</strong> ${totalDistance.toFixed(1)} km<br>` : ''}
-              ${totalDuration > 0 ? `<strong>Tiempo total:</strong> ${Math.round(totalDuration)} min<br>` : ''}
-              <strong>Fecha:</strong> ${new Date().toLocaleDateString('es-ES')}
-            </div>
-            <div style="font-size: 10pt; line-height: 1.3;">
-              ${routeCustomers.map((customer, index) => `
-                <div style="margin-bottom: 4mm; padding-bottom: 2mm; border-bottom: 1px solid #e5e7eb;">
-                  <div style="font-weight: bold; color: #2563eb; margin-bottom: 1mm;">
-                    ${index + 1}. ${customer.name}
-                  </div>
-                  <div style="color: #6b7280; margin-bottom: 1mm;">${customer.company || '—'}</div>
-                  <div style="margin-bottom: 1mm;">${getAddress(customer)}</div>
-                  ${customer.phone || (customer as any).mobile_phone ? 
-                    `<div style="color: #059669;">📞 ${customer.phone || (customer as any).mobile_phone}</div>` : ''}
-                  ${customer.distance && customer.duration ? 
-                    `<div style="color: #7c3aed; font-size: 9pt;">
-                      🚗 ${customer.distance.toFixed(1)} km • ⏱️ ${Math.round(customer.duration)} min
-                    </div>` : ''}
-                </div>
-              `).join('')}
-            </div>
+            <div style="margin-bottom: 5mm;">${statsHtml}</div>
+            <div style="font-size: 10pt; line-height: 1.3;">${customerListHtml}</div>
           </div>
-          
-          <!-- 右側：地圖區域 -->
           <div style="width: 60%; position: relative;">
-            <div style="width: 100%; height: 160mm; border: 2px solid #d1d5db; border-radius: 8px; background: #f9fafb; display: flex; align-items: center; justify-content: center;">
-              <div style="text-align: center; color: #6b7280;">
-                <div style="font-size: 48pt; margin-bottom: 5mm;">🗺️</div>
-                <div style="font-size: 14pt;">Mapa de la Ruta</div>
-                <div style="font-size: 10pt; margin-top: 2mm;">
-                  ${routeCustomers.length} paradas planificadas
-                </div>
-              </div>
+            <div style="width: 100%; height: 160mm; border: 2px solid #d1d5db; border-radius: 8px; background: #ffffff; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+              ${mapDataUrl ? `<img src="${mapDataUrl}" alt="Mapa de la Ruta" style="max-width:100%; max-height:100%; object-fit: contain;"/>` : `<div style="text-align:center; color:#6b7280;">Mapa no disponible</div>`}
             </div>
           </div>
         </div>
       `
-      
+
       const element = document.createElement('div')
       element.innerHTML = pdfContent
-      
+
       const opt = {
         margin: 0,
         filename: `Ruta_${routeName || 'Planificada'}_${new Date().toISOString().split('T')[0]}.pdf`,
@@ -857,9 +981,9 @@ export default function Visits() {
         html2canvas: { scale: 2, useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
       }
-      
+
       await (window as any).html2pdf().set(opt).from(element).save()
-      
+
     } catch (e) {
       console.error('[PDF] Generation failed:', e)
       alert('PDF 生成失敗，請稍後再試')
@@ -882,6 +1006,17 @@ export default function Visits() {
         }
       } catch {}
     }
+  }, [])
+
+  // 當地圖容器尺寸變化時自動 invalidateSize，避免白屏
+  useEffect(() => {
+    const el = mapRef.current
+    if (!el || !(window as any).ResizeObserver) return
+    const ro = new (window as any).ResizeObserver(() => {
+      try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {}
+    })
+    try { ro.observe(el) } catch {}
+    return () => { try { ro.disconnect() } catch {} }
   }, [])
 
   // 在返回頁面或窗口尺寸變更/全屏變更時，強制重算 Leaflet 容器尺寸，避免白屏
