@@ -847,16 +847,25 @@ export default function Visits() {
               center.lat /= cl.length
               center.lng /= cl.length
 
-              const baseLatRad = center.lat * Math.PI / 180
-              const step = (2 * Math.PI) / cl.length
-              const b = mapObj.getBounds?.()
-              const latSpan = b ? Math.abs(b.getNorth() - b.getSouth()) : 0.0
-              const base = Math.max(0.0015, latSpan * 0.0025) // 比此前略大，城市內更易分辨
-              const radius = base + 0.0002 * Math.max(0, cl.length - 1)
+              let radius = cl.length <= 3 ? 0.0015 : 0.002 // 根據數量調整半徑，更明顯的分散
+              if (cl.length > 6) radius = 0.003 // 大簇使用更大半徑
+
               cl.forEach((idx, i) => {
-                const angle = step * i
-                const dLat = radius * Math.cos(angle)
-                const dLng = (radius * Math.sin(angle)) / Math.cos(baseLatRad)
+                if (i === 0 && cl.length > 1) {
+                  // 第一個保持在中心稍微偏移
+                  positionsByIdx[idx] = { lat: center.lat + 0.0002, lng: center.lng + 0.0002 }
+                  return
+                }
+
+                const step = (2 * Math.PI) / Math.max(cl.length - 1, 1)
+                const baseLatRad = center.lat * (Math.PI / 180)
+                const angle = step * (i - 1) + (Math.PI / 4) // 從45度開始分散
+
+                // 每個標記使用不同的半徑形成螺旋效果
+                const dynamicRadius = radius * (1 + 0.3 * (i % 3))
+
+                const dLat = dynamicRadius * Math.cos(angle)
+                const dLng = (dynamicRadius * Math.sin(angle)) / Math.cos(baseLatRad)
                 positionsByIdx[idx] = { lat: center.lat + dLat, lng: center.lng + dLng }
               })
             })
@@ -1172,15 +1181,49 @@ export default function Visits() {
       // Remove previous marker
       try { leafletMyLocationMarkerRef.current?.remove() } catch {}
 
+      // Create pulsing location marker with animation
       const icon = L.divIcon({
         className: '',
-        html: "<div style='width:18px;height:18px;border-radius:9px;background:#2563EB;box-shadow:0 1px 2px rgba(0,0,0,0.35)'></div>",
+        html: `
+          <div style="position:relative;width:18px;height:18px;">
+            <div style="
+              width:18px;height:18px;border-radius:9px;background:#2563EB;
+              box-shadow:0 1px 2px rgba(0,0,0,0.35);position:absolute;top:0;left:0;
+            "></div>
+            <div style="
+              width:18px;height:18px;border-radius:9px;background:#2563EB;opacity:0.6;
+              position:absolute;top:0;left:0;
+              animation: pulse 2s infinite ease-out;
+            "></div>
+          </div>
+          <style>
+            @keyframes pulse {
+              0% { transform: scale(1); opacity: 0.6; }
+              50% { transform: scale(1.8); opacity: 0.2; }
+              100% { transform: scale(2.5); opacity: 0; }
+            }
+          </style>
+        `,
         iconSize: [18, 18],
         iconAnchor: [9, 9]
       })
       const marker = L.marker(pos, { icon })
       marker.addTo(map).bindPopup('Mi Ubicación')
       leafletMyLocationMarkerRef.current = marker
+      
+      // Add temporary flash effect
+      const flashEffect = L.circle(pos, {
+        radius: 100,
+        color: '#2563EB',
+        fillColor: '#2563EB',
+        fillOpacity: 0.3,
+        weight: 2
+      }).addTo(map)
+      
+      // Remove flash effect after animation
+      setTimeout(() => {
+        try { flashEffect.remove() } catch {}
+      }, 2000)
 
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
     } catch (e) {
@@ -1912,18 +1955,52 @@ export default function Visits() {
     setTotalDuration(0)
     setSelectedCustomer(null)
     
-    // 強制重置地圖避免白屏
-    setTimeout(() => {
+    // 徹底重置地圖避免白屏 - 多階段修復
+    const resetMapCompletely = () => {
       try {
         const map = leafletMapInstanceRef.current
         if (map) {
-          map.invalidateSize({ animate: false })
+          // 階段1: 清除所有標記和路線
+          leafletMarkersRef.current.forEach(m => { try { m.remove() } catch {} })
+          leafletMarkersRef.current = []
+          if (leafletPolylineRef.current) {
+            try { leafletPolylineRef.current.remove() } catch {}
+            leafletPolylineRef.current = null
+          }
+          
+          // 階段2: 強制地圖重新計算尺寸
+          map.invalidateSize({ animate: false, pan: false })
+          
+          // 階段3: 重設視野到西班牙南部
           map.setView([36.7213, -4.4214], 7, { animate: false })
+          
+          // 階段4: 強制重新渲染
+          setTimeout(() => {
+            map.invalidateSize(true)
+            map.fire('resize')
+          }, 100)
+          
+          // 階段5: 最終保險
+          setTimeout(() => {
+            try {
+              const container = map.getContainer()
+              if (container) {
+                container.style.transform = 'translateZ(0)'
+                setTimeout(() => {
+                  container.style.transform = ''
+                  map.invalidateSize({ animate: false })
+                }, 50)
+              }
+            } catch {}
+          }, 200)
         }
       } catch (e) {
         console.warn('[ClearRoute] Map reset failed:', e)
       }
-    }, 100)
+    }
+    
+    // 延遲執行重置避免競爭條件
+    setTimeout(resetMapCompletely, 100)
     
     // clear draft when route is cleared
     try { localStorage.removeItem(draftKey) } catch {}
