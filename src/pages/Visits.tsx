@@ -858,8 +858,8 @@ export default function Visits() {
                 <a href=\"https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getAddress(c))}\" target=\"_blank\" class=\"inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md\">Direcciones</a>
               </div>
             </div>`
-          marker.addTo(map)
-          // 移除點擊彈出詳情功能，避免干擾路線規劃
+          marker.addTo(map).bindPopup(popupHtml)
+          // 恢復 Leaflet popup 顯示客戶詳細資料
           leafletMarkersRef.current.push(marker)
         })
 
@@ -895,67 +895,95 @@ export default function Visits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
 
-  // 地圖全屏切換（僅地圖容器）- 強化白屏修復
+  // 地圖全屏切換（僅地圖容器）- 終極白屏修復
   const toggleMapFullscreen = () => {
     const wasFullscreen = leafletFullscreen
     setLeafletFullscreen(v => !v)
     
-    // 多層次修復全屏白屏問題
-    const fixMapSize = () => {
+    // 終極修復全屏白屏問題
+    const fixMapSize = (attempt = 1) => {
       try {
         const map = leafletMapInstanceRef.current
         if (!map) return
         
-        // 強制重新計算容器尺寸（多次調用確保生效）
+        console.log(`[Fullscreen] Fix attempt ${attempt}`)
+        
+        // 強制重新計算容器尺寸（多重保險）
         map.invalidateSize({ animate: false, pan: false })
-        setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 10)
-        setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 50)
+        map.invalidateSize(true)
+        map.invalidateSize(false)
         
-        // 強制觸發重繪事件
+        // 強制觸發所有重繪事件
         map.fire('resize')
+        map.fire('viewreset')
+        map.fire('zoomend')
         
-        // 重新設置瓦片層
+        // 重新設置所有圖層
         try {
           map.eachLayer((layer: any) => {
             if (layer.redraw && typeof layer.redraw === 'function') {
               layer.redraw()
             }
+            if (layer._reset && typeof layer._reset === 'function') {
+              layer._reset()
+            }
           })
+        } catch {}
+        
+        // 強制重繪地圖容器
+        try {
+          const container = map.getContainer()
+          if (container) {
+            container.style.transform = 'translateZ(0)' // 強制硬體加速
+            setTimeout(() => {
+              container.style.transform = ''
+            }, 100)
+          }
         } catch {}
         
         // 如果有路線點，重新調整視野
         if (routeCustomers.length > 0) {
           setTimeout(() => {
-            const latlngs: L.LatLngExpression[] = []
-            for (const c of routeCustomers) {
-              const pos = leafletCoordsRef.current[c.id]
-              if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
-                latlngs.push([pos.lat, pos.lng])
+            try {
+              const latlngs: L.LatLngExpression[] = []
+              for (const c of routeCustomers) {
+                const pos = leafletCoordsRef.current[c.id]
+                if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
+                  latlngs.push([pos.lat, pos.lng])
+                }
               }
+              if (latlngs.length > 0) {
+                const bounds = L.latLngBounds(latlngs as any)
+                map.fitBounds(bounds, { padding: [20, 20], animate: false })
+              }
+            } catch (e) {
+              console.warn('[Fullscreen] fitBounds failed:', e)
             }
-            if (latlngs.length > 0) {
-              const bounds = L.latLngBounds(latlngs as any)
-              map.fitBounds(bounds, { padding: [20, 20], animate: false })
-            }
-          }, 100)
+          }, 200)
         }
+        
+        // 最後嘗試：重新設置地圖中心和縮放
+        setTimeout(() => {
+          try {
+            const center = map.getCenter()
+            const zoom = map.getZoom()
+            map.setView(center, zoom, { animate: false })
+          } catch {}
+        }, 300)
+        
       } catch (e) {
-        console.warn('[Fullscreen] Map size fix failed:', e)
+        console.warn(`[Fullscreen] Fix attempt ${attempt} failed:`, e)
       }
     }
     
-    // 立即修復
-    setTimeout(fixMapSize, 0)
-    // 短延遲修復（DOM 更新後）
-    setTimeout(fixMapSize, 50)
-    // 中等延遲修復
-    setTimeout(fixMapSize, 150)
-    // 較長延遲修復（動畫完成後）
-    setTimeout(fixMapSize, 300)
-    // 最終修復（確保完全載入）
-    setTimeout(fixMapSize, 600)
-    // 額外保險修復
-    setTimeout(fixMapSize, 1000)
+    // 多階段修復策略
+    setTimeout(() => fixMapSize(1), 0)     // 立即
+    setTimeout(() => fixMapSize(2), 50)    // DOM 更新
+    setTimeout(() => fixMapSize(3), 100)   // 快速
+    setTimeout(() => fixMapSize(4), 200)   // 中等
+    setTimeout(() => fixMapSize(5), 400)   // 較長
+    setTimeout(() => fixMapSize(6), 800)   // 最終
+    setTimeout(() => fixMapSize(7), 1500)  // 保險
   }
 
   // PDF 獨立導出（非截圖方式）
