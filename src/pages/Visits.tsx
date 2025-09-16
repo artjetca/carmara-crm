@@ -1229,7 +1229,92 @@ export default function Visits() {
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
     } catch (e) {
       console.error('[Leaflet] getCurrentLocation failed:', e)
-      alert('No se pudo obtener la ubicación actual')
+      
+      // 手動位置輸入後備方案
+      const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual:\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
+      
+      if (!manualLocation?.trim()) {
+        return
+      }
+      
+      try {
+        const map = leafletMapInstanceRef.current
+        if (!map) return
+        
+        // 嘗試解析為座標格式
+        const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
+        let lat: number, lng: number
+        
+        if (coordMatch) {
+          lat = parseFloat(coordMatch[1])
+          lng = parseFloat(coordMatch[2])
+          if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            throw new Error('Coordenadas inválidas')
+          }
+        } else {
+          // 地理編碼地址
+          const geocoded = await geocodeAddress(manualLocation.trim())
+          if (!geocoded) {
+            throw new Error('No se pudo geocodificar la dirección')
+          }
+          lat = geocoded.lat
+          lng = geocoded.lng
+        }
+        
+        const pos: [number, number] = [lat, lng]
+        
+        // Remove previous marker
+        try { leafletMyLocationMarkerRef.current?.remove() } catch {}
+
+        // Create pulsing location marker with animation
+        const icon = L.divIcon({
+          className: '',
+          html: `
+            <div style="position:relative;width:18px;height:18px;">
+              <div style="
+                width:18px;height:18px;border-radius:9px;background:#2563EB;
+                box-shadow:0 1px 2px rgba(0,0,0,0.35);position:absolute;top:0;left:0;
+              "></div>
+              <div style="
+                width:18px;height:18px;border-radius:9px;background:#2563EB;opacity:0.6;
+                position:absolute;top:0;left:0;
+                animation: pulse 2s infinite ease-out;
+              "></div>
+            </div>
+            <style>
+              @keyframes pulse {
+                0% { transform: scale(1); opacity: 0.6; }
+                50% { transform: scale(1.8); opacity: 0.2; }
+                100% { transform: scale(2.5); opacity: 0; }
+              }
+            </style>
+          `,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        })
+        const marker = L.marker(pos, { icon })
+        marker.addTo(map).bindPopup('Mi Ubicación (Manual)')
+        leafletMyLocationMarkerRef.current = marker
+        
+        // Add temporary flash effect
+        const flashEffect = L.circle(pos, {
+          radius: 100,
+          color: '#2563EB',
+          fillColor: '#2563EB',
+          fillOpacity: 0.3,
+          weight: 2
+        }).addTo(map)
+        
+        // Remove flash effect after animation
+        setTimeout(() => {
+          try { flashEffect.remove() } catch {}
+        }, 2000)
+
+        try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
+        
+      } catch (geoError: any) {
+        alert(`Error al procesar la ubicación: ${geoError.message}`)
+      }
     }
   }
 
@@ -2648,8 +2733,42 @@ export default function Visits() {
           position = await tryWatchOnce()
         } catch (e2: any) {
           console.error('[RouteOptimization] Both getCurrentPosition and watchPosition failed:', e2.message)
-          alert(`No se pudo obtener la ubicación actual: ${e2.message || 'Error desconocido'}. Asegúrate de permitir el acceso a la ubicación.`)
-          return
+          
+          // 手動位置輸入後備方案
+          const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual (dirección o coordenadas):\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
+          
+          if (!manualLocation?.trim()) {
+            alert('Se requiere una ubicación para optimizar la ruta')
+            return
+          }
+          
+          try {
+            // 嘗試解析為座標格式 (lat, lng)
+            const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
+            if (coordMatch) {
+              const lat = parseFloat(coordMatch[1])
+              const lng = parseFloat(coordMatch[2])
+              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                position = {
+                  coords: { latitude: lat, longitude: lng }
+                } as GeolocationPosition
+              } else {
+                throw new Error('Coordenadas inválidas')
+              }
+            } else {
+              // 使用地理編碼 API 將地址轉換為座標
+              const geocoded = await geocodeAddress(manualLocation.trim())
+              if (!geocoded) {
+                throw new Error('No se pudo geocodificar la dirección')
+              }
+              position = {
+                coords: { latitude: geocoded.lat, longitude: geocoded.lng }
+              } as GeolocationPosition
+            }
+          } catch (geoError: any) {
+            alert(`Error al procesar la ubicación manual: ${geoError.message}`)
+            return
+          }
         }
       }
       const { latitude: curLat, longitude: curLng } = position.coords
