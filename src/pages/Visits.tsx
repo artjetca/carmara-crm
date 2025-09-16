@@ -57,8 +57,7 @@ export default function Visits() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   // Manual reset trigger for Leaflet map to recover from blank screen
   const [leafletReset, setLeafletReset] = useState(0)
-  // Fullscreen state for Leaflet map
-  const [leafletFullscreen, setLeafletFullscreen] = useState(false)
+  // Fullscreen functionality removed due to persistent white screen issues
   // Document fullscreen state
   const [isDocFullscreen, setIsDocFullscreen] = useState(false)
   const [routeDate, setRouteDate] = useState('')
@@ -438,27 +437,52 @@ export default function Visits() {
       }
     })
 
+    // 最終嘗試：等待更長時間確保完全渲染
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
     const dataUrl = await new Promise<string>((resolve) => {
-      const timeout = setTimeout(() => resolve(''), 5000) // 5秒超時
+      const timeout = setTimeout(() => {
+        console.warn('[PDF] Map image generation timeout, using fallback')
+        resolve('')
+      }, 10000) // 增加到10秒超時
       
       try {
-        (window as any).leafletImage(map, (err: any, canvas: HTMLCanvasElement) => {
+        // 確保 leafletImage 函數存在
+        if (typeof (window as any).leafletImage !== 'function') {
+          console.warn('[PDF] leafletImage function not available')
           clearTimeout(timeout)
-          let url = ''
-          if (!err && canvas) {
-            try { 
-              url = canvas.toDataURL('image/png') || '' 
-            } catch (e) {
-              console.warn('[PDF] Canvas toDataURL failed:', e)
-            }
-          } else if (err) {
-            console.warn('[PDF] leafletImage failed:', err)
+          resolve('')
+          return
+        }
+        
+        console.log('[PDF] Starting map image capture...')
+        ;(window as any).leafletImage(map, (err: any, canvas: HTMLCanvasElement) => {
+          clearTimeout(timeout)
+          
+          if (err) {
+            console.error('[PDF] leafletImage error:', err)
+            resolve('')
+            return
           }
-          resolve(url)
+          
+          if (!canvas) {
+            console.warn('[PDF] No canvas returned from leafletImage')
+            resolve('')
+            return
+          }
+          
+          try {
+            const url = canvas.toDataURL('image/png', 0.9)
+            console.log('[PDF] Map image generated successfully, size:', url.length)
+            resolve(url)
+          } catch (e) {
+            console.error('[PDF] Canvas toDataURL failed:', e)
+            resolve('')
+          }
         })
       } catch (e) {
         clearTimeout(timeout)
-        console.warn('[PDF] leafletImage call failed:', e)
+        console.error('[PDF] leafletImage call failed:', e)
         resolve('')
       }
     })
@@ -918,103 +942,7 @@ export default function Visits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
 
-  // 地圖全屏切換（僅地圖容器）- 終極白屏修復
-  const toggleMapFullscreen = () => {
-    const wasFullscreen = leafletFullscreen
-    setLeafletFullscreen(v => !v)
-    
-    // 終極修復全屏白屏問題
-    const fixMapSize = (attempt = 1) => {
-      try {
-        const map = leafletMapInstanceRef.current
-        if (!map) return
-        
-        console.log(`[Fullscreen] Fix attempt ${attempt}`)
-        
-        // 強制重新計算容器尺寸（多重保險）
-        map.invalidateSize({ animate: false, pan: false })
-        map.invalidateSize(true)
-        map.invalidateSize(false)
-        
-        // 強制觸發所有重繪事件
-        map.fire('resize')
-        map.fire('viewreset')
-        map.fire('zoomend')
-        
-        // 重新設置所有圖層
-        try {
-          map.eachLayer((layer: any) => {
-            if (layer.redraw && typeof layer.redraw === 'function') {
-              layer.redraw()
-            }
-            if (layer._reset && typeof layer._reset === 'function') {
-              layer._reset()
-            }
-          })
-        } catch {}
-        
-        // 強制重繪地圖容器
-        try {
-          const container = map.getContainer()
-          if (container) {
-            // 強制觸發重排和重繪
-            container.style.display = 'none'
-            container.offsetHeight // 強制重排
-            container.style.display = ''
-            container.style.transform = 'translateZ(0)' // 強制硬體加速
-            setTimeout(() => {
-              container.style.transform = ''
-              map.invalidateSize({ animate: false })
-            }, 150)
-          }
-        } catch {}
-        
-        // 如果有路線點，重新調整視野
-        if (routeCustomers.length > 0) {
-          setTimeout(() => {
-            try {
-              const latlngs: L.LatLngExpression[] = []
-              for (const c of routeCustomers) {
-                const pos = leafletCoordsRef.current[c.id]
-                if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
-                  latlngs.push([pos.lat, pos.lng])
-                }
-              }
-              if (latlngs.length > 0) {
-                const bounds = L.latLngBounds(latlngs as any)
-                map.fitBounds(bounds, { padding: [20, 20], animate: false })
-              }
-            } catch (e) {
-              console.warn('[Fullscreen] fitBounds failed:', e)
-            }
-          }, 300)
-        }
-        
-        // 最後嘗試：重新設置地圖中心和縮放
-        setTimeout(() => {
-          try {
-            const center = map.getCenter()
-            const zoom = map.getZoom()
-            map.setView(center, zoom, { animate: false })
-          } catch {}
-        }, 500)
-        
-      } catch (e) {
-        console.warn(`[Fullscreen] Fix attempt ${attempt} failed:`, e)
-      }
-    }
-    
-    // 多階段修復策略（增加更多時間點）
-    setTimeout(() => fixMapSize(1), 0)     // 立即
-    setTimeout(() => fixMapSize(2), 50)    // DOM 更新
-    setTimeout(() => fixMapSize(3), 100)   // 快速
-    setTimeout(() => fixMapSize(4), 200)   // 中等
-    setTimeout(() => fixMapSize(5), 400)   // 較長
-    setTimeout(() => fixMapSize(6), 600)   // 延長
-    setTimeout(() => fixMapSize(7), 1000)  // 最終
-    setTimeout(() => fixMapSize(8), 1500)  // 保險
-    setTimeout(() => fixMapSize(9), 2000)  // 終極保險
-  }
+  // Fullscreen functionality completely removed due to persistent white screen issues
 
   // PDF 獨立導出（非截圖方式）
   const generateIndependentPdf = async () => {
@@ -1035,8 +963,25 @@ export default function Visits() {
         })
       }
 
-      // 生成離屏地圖圖片
-      const mapDataUrl = await buildOffscreenMapImage(1250, 850)
+      // 生成離屏地圖圖片 - 增加重試邏輯
+      console.log('[PDF] Starting offline map generation...')
+      let mapDataUrl = ''
+      
+      try {
+        mapDataUrl = await buildOffscreenMapImage(1250, 850)
+        if (!mapDataUrl) {
+          console.warn('[PDF] First attempt failed, retrying with smaller size...')
+          mapDataUrl = await buildOffscreenMapImage(800, 600)
+        }
+        if (mapDataUrl) {
+          console.log('[PDF] Map image generated successfully')
+        } else {
+          console.warn('[PDF] Map generation failed after retries')
+        }
+      } catch (e) {
+        console.error('[PDF] Map generation error:', e)
+        mapDataUrl = ''
+      }
 
       // 準備左側客戶詳情 HTML
       const customerListHtml = routeCustomers.map((customer, index) => {
@@ -3224,7 +3169,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className={`${leafletFullscreen ? 'fixed inset-0 z-[1200] bg-white' : 'h-[800px]'} relative`}>
+              <div className="h-[800px] relative">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -3264,18 +3209,7 @@ export default function Visits() {
                         <span className="text-xs text-gray-700 hidden sm:inline">Reiniciar</span>
                         <span className="text-xs text-gray-700 sm:hidden">Reset</span>
                       </button>
-                      <button
-                        onClick={toggleMapFullscreen}
-                        title={leafletFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa del mapa'}
-                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
-                      >
-                        {leafletFullscreen ? (
-                          <Minimize2 className="w-4 h-4 text-gray-700" />
-                        ) : (
-                          <Maximize2 className="w-4 h-4 text-gray-700" />
-                        )}
-                        <span className="text-xs text-gray-700 hidden sm:inline">{leafletFullscreen ? 'Salir' : 'Completa'}</span>
-                      </button>
+                      {/* 全屏功能已移除因為持續白屏問題 */}
                       <button
                         onClick={generateIndependentPdf}
                         title="Generar PDF independiente"
