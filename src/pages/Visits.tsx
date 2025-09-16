@@ -871,11 +871,13 @@ export default function Visits() {
             })
           })
         }
-        // 生成最終條目並寫入內存快取
-        const jittered: Array<{ c: RouteCustomer; idx: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
+        // 生成最終條目並寫入內存快取，使用連續編號
+        const jittered: Array<{ c: RouteCustomer; routeOrder: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
           const c = routeCustomers[idx]
           try { leafletCoordsRef.current[c.id] = { lat: pos!.lat, lng: pos!.lng } } catch {}
-          return { c, idx, pos: pos! }
+          // 使用連續編號 1, 2, 3, 4, 5, 6...
+          const routeOrder = idx + 1
+          return { c, routeOrder, pos: pos! }
         })
 
         const positions = jittered.map(e => e.pos)
@@ -887,20 +889,19 @@ export default function Visits() {
         }
 
         // Helper: numbered divIcon
-        const createLeafletNumberedIcon = (n: number) =>
+        const createLeafletNumberedIcon = (num: number) =>
           L.divIcon({
-            html: `<div style="width:34px;height:34px;border-radius:17px;background:#2563EB;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,0.25)">${n}</div>`,
             className: '',
+            html: `<div style="width:34px;height:34px;border-radius:17px;background:#2563EB;color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 4px rgba(0,0,0,0.25)">${num}</div>`,
             iconSize: [34, 34],
             iconAnchor: [17, 17],
           })
 
         // Place markers and build polyline path
         const latlngs: L.LatLngExpression[] = []
-        jittered.forEach(({ c, idx, pos }) => {
+        jittered.forEach(({ c, routeOrder, pos }) => {
           latlngs.push([pos.lat, pos.lng])
-          const orderNumber = idx + 1 // 按路線順序連續編號（1..N）
-          const marker = L.marker([pos.lat, pos.lng], { icon: createLeafletNumberedIcon(orderNumber) })
+          const marker = L.marker([pos.lat, pos.lng], { icon: createLeafletNumberedIcon(routeOrder) })
           // Bind popup similar to Maps page
           const popupHtml = `
             <div class="space-y-2">
@@ -2609,11 +2610,48 @@ export default function Visits() {
         return
       }
 
-      // 取得當前位置
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        if (!navigator.geolocation) return reject(new Error('Geolocalización no disponible'))
-        navigator.geolocation.getCurrentPosition(resolve, reject)
+      // 取得當前位置 - 增強版with fallback
+      if (!('geolocation' in navigator)) {
+        alert('Geolocalización no disponible en este navegador')
+        return
+      }
+
+      const tryGetPosition = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
+        const opts = { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+        navigator.geolocation.getCurrentPosition(resolve, reject, opts as any)
       })
+      
+      const tryWatchOnce = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
+        try {
+          const id = navigator.geolocation.watchPosition((pos) => {
+            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
+            resolve(pos)
+          }, (err) => {
+            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
+            reject(err)
+          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 } as any)
+          
+          // safety timeout
+          setTimeout(() => {
+            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
+            reject(new Error('watchPosition timeout'))
+          }, 13000)
+        } catch (e) { reject(e as any) }
+      })
+
+      let position: GeolocationPosition
+      try {
+        position = await tryGetPosition()
+      } catch (e: any) {
+        console.warn('[RouteOptimization] getCurrentPosition failed, trying watchPosition:', e.message)
+        try {
+          position = await tryWatchOnce()
+        } catch (e2: any) {
+          console.error('[RouteOptimization] Both getCurrentPosition and watchPosition failed:', e2.message)
+          alert(`No se pudo obtener la ubicación actual: ${e2.message || 'Error desconocido'}. Asegúrate de permitir el acceso a la ubicación.`)
+          return
+        }
+      }
       const { latitude: curLat, longitude: curLng } = position.coords
 
       // 取得各客戶座標（並行，使用帶回退的解析）
