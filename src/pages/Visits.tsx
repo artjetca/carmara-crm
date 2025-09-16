@@ -27,7 +27,10 @@ import {
   Download,
   Upload,
   LocateFixed,
-  RefreshCcw
+  RefreshCcw,
+  Maximize2,
+  Minimize2,
+  FileDown
 } from 'lucide-react'
 
 // Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
@@ -54,6 +57,8 @@ export default function Visits() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   // Manual reset trigger for Leaflet map to recover from blank screen
   const [leafletReset, setLeafletReset] = useState(0)
+  // Fullscreen state for Leaflet map
+  const [leafletFullscreen, setLeafletFullscreen] = useState(false)
   const [routeDate, setRouteDate] = useState('')
   const [routeTime, setRouteTime] = useState('')
   const [savedRoutes, setSavedRoutes] = useState<any[]>([])
@@ -613,31 +618,73 @@ export default function Visits() {
           positionsByIdx[i] = { lat: base.lat + delta, lng: base.lng + delta }
         }
 
-        // 对重叠坐标做“径向分散”以避免遮挡
-        const precision = 5 // ~1.1m，分組更嚴格
-        const keyFor = (p: { lat: number; lng: number }) => `${p.lat.toFixed(precision)},${p.lng.toFixed(precision)}`
-        const groups = new Map<string, { center: { lat: number; lng: number }, idxs: number[] }>()
-        positionsByIdx.forEach((p, i) => {
-          const k = keyFor(p!)
-          if (!groups.has(k)) groups.set(k, { center: p!, idxs: [] })
-          groups.get(k)!.idxs.push(i)
-        })
-        // 分散
-        groups.forEach(({ center, idxs }) => {
-          if (idxs.length <= 1) return
-          const baseLatRad = center.lat * Math.PI / 180
-          const step = (2 * Math.PI) / idxs.length
-          const b = leafletMapInstanceRef.current?.getBounds?.()
-          const latSpan = b ? Math.abs(b.getNorth() - b.getSouth()) : 0.0
-          const base = Math.max(0.0012, latSpan * 0.002) // 隨視窗比例縮放，低縮放時更明顯分散
-          const radius = base + 0.00015 * Math.max(0, idxs.length - 1) // 群組越多半徑越大
-          idxs.forEach((idx, i) => {
-            const angle = step * i
-            const dLat = radius * Math.cos(angle)
-            const dLng = (radius * Math.sin(angle)) / Math.cos(baseLatRad)
-            positionsByIdx[idx] = { lat: center.lat + dLat, lng: center.lng + dLng }
+        // 城市內近距離聚合 + 徑向分散，避免遮擋，提升同城識別度
+        const mapObj = leafletMapInstanceRef.current
+        if (mapObj) {
+          const toPoint = (p: { lat: number; lng: number }) => mapObj.latLngToLayerPoint([p.lat, p.lng])
+          const fromGroup = (idxs: number[]) => {
+            // 根據像素距離做簡單聚類（單鏈法）
+            const clusters: number[][] = []
+            const thresholdPx = 34 // 約一個標記直徑
+            for (const idx of idxs) {
+              const p = positionsByIdx[idx]!
+              const pt = toPoint(p)
+              let placed = false
+              for (const cl of clusters) {
+                // 與現有簇任一點小於閾值即歸入
+                const anyIdx = cl[0]
+                const anyPt = toPoint(positionsByIdx[anyIdx]!)
+                const dx = pt.x - anyPt.x
+                const dy = pt.y - anyPt.y
+                const d = Math.hypot(dx, dy)
+                if (d <= thresholdPx) {
+                  cl.push(idx)
+                  placed = true
+                  break
+                }
+              }
+              if (!placed) clusters.push([idx])
+            }
+            return clusters
+          }
+
+          // 先按城市分組，再在每組內按像素距離聚類
+          const cityGroups = new Map<string, number[]>()
+          positionsByIdx.forEach((_, i) => {
+            const c = routeCustomers[i]
+            const key = String((displayCity(c) || (c as any).city || '').toLowerCase().trim())
+            const list = cityGroups.get(key) || []
+            list.push(i)
+            cityGroups.set(key, list)
           })
-        })
+
+          cityGroups.forEach((idxs) => {
+            const clusters = fromGroup(idxs)
+            clusters.forEach((cl) => {
+              if (cl.length <= 1) return
+              // 簇中心（經緯度均值）
+              const center = cl.reduce((acc, i) => ({
+                lat: acc.lat + positionsByIdx[i]!.lat,
+                lng: acc.lng + positionsByIdx[i]!.lng
+              }), { lat: 0, lng: 0 })
+              center.lat /= cl.length
+              center.lng /= cl.length
+
+              const baseLatRad = center.lat * Math.PI / 180
+              const step = (2 * Math.PI) / cl.length
+              const b = mapObj.getBounds?.()
+              const latSpan = b ? Math.abs(b.getNorth() - b.getSouth()) : 0.0
+              const base = Math.max(0.0015, latSpan * 0.0025) // 比此前略大，城市內更易分辨
+              const radius = base + 0.0002 * Math.max(0, cl.length - 1)
+              cl.forEach((idx, i) => {
+                const angle = step * i
+                const dLat = radius * Math.cos(angle)
+                const dLng = (radius * Math.sin(angle)) / Math.cos(baseLatRad)
+                positionsByIdx[idx] = { lat: center.lat + dLat, lng: center.lng + dLng }
+              })
+            })
+          })
+        }
         // 生成最終條目並寫入內存快取
         const jittered: Array<{ c: RouteCustomer; idx: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
           const c = routeCustomers[idx]
@@ -718,6 +765,22 @@ export default function Visits() {
     renderLeaflet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
+
+  // 全屏切換
+  const toggleLeafletFullscreen = () => {
+    setLeafletFullscreen(v => !v)
+    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 50)
+    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 250)
+  }
+
+  // PDF 導出（使用瀏覽器列印為 PDF）
+  const printRoutePdf = () => {
+    try {
+      window.print()
+    } catch (e) {
+      alert('無法調用列印。請使用瀏覽器的列印到 PDF 功能。')
+    }
+  }
 
   // Cleanup Leaflet map on unmount to avoid white screen when re-entering
   useEffect(() => {
@@ -2279,7 +2342,7 @@ export default function Visits() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 print-hide">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
           <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
@@ -2458,11 +2521,11 @@ export default function Visits() {
       </div>
 
       {/* Layout matching Maps.tsx: 1/4 left panel, 3/4 right panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 print-grid">
         {/* Panel izquierdo - Lista de clientes y ruta */}
         <div className="lg:col-span-1 space-y-6">
             {/* Lista de clientes disponibles */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 print-hide">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Clientes Disponibles</h2>
                 <p className="text-sm text-gray-600">{filteredCustomers.length} clientes encontrados</p>
@@ -2749,7 +2812,7 @@ export default function Visits() {
         {/* Map panel - Right side */}
         <div className="lg:col-span-3">
           {/* Mapa de la ruta */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print-card">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
                 <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
@@ -2789,7 +2852,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className="h-[800px] relative">
+              <div className={`${leafletFullscreen ? 'fixed inset-0 z-[1200] bg-white' : 'h-[800px]'} relative`}>
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -2802,7 +2865,7 @@ export default function Visits() {
                 mapProvider === 'leaflet' ? (
                   <div className="h-full relative">
                     {/* Leaflet overlay controls */}
-                    <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2">
+                    <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2 print-hide">
                       <button
                         onClick={fitLeafletToAllStops}
                         title="Ver todos"
@@ -2829,8 +2892,28 @@ export default function Visits() {
                         <span className="text-xs text-gray-700 hidden sm:inline">Reiniciar</span>
                         <span className="text-xs text-gray-700 sm:hidden">Reset</span>
                       </button>
+                      <button
+                        onClick={toggleLeafletFullscreen}
+                        title={leafletFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
+                      >
+                        {leafletFullscreen ? (
+                          <Minimize2 className="w-4 h-4 text-gray-700" />
+                        ) : (
+                          <Maximize2 className="w-4 h-4 text-gray-700" />
+                        )}
+                        <span className="text-xs text-gray-700 hidden sm:inline">{leafletFullscreen ? 'Salir' : 'Completa'}</span>
+                      </button>
+                      <button
+                        onClick={printRoutePdf}
+                        title="Descargar PDF"
+                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
+                      >
+                        <FileDown className="w-4 h-4 text-gray-700" />
+                        <span className="text-xs text-gray-700 hidden sm:inline">PDF</span>
+                      </button>
                     </div>
-                    <div ref={mapRef} className="w-full h-full rounded-lg border" />
+                    <div ref={mapRef} className="w-full h-full rounded-lg border print-map" />
                   </div>
                 ) : (!mapsApiKey ? (
                   <div className="flex items-center justify-center h-full">
