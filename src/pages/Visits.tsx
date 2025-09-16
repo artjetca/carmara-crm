@@ -73,6 +73,7 @@ export default function Visits() {
     } catch {
       return null
     }
+  }, [routeName, savedRoutes])
 
   // 封裝：為客戶解析座標（帶有多級回退與本地持久化）
   const resolveCustomerCoords = async (c: Customer): Promise<{ lat: number; lng: number } | null> => {
@@ -162,7 +163,6 @@ export default function Visits() {
       return null
     }
   }
-  }, [routeName, savedRoutes])
   const t = translations
   // Google Maps Embed API key for frontend map visualization
   const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
@@ -561,68 +561,50 @@ export default function Visits() {
           return
         }
 
-        // Geocode all stops to coordinates with progressive fallback
-        const coords = await Promise.all(
-          routeCustomers.map(async (c) => {
-            try {
-              // 1) reuse cached coords if present
-              const cached = leafletCoordsRef.current[c.id]
-              if (cached) return cached
-
-              // 2) prefer stored lat/lng from DB if available
-              if (
-                typeof (c as any).latitude === 'number' && typeof (c as any).longitude === 'number' &&
-                !isNaN((c as any).latitude) && !isNaN((c as any).longitude)
-              ) {
-                const val = { lat: (c as any).latitude as number, lng: (c as any).longitude as number }
-                leafletCoordsRef.current[c.id] = val
-                return val
-              }
-
-              // 3) try full formatted address
-              const full = getAddress(c)
-              if (full) {
-                const gc1 = await geocodeAddress(full)
-                if (gc1) {
-                  const val = { lat: gc1.lat, lng: gc1.lng }
-                  leafletCoordsRef.current[c.id] = val
-                  return val
-                }
-              }
-
-              // 4) try city + province
-              const city = (displayCity(c) || (c as any).city || '').trim()
-              const prov = (displayProvince(c) || (c as any).province || '').trim()
-              if (city || prov) {
-                const q2 = [city, prov, 'España'].filter(Boolean).join(', ')
-                const gc2 = await geocodeAddress(q2)
-                if (gc2) {
-                  const val = { lat: gc2.lat, lng: gc2.lng }
-                  leafletCoordsRef.current[c.id] = val
-                  return val
-                }
-              }
-
-              // 5) try province only as last attempt
-              if (prov) {
-                const q3 = [prov, 'España'].filter(Boolean).join(', ')
-                const gc3 = await geocodeAddress(q3)
-                if (gc3) {
-                  const val = { lat: gc3.lat, lng: gc3.lng }
-                  leafletCoordsRef.current[c.id] = val
-                  return val
-                }
-              }
-
-              console.warn('[Leaflet] Geocoding failed for customer:', c?.id, c?.name)
-              return null
-            } catch (e) {
-              console.warn('[Leaflet] Geocoding error for customer:', c?.id, e)
-              return null
-            }
+        // Resolve coordinates for all stops (with caching/fallback)
+        const entries = await Promise.all(
+          routeCustomers.map(async (c, idx) => {
+            const pos = await resolveCustomerCoords(c)
+            return { c, idx, pos }
           })
         )
-        const positions = coords.filter(Boolean) as Array<{ lat: number; lng: number }>
+        // 构造与路线等长的位置数组；对缺失的点用相邻/默认位置回退
+        const positionsByIdx: Array<{ lat: number; lng: number } | null> = new Array(routeCustomers.length).fill(null)
+        entries.forEach(e => { if (e.pos) positionsByIdx[e.idx] = e.pos! })
+
+        // 先正向遍历，用上一个有效点作为参考
+        let lastValid: { lat: number; lng: number } | null = null
+        for (let i = 0; i < positionsByIdx.length; i++) {
+          if (positionsByIdx[i]) { lastValid = positionsByIdx[i]!; continue }
+          // 找下一个有效点
+          let nextValid: { lat: number; lng: number } | null = null
+          for (let j = i + 1; j < positionsByIdx.length; j++) {
+            if (positionsByIdx[j]) { nextValid = positionsByIdx[j]!; break }
+          }
+          const base = lastValid || nextValid || { lat: 36.7213, lng: -4.4214 }
+          const delta = 0.0006 * (i + 1) // 每个缺失点按索引位移，避免完全重叠
+          positionsByIdx[i] = { lat: base.lat + delta, lng: base.lng + delta }
+        }
+
+        // 对完全相同坐标再次做轻微抖动，避免重叠
+        const seen: Record<string, number> = {}
+        const jittered: Array<{ c: RouteCustomer; idx: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
+          const key = `${pos!.lat.toFixed(5)},${pos!.lng.toFixed(5)}`
+          const count = (seen[key] = (seen[key] || 0) + 1)
+          let lat = pos!.lat
+          let lng = pos!.lng
+          if (count > 1) {
+            const d = 0.0004 * (count - 1)
+            lat += d
+            lng += d
+          }
+          const c = routeCustomers[idx]
+          // 更新內存座標快取（不寫 localStorage）
+          try { leafletCoordsRef.current[c.id] = { lat, lng } } catch {}
+          return { c, idx, pos: { lat, lng } }
+        })
+
+        const positions = jittered.map(e => e.pos)
 
         if (positions.length === 0) {
           // No geocoded points
@@ -641,10 +623,28 @@ export default function Visits() {
 
         // Place markers and build polyline path
         const latlngs: L.LatLngExpression[] = []
-        positions.forEach((pos, idx) => {
+        jittered.forEach(({ c, idx, pos }) => {
           latlngs.push([pos.lat, pos.lng])
-          const marker = L.marker([pos.lat, pos.lng], { icon: createLeafletNumberedIcon(idx + 1) })
-          marker.addTo(map)
+          const orderNumber = idx + 1 // 按路線順序連續編號（1..N）
+          const marker = L.marker([pos.lat, pos.lng], { icon: createLeafletNumberedIcon(orderNumber) })
+          // Bind popup similar to Maps page
+          const popupHtml = `
+            <div class="space-y-2">
+              <div class="font-semibold text-gray-900">${escapeHtml(c.name || '')}</div>
+              ${c.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.address)}</div>` : ''}
+              <div class="text-xs text-gray-500">${escapeHtml(displayCity(c) || (c.city || c.province || ''))}</div>
+              ${(c.phone || (c as any).mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.phone || (c as any).mobile_phone)}</div>` : ''}
+              ${c.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.email)}</div>` : ''}
+              <div class="flex gap-2 pt-2 border-t border-gray-200">
+                ${(c.phone || (c as any).mobile_phone) ? `<a href=\"tel:${sanitizePhone(c.phone || (c as any).mobile_phone)}\" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md\">Llamar</a>` : ''}
+                <a href=\"https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getAddress(c))}\" target=\"_blank\" class=\"inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md\">Direcciones</a>
+              </div>
+            </div>`
+          marker.addTo(map).bindPopup(popupHtml)
+          marker.on('click', () => {
+            try { setSelectedCustomer(c) } catch {}
+            try { setShowDetails(true) } catch {}
+          })
           leafletMarkersRef.current.push(marker)
         })
 
@@ -677,6 +677,24 @@ export default function Visits() {
     renderLeaflet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers])
+
+  // Cleanup Leaflet map on unmount to avoid white screen when re-entering
+  useEffect(() => {
+    return () => {
+      try {
+        if (leafletMapInstanceRef.current) {
+          leafletMapInstanceRef.current.remove()
+          leafletMapInstanceRef.current = null
+        }
+        leafletMarkersRef.current.forEach(m => { try { m.remove() } catch {} })
+        leafletMarkersRef.current = []
+        if (leafletPolylineRef.current) {
+          try { leafletPolylineRef.current.remove() } catch {}
+          leafletPolylineRef.current = null
+        }
+      } catch {}
+    }
+  }, [])
 
   // Leaflet: fit bounds to all current route stops
   const fitLeafletToAllStops = () => {
@@ -2084,11 +2102,10 @@ export default function Visits() {
       })
       const { latitude: curLat, longitude: curLng } = position.coords
 
-      // 取得各客戶座標（並行）
+      // 取得各客戶座標（並行，使用帶回退的解析）
       const geocoded = await Promise.all(
         routeCustomers.map(async (c, idx) => {
-          const addr = getAddress(c)
-          const coords = await geocodeAddress(addr)
+          const coords = await resolveCustomerCoords(c)
           return { idx, customer: c, coords }
         })
       )
