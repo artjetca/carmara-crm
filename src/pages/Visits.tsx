@@ -59,6 +59,8 @@ export default function Visits() {
   const [leafletReset, setLeafletReset] = useState(0)
   // Fullscreen state for Leaflet map
   const [leafletFullscreen, setLeafletFullscreen] = useState(false)
+  // Document fullscreen state
+  const [isDocFullscreen, setIsDocFullscreen] = useState(false)
   const [routeDate, setRouteDate] = useState('')
   const [routeTime, setRouteTime] = useState('')
   const [savedRoutes, setSavedRoutes] = useState<any[]>([])
@@ -281,19 +283,21 @@ export default function Visits() {
   const myLocationMarkerRef = useRef<any>(null)
   const myLocationInfoRef = useRef<any>(null)
   const bottomSheetRef = useRef<HTMLDivElement | null>(null)
+  const fullContainerRef = useRef<HTMLDivElement | null>(null)
 
   // Leaflet map refs/state (for OSM rendering)
   const leafletMapInstanceRef = useRef<L.Map | null>(null)
   const leafletMarkersRef = useRef<L.Marker[]>([])
   const leafletPolylineRef = useRef<L.Polyline | null>(null)
+  // Leaflet-only: my location marker & geolocation watcher
+  const leafletMyLocationMarkerRef = useRef<L.Marker | null>(null)
+  const leafletGeoWatchIdRef = useRef<number | null>(null)
   // Cache coords per customer id when in Leaflet mode to avoid re-geocoding
   const leafletCoordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
   // Calculation guards to prevent loops / redundant recalculations in Leaflet mode
   const isCalculatingRef = useRef(false)
   const lastCalcKeyRef = useRef<string>('')
   const lastComputedDistanceRef = useRef<number>(-1)
-  // Leaflet-only: my location marker
-  const leafletMyLocationMarkerRef = useRef<L.Marker | null>(null)
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -766,16 +770,29 @@ export default function Visits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
 
-  // 全屏切換
-  const toggleLeafletFullscreen = () => {
-    setLeafletFullscreen(v => !v)
-    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 50)
-    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 250)
+  // 全屏切換（使用瀏覽器 Fullscreen API，讓整個路由規劃區域進入全屏）
+  const toggleDocumentFullscreen = async () => {
+    try {
+      const el = fullContainerRef.current || document.documentElement
+      if (!document.fullscreenElement) {
+        await (el as any)?.requestFullscreen?.()
+      } else {
+        await (document as any).exitFullscreen?.()
+      }
+    } catch (e) {
+      console.warn('[Fullscreen] toggle failed:', e)
+    } finally {
+      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 100)
+      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 300)
+    }
   }
 
   // PDF 導出（使用瀏覽器列印為 PDF）
-  const printRoutePdf = () => {
+  const printRoutePdf = async () => {
     try {
+      // 先保證顯示全部點位
+      try { fitLeafletToAllStops() } catch {}
+      await new Promise(r => setTimeout(r, 200))
       window.print()
     } catch (e) {
       alert('無法調用列印。請使用瀏覽器的列印到 PDF 功能。')
@@ -800,7 +817,7 @@ export default function Visits() {
     }
   }, [])
 
-  // 在返回頁面或窗口尺寸變更時，強制重算 Leaflet 容器尺寸，避免白屏
+  // 在返回頁面或窗口尺寸變更/全屏變更時，強制重算 Leaflet 容器尺寸，避免白屏
   useEffect(() => {
     const onVis = () => {
       if (!document.hidden) {
@@ -808,11 +825,17 @@ export default function Visits() {
       }
     }
     const onResize = () => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }
+    const onFs = () => {
+      setIsDocFullscreen(!!document.fullscreenElement)
+      try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {}
+    }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('resize', onResize)
+    document.addEventListener('fullscreenchange', onFs)
     return () => {
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('resize', onResize)
+      document.removeEventListener('fullscreenchange', onFs)
     }
   }, [])
 
@@ -839,47 +862,71 @@ export default function Visits() {
     }
   }
 
-  // Leaflet: show my location and pan/zoom
+  // Leaflet: show my location and pan/zoom（加強：第二次也能定位，失敗時使用 watchPosition 後備）
   const getCurrentLocationLeaflet = async () => {
     try {
       if (!('geolocation' in navigator)) {
         alert('Geolocalización no disponible en este navegador')
         return
       }
-      const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          try {
-            const map = leafletMapInstanceRef.current
-            if (!map) return
-            const { latitude, longitude } = position.coords
-            const pos: [number, number] = [latitude, longitude]
+      const tryGetPosition = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
+        const opts = { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+        navigator.geolocation.getCurrentPosition(resolve, reject, opts as any)
+      })
+      const tryWatchOnce = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
+        try {
+          if (leafletGeoWatchIdRef.current != null) {
+            try { navigator.geolocation.clearWatch(leafletGeoWatchIdRef.current) } catch {}
+            leafletGeoWatchIdRef.current = null
+          }
+          const id = navigator.geolocation.watchPosition((pos) => {
+            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
+            leafletGeoWatchIdRef.current = null
+            resolve(pos)
+          }, (err) => {
+            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
+            leafletGeoWatchIdRef.current = null
+            reject(err)
+          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 } as any)
+          leafletGeoWatchIdRef.current = id as any
+          // safety timeout
+          setTimeout(() => {
+            if (leafletGeoWatchIdRef.current != null) {
+              try { navigator.geolocation.clearWatch(leafletGeoWatchIdRef.current) } catch {}
+              leafletGeoWatchIdRef.current = null
+              reject(new Error('watchPosition timeout'))
+            }
+          }, 13000)
+        } catch (e) { reject(e as any) }
+      })
 
-            // Remove previous marker
-            try { leafletMyLocationMarkerRef.current?.remove() } catch {}
+      let position: GeolocationPosition
+      try {
+        position = await tryGetPosition()
+      } catch (e: any) {
+        // timeout or unavailable -> fallback to watch once
+        position = await tryWatchOnce()
+      }
 
-            const icon = L.divIcon({
-              className: '',
-              html: "<div style='width:18px;height:18px;border-radius:9px;background:#2563EB;box-shadow:0 1px 2px rgba(0,0,0,0.35)'></div>",
-              iconSize: [18, 18],
-              iconAnchor: [9, 9]
-            })
-            const marker = L.marker(pos, { icon })
-            marker.addTo(map).bindPopup('Mi Ubicación')
-            leafletMyLocationMarkerRef.current = marker
+      const map = leafletMapInstanceRef.current
+      if (!map) return
+      const { latitude, longitude } = position.coords
+      const pos: [number, number] = [latitude, longitude]
 
-            try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
-          } catch {}
-        },
-        (error) => {
-          let msg = 'No se pudo obtener la ubicación actual'
-          if (error.code === 1) msg = 'Permiso de ubicación denegado. Activa el permiso en el navegador y vuelve a intentarlo.'
-          else if (error.code === 2) msg = 'Ubicación no disponible. Verifica el GPS o los servicios de ubicación del dispositivo.'
-          else if (error.code === 3) msg = 'La solicitud de ubicación ha excedido el tiempo de espera. Inténtalo de nuevo.'
-          alert(msg)
-        },
-        options as any
-      )
+      // Remove previous marker
+      try { leafletMyLocationMarkerRef.current?.remove() } catch {}
+
+      const icon = L.divIcon({
+        className: '',
+        html: "<div style='width:18px;height:18px;border-radius:9px;background:#2563EB;box-shadow:0 1px 2px rgba(0,0,0,0.35)'></div>",
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      })
+      const marker = L.marker(pos, { icon })
+      marker.addTo(map).bindPopup('Mi Ubicación')
+      leafletMyLocationMarkerRef.current = marker
+
+      try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
     } catch (e) {
       console.error('[Leaflet] getCurrentLocation failed:', e)
       alert('No se pudo obtener la ubicación actual')
@@ -2340,7 +2387,7 @@ export default function Visits() {
   }
 
   return (
-    <div>
+    <div ref={fullContainerRef}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 print-hide">
         <div>
@@ -2852,7 +2899,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className={`${leafletFullscreen ? 'fixed inset-0 z-[1200] bg-white' : 'h-[800px]'} relative`}>
+              <div className={`h-[800px] relative`}>
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -2893,16 +2940,16 @@ export default function Visits() {
                         <span className="text-xs text-gray-700 sm:hidden">Reset</span>
                       </button>
                       <button
-                        onClick={toggleLeafletFullscreen}
-                        title={leafletFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                        onClick={toggleDocumentFullscreen}
+                        title={isDocFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
                         className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
                       >
-                        {leafletFullscreen ? (
+                        {isDocFullscreen ? (
                           <Minimize2 className="w-4 h-4 text-gray-700" />
                         ) : (
                           <Maximize2 className="w-4 h-4 text-gray-700" />
                         )}
-                        <span className="text-xs text-gray-700 hidden sm:inline">{leafletFullscreen ? 'Salir' : 'Completa'}</span>
+                        <span className="text-xs text-gray-700 hidden sm:inline">{isDocFullscreen ? 'Salir' : 'Completa'}</span>
                       </button>
                       <button
                         onClick={printRoutePdf}
