@@ -26,7 +26,8 @@ import {
   ExternalLink,
   Download,
   Upload,
-  LocateFixed
+  LocateFixed,
+  RefreshCcw
 } from 'lucide-react'
 
 // Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
@@ -51,6 +52,8 @@ export default function Visits() {
   const [totalDistance, setTotalDistance] = useState(0)
   const [totalDuration, setTotalDuration] = useState(0)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  // Manual reset trigger for Leaflet map to recover from blank screen
+  const [leafletReset, setLeafletReset] = useState(0)
   const [routeDate, setRouteDate] = useState('')
   const [routeTime, setRouteTime] = useState('')
   const [savedRoutes, setSavedRoutes] = useState<any[]>([])
@@ -74,6 +77,27 @@ export default function Visits() {
       return null
     }
   }, [routeName, savedRoutes])
+
+  // Leaflet: manual reset to recover from blank screen
+  const resetLeafletMap = () => {
+    try {
+      console.log('[Leaflet] Manual reset requested')
+      if (leafletMapInstanceRef.current) {
+        try { leafletMapInstanceRef.current.remove() } catch {}
+        leafletMapInstanceRef.current = null
+      }
+      leafletMarkersRef.current.forEach(m => { try { m.remove() } catch {} })
+      leafletMarkersRef.current = []
+      if (leafletPolylineRef.current) {
+        try { leafletPolylineRef.current.remove() } catch {}
+        leafletPolylineRef.current = null
+      }
+      setLeafletReset(v => v + 1)
+      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 300)
+    } catch (e) {
+      console.warn('[Leaflet] reset failed:', e)
+    }
+  }
 
   // 封裝：為客戶解析座標（帶有多級回退與本地持久化）
   const resolveCustomerCoords = async (c: Customer): Promise<{ lat: number; lng: number } | null> => {
@@ -540,6 +564,9 @@ export default function Visits() {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19,
           }).addTo(map)
+          // Fix occasional blank tiles by invalidating size after mount
+          try { setTimeout(() => map.invalidateSize(), 0) } catch {}
+          try { setTimeout(() => map.invalidateSize(), 250) } catch {}
 
           map.setView([36.7213, -4.4214], routeCustomers.length ? 10 : 7)
         }
@@ -586,22 +613,36 @@ export default function Visits() {
           positionsByIdx[i] = { lat: base.lat + delta, lng: base.lng + delta }
         }
 
-        // 对完全相同坐标再次做轻微抖动，避免重叠
-        const seen: Record<string, number> = {}
+        // 对重叠坐标做“径向分散”以避免遮挡
+        const precision = 5 // ~1.1m，分組更嚴格
+        const keyFor = (p: { lat: number; lng: number }) => `${p.lat.toFixed(precision)},${p.lng.toFixed(precision)}`
+        const groups = new Map<string, { center: { lat: number; lng: number }, idxs: number[] }>()
+        positionsByIdx.forEach((p, i) => {
+          const k = keyFor(p!)
+          if (!groups.has(k)) groups.set(k, { center: p!, idxs: [] })
+          groups.get(k)!.idxs.push(i)
+        })
+        // 分散
+        groups.forEach(({ center, idxs }) => {
+          if (idxs.length <= 1) return
+          const baseLatRad = center.lat * Math.PI / 180
+          const step = (2 * Math.PI) / idxs.length
+          const b = leafletMapInstanceRef.current?.getBounds?.()
+          const latSpan = b ? Math.abs(b.getNorth() - b.getSouth()) : 0.0
+          const base = Math.max(0.0012, latSpan * 0.002) // 隨視窗比例縮放，低縮放時更明顯分散
+          const radius = base + 0.00015 * Math.max(0, idxs.length - 1) // 群組越多半徑越大
+          idxs.forEach((idx, i) => {
+            const angle = step * i
+            const dLat = radius * Math.cos(angle)
+            const dLng = (radius * Math.sin(angle)) / Math.cos(baseLatRad)
+            positionsByIdx[idx] = { lat: center.lat + dLat, lng: center.lng + dLng }
+          })
+        })
+        // 生成最終條目並寫入內存快取
         const jittered: Array<{ c: RouteCustomer; idx: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
-          const key = `${pos!.lat.toFixed(5)},${pos!.lng.toFixed(5)}`
-          const count = (seen[key] = (seen[key] || 0) + 1)
-          let lat = pos!.lat
-          let lng = pos!.lng
-          if (count > 1) {
-            const d = 0.0004 * (count - 1)
-            lat += d
-            lng += d
-          }
           const c = routeCustomers[idx]
-          // 更新內存座標快取（不寫 localStorage）
-          try { leafletCoordsRef.current[c.id] = { lat, lng } } catch {}
-          return { c, idx, pos: { lat, lng } }
+          try { leafletCoordsRef.current[c.id] = { lat: pos!.lat, lng: pos!.lng } } catch {}
+          return { c, idx, pos: pos! }
         })
 
         const positions = jittered.map(e => e.pos)
@@ -676,7 +717,7 @@ export default function Visits() {
 
     renderLeaflet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapProvider, routeCustomers])
+  }, [mapProvider, routeCustomers, leafletReset])
 
   // Cleanup Leaflet map on unmount to avoid white screen when re-entering
   useEffect(() => {
@@ -693,6 +734,22 @@ export default function Visits() {
           leafletPolylineRef.current = null
         }
       } catch {}
+    }
+  }, [])
+
+  // 在返回頁面或窗口尺寸變更時，強制重算 Leaflet 容器尺寸，避免白屏
+  useEffect(() => {
+    const onVis = () => {
+      if (!document.hidden) {
+        try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {}
+      }
+    }
+    const onResize = () => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('resize', onResize)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('resize', onResize)
     }
   }, [])
 
@@ -2762,6 +2819,15 @@ export default function Visits() {
                         <LocateFixed className="w-4 h-4 text-blue-600" />
                         <span className="text-xs text-gray-700 hidden sm:inline">Mi ubicación</span>
                         <span className="text-xs text-gray-700 sm:hidden">Mi pos.</span>
+                      </button>
+                      <button
+                        onClick={resetLeafletMap}
+                        title="Reiniciar mapa"
+                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
+                      >
+                        <RefreshCcw className="w-4 h-4 text-gray-700" />
+                        <span className="text-xs text-gray-700 hidden sm:inline">Reiniciar</span>
+                        <span className="text-xs text-gray-700 sm:hidden">Reset</span>
                       </button>
                     </div>
                     <div ref={mapRef} className="w-full h-full rounded-lg border" />
