@@ -73,6 +73,95 @@ export default function Visits() {
     } catch {
       return null
     }
+
+  // 封裝：為客戶解析座標（帶有多級回退與本地持久化）
+  const resolveCustomerCoords = async (c: Customer): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      // 0) memory cache
+      const cached = leafletCoordsRef.current[c.id]
+      if (cached) return cached
+
+      // 1) DB lat/lng
+      if (
+        typeof (c as any).latitude === 'number' && typeof (c as any).longitude === 'number' &&
+        !isNaN((c as any).latitude) && !isNaN((c as any).longitude)
+      ) {
+        const val = { lat: (c as any).latitude as number, lng: (c as any).longitude as number }
+        leafletCoordsRef.current[c.id] = val
+        try {
+          const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+          m[c.id] = val
+          localStorage.setItem('carmara-customer-coords', JSON.stringify(m))
+        } catch {}
+        return val
+      }
+
+      // 2) localStorage cache (from Maps page or previous resolves)
+      try {
+        const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+        const lc = m && m[c.id]
+        if (lc && typeof lc.lat === 'number' && typeof lc.lng === 'number') {
+          const val = { lat: Number(lc.lat), lng: Number(lc.lng) }
+          leafletCoordsRef.current[c.id] = val
+          return val
+        }
+      } catch {}
+
+      // 3) full formatted address
+      const full = getAddress(c)
+      if (full) {
+        const gc1 = await geocodeAddress(full)
+        if (gc1) {
+          const val = { lat: gc1.lat, lng: gc1.lng }
+          leafletCoordsRef.current[c.id] = val
+          try {
+            const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+            m[c.id] = val
+            localStorage.setItem('carmara-customer-coords', JSON.stringify(m))
+          } catch {}
+          return val
+        }
+      }
+
+      // 4) city + province
+      const city = (displayCity(c) || (c as any).city || '').trim()
+      const prov = (displayProvince(c) || (c as any).province || '').trim()
+      if (city || prov) {
+        const q2 = [city, prov, 'España'].filter(Boolean).join(', ')
+        const gc2 = await geocodeAddress(q2)
+        if (gc2) {
+          const val = { lat: gc2.lat, lng: gc2.lng }
+          leafletCoordsRef.current[c.id] = val
+          try {
+            const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+            m[c.id] = val
+            localStorage.setItem('carmara-customer-coords', JSON.stringify(m))
+          } catch {}
+          return val
+        }
+      }
+
+      // 5) province only
+      if (prov) {
+        const q3 = [prov, 'España'].filter(Boolean).join(', ')
+        const gc3 = await geocodeAddress(q3)
+        if (gc3) {
+          const val = { lat: gc3.lat, lng: gc3.lng }
+          leafletCoordsRef.current[c.id] = val
+          try {
+            const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+            m[c.id] = val
+            localStorage.setItem('carmara-customer-coords', JSON.stringify(m))
+          } catch {}
+          return val
+        }
+      }
+
+      return null
+    } catch {
+      return null
+    }
+  }
   }, [routeName, savedRoutes])
   const t = translations
   // Google Maps Embed API key for frontend map visualization
@@ -472,20 +561,65 @@ export default function Visits() {
           return
         }
 
-        // Geocode all stops to coordinates (uses existing serverless geocode)
+        // Geocode all stops to coordinates with progressive fallback
         const coords = await Promise.all(
           routeCustomers.map(async (c) => {
-            // reuse cached coords if present
-            const cached = leafletCoordsRef.current[c.id]
-            if (cached) return cached
-            const addr = getAddress(c)
-            const gc = await geocodeAddress(addr)
-            if (gc) {
-              const val = { lat: gc.lat, lng: gc.lng }
-              leafletCoordsRef.current[c.id] = val
-              return val
+            try {
+              // 1) reuse cached coords if present
+              const cached = leafletCoordsRef.current[c.id]
+              if (cached) return cached
+
+              // 2) prefer stored lat/lng from DB if available
+              if (
+                typeof (c as any).latitude === 'number' && typeof (c as any).longitude === 'number' &&
+                !isNaN((c as any).latitude) && !isNaN((c as any).longitude)
+              ) {
+                const val = { lat: (c as any).latitude as number, lng: (c as any).longitude as number }
+                leafletCoordsRef.current[c.id] = val
+                return val
+              }
+
+              // 3) try full formatted address
+              const full = getAddress(c)
+              if (full) {
+                const gc1 = await geocodeAddress(full)
+                if (gc1) {
+                  const val = { lat: gc1.lat, lng: gc1.lng }
+                  leafletCoordsRef.current[c.id] = val
+                  return val
+                }
+              }
+
+              // 4) try city + province
+              const city = (displayCity(c) || (c as any).city || '').trim()
+              const prov = (displayProvince(c) || (c as any).province || '').trim()
+              if (city || prov) {
+                const q2 = [city, prov, 'España'].filter(Boolean).join(', ')
+                const gc2 = await geocodeAddress(q2)
+                if (gc2) {
+                  const val = { lat: gc2.lat, lng: gc2.lng }
+                  leafletCoordsRef.current[c.id] = val
+                  return val
+                }
+              }
+
+              // 5) try province only as last attempt
+              if (prov) {
+                const q3 = [prov, 'España'].filter(Boolean).join(', ')
+                const gc3 = await geocodeAddress(q3)
+                if (gc3) {
+                  const val = { lat: gc3.lat, lng: gc3.lng }
+                  leafletCoordsRef.current[c.id] = val
+                  return val
+                }
+              }
+
+              console.warn('[Leaflet] Geocoding failed for customer:', c?.id, c?.name)
+              return null
+            } catch (e) {
+              console.warn('[Leaflet] Geocoding error for customer:', c?.id, e)
+              return null
             }
-            return null
           })
         )
         const positions = coords.filter(Boolean) as Array<{ lat: number; lng: number }>
@@ -2048,6 +2182,9 @@ export default function Visits() {
   const getAddress = (customer: Customer) => {
     const parts = []
     if (customer.address) parts.push(customer.address)
+    // 加入郵遞區號（若存在）提升地理編碼成功率
+    const cp = (customer as any).cp || (customer as any).postal_code
+    if (cp) parts.push(String(cp))
     const city = displayCity(customer)
     if (city) parts.push(city)
     const province = displayProvince(customer)
