@@ -89,6 +89,7 @@ export default function Visits() {
   const resetLeafletMap = () => {
     try {
       console.log('[Leaflet] Manual reset requested')
+      isManualResetRef.current = true
       if (leafletMapInstanceRef.current) {
         try { leafletMapInstanceRef.current.remove() } catch {}
         leafletMapInstanceRef.current = null
@@ -292,6 +293,8 @@ export default function Visits() {
   // Leaflet-only: my location marker & geolocation watcher
   const leafletMyLocationMarkerRef = useRef<L.Marker | null>(null)
   const leafletGeoWatchIdRef = useRef<number | null>(null)
+  // Guard: manual reset in progress (to avoid any auto recalculation/reordering side-effects)
+  const isManualResetRef = useRef(false)
   // Cache coords per customer id when in Leaflet mode to avoid re-geocoding
   const leafletCoordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
   // Calculation guards to prevent loops / redundant recalculations in Leaflet mode
@@ -757,10 +760,12 @@ export default function Visits() {
           const allReady = routeCustomers.length >= 2 && routeCustomers.every(c => !!leafletCoordsRef.current[c.id])
           const needCalc = routeCustomers.some((c: any, idx: number) => idx > 0 && (c as any).distance == null)
           const routeKey = routeCustomers.map(c => c.id).join('>')
-          if (allReady && needCalc && !isCalculatingRef.current && lastCalcKeyRef.current !== routeKey) {
+          if (!isManualResetRef.current && allReady && needCalc && !isCalculatingRef.current && lastCalcKeyRef.current !== routeKey) {
             await calculateRouteDistanceAndTime([...routeCustomers])
           }
         } catch {}
+        // End of manual reset cycle (if any)
+        try { isManualResetRef.current = false } catch {}
       } catch (e) {
         console.warn('[RoutePlanning][Leaflet] render failed', e)
       }
