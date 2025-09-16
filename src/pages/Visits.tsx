@@ -1563,20 +1563,53 @@ export default function Visits() {
       // Try to delete from database first for cross-device synchronization
       if (user?.id) {
         try {
-          const { error } = await supabase
+          // Attempt direct Supabase deletion (returning representation to confirm affected rows)
+          const { data: delData, error } = await supabase
             .from('saved_routes')
             .delete()
             .eq('id', routeId)
             .eq('created_by', user.id)
+            .select()
           
-          if (!error) {
+          if (!error && Array.isArray(delData) && delData.length > 0) {
             deletedFromDatabase = true
-            console.log('Route deleted from database successfully')
+            console.log('Route deleted from database successfully:', routeId)
           } else {
-            console.warn('Database delete failed:', error)
+            console.warn('Database delete failed or returned no rows:', error || 'no rows')
           }
         } catch (dbError) {
           console.warn('Database delete failed, using localStorage fallback:', dbError)
+        }
+      }
+      
+      // Fallback: try Netlify function with Supabase JWT if DB delete didn't happen
+      if (!deletedFromDatabase) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession()
+          const token = sessionData?.session?.access_token
+          if (token) {
+            const resp = await fetch(`/.netlify/functions/saved-routes/${routeId}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            })
+            if (resp.ok) {
+              const json = await resp.json().catch(() => ({} as any))
+              if (json?.success || resp.status === 200) {
+                deletedFromDatabase = true
+                console.log('Route deleted via Netlify function:', routeId)
+              } else {
+                console.warn('Netlify delete responded without success:', json)
+              }
+            } else {
+              const text = await resp.text().catch(() => '')
+              console.warn('Netlify delete failed:', resp.status, text)
+            }
+          }
+        } catch (fnErr) {
+          console.warn('Netlify delete error:', fnErr)
         }
       }
       
