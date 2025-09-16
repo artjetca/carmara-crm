@@ -25,7 +25,8 @@ import {
   Car,
   ExternalLink,
   Download,
-  Upload
+  Upload,
+  LocateFixed
 } from 'lucide-react'
 
 // Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
@@ -169,6 +170,12 @@ export default function Visits() {
   const leafletPolylineRef = useRef<L.Polyline | null>(null)
   // Cache coords per customer id when in Leaflet mode to avoid re-geocoding
   const leafletCoordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
+  // Calculation guards to prevent loops / redundant recalculations in Leaflet mode
+  const isCalculatingRef = useRef(false)
+  const lastCalcKeyRef = useRef<string>('')
+  const lastComputedDistanceRef = useRef<number>(-1)
+  // Leaflet-only: my location marker
+  const leafletMyLocationMarkerRef = useRef<L.Marker | null>(null)
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -519,10 +526,12 @@ export default function Visits() {
           map.fitBounds(bounds, { padding: [16, 16] })
         } catch {}
 
-        // After render, compute offline distances if not set yet
+        // After render, compute offline distances if not set yet and coordinates are ready
         try {
-          const needCalc = routeCustomers.some((c: any) => c && (c as any).distance == null)
-          if (needCalc && routeCustomers.length >= 2) {
+          const allReady = routeCustomers.length >= 2 && routeCustomers.every(c => !!leafletCoordsRef.current[c.id])
+          const needCalc = routeCustomers.some((c: any, idx: number) => idx > 0 && (c as any).distance == null)
+          const routeKey = routeCustomers.map(c => c.id).join('>')
+          if (allReady && needCalc && !isCalculatingRef.current && lastCalcKeyRef.current !== routeKey) {
             await calculateRouteDistanceAndTime([...routeCustomers])
           }
         } catch {}
@@ -534,6 +543,76 @@ export default function Visits() {
     renderLeaflet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers])
+
+  // Leaflet: fit bounds to all current route stops
+  const fitLeafletToAllStops = () => {
+    try {
+      const map = leafletMapInstanceRef.current
+      if (!map) return
+      const latlngs: L.LatLngExpression[] = []
+      for (const c of routeCustomers) {
+        const pos = leafletCoordsRef.current[c.id]
+        if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
+          latlngs.push([pos.lat, pos.lng])
+        }
+      }
+      if (latlngs.length === 0) {
+        map.setView([36.7213, -4.4214], 8)
+        return
+      }
+      const bounds = L.latLngBounds(latlngs as any)
+      map.fitBounds(bounds, { padding: [16, 16] })
+    } catch (e) {
+      console.warn('[Leaflet] fitLeafletToAllStops failed:', e)
+    }
+  }
+
+  // Leaflet: show my location and pan/zoom
+  const getCurrentLocationLeaflet = async () => {
+    try {
+      if (!('geolocation' in navigator)) {
+        alert('Geolocalización no disponible en este navegador')
+        return
+      }
+      const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          try {
+            const map = leafletMapInstanceRef.current
+            if (!map) return
+            const { latitude, longitude } = position.coords
+            const pos: [number, number] = [latitude, longitude]
+
+            // Remove previous marker
+            try { leafletMyLocationMarkerRef.current?.remove() } catch {}
+
+            const icon = L.divIcon({
+              className: '',
+              html: "<div style='width:18px;height:18px;border-radius:9px;background:#2563EB;box-shadow:0 1px 2px rgba(0,0,0,0.35)'></div>",
+              iconSize: [18, 18],
+              iconAnchor: [9, 9]
+            })
+            const marker = L.marker(pos, { icon })
+            marker.addTo(map).bindPopup('Mi Ubicación')
+            leafletMyLocationMarkerRef.current = marker
+
+            try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
+          } catch {}
+        },
+        (error) => {
+          let msg = 'No se pudo obtener la ubicación actual'
+          if (error.code === 1) msg = 'Permiso de ubicación denegado. Activa el permiso en el navegador y vuelve a intentarlo.'
+          else if (error.code === 2) msg = 'Ubicación no disponible. Verifica el GPS o los servicios de ubicación del dispositivo.'
+          else if (error.code === 3) msg = 'La solicitud de ubicación ha excedido el tiempo de espera. Inténtalo de nuevo.'
+          alert(msg)
+        },
+        options as any
+      )
+    } catch (e) {
+      console.error('[Leaflet] getCurrentLocation failed:', e)
+      alert('No se pudo obtener la ubicación actual')
+    }
+  }
 
   // Adjust map padding dynamically when the bottom sheet opens/closes
   useEffect(() => {
@@ -1099,8 +1178,17 @@ export default function Visits() {
       return
     }
 
+    // Prevent redundant recalculations and log spam
+    const routeKey = route.map(c => c.id).join('>')
+    if (isCalculatingRef.current) {
+      return
+    }
+    if (lastCalcKeyRef.current !== routeKey) {
+      try { console.log('[RoutePlanning] Calculating distances for route:', route.length, 'customers') } catch {}
+    }
+    isCalculatingRef.current = true
+
     try {
-      console.log('[RoutePlanning] Calculating distances for route:', route.length, 'customers')
       // In Leaflet (OSM) mode: avoid any paid APIs and compute approximate distance offline
       if (mapProvider === 'leaflet') {
         // Use cached coordinates computed by Leaflet render to avoid extra geocoding
@@ -1120,6 +1208,9 @@ export default function Visits() {
         }
         setTotalDistance(Number(totalKm.toFixed(1)))
         setTotalDuration(0)
+        // Mark calculation snapshot
+        lastCalcKeyRef.current = routeKey
+        lastComputedDistanceRef.current = Number(totalKm.toFixed(1))
         setRouteCustomers(updatedRoute)
         return
       }
@@ -1180,6 +1271,8 @@ export default function Visits() {
       console.error('Error calculating route distance and time:', error)
       // 如果發生錯誤，仍然更新路線但不顯示距離
       setRouteCustomers([...route])
+    } finally {
+      isCalculatingRef.current = false
     }
   }
 
@@ -2330,10 +2423,12 @@ export default function Visits() {
                     <span className="text-gray-600">Total paradas:</span>
                     <span className="font-medium">{routeCustomers.length}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Distancia total:</span>
-                    <span className="font-medium text-blue-600">{totalDistance.toFixed(1)} km</span>
-                  </div>
+                  {(mapProvider !== 'leaflet' || totalDistance > 0) && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Distancia total:</span>
+                      <span className="font-medium text-blue-600">{totalDistance.toFixed(1)} km</span>
+                    </div>
+                  )}
                   {mapProvider !== 'leaflet' && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">Tiempo estimado:</span>
@@ -2454,9 +2549,11 @@ export default function Visits() {
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
                       Paradas: <span className="ml-1 font-medium">{routeCustomers.length}</span>
                     </span>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
-                      Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
-                    </span>
+                    {(mapProvider !== 'leaflet' || totalDistance > 0) && (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
+                        Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
+                      </span>
+                    )}
                     {mapProvider !== 'leaflet' && (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-green-50 text-green-700">
                         Tiempo: <span className="ml-1 font-medium">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</span>
@@ -2493,8 +2590,27 @@ export default function Visits() {
               ) : (
                 mapProvider === 'leaflet' ? (
                   <div className="h-full relative">
+                    {/* Leaflet overlay controls */}
+                    <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2">
+                      <button
+                        onClick={fitLeafletToAllStops}
+                        title="Ver todos"
+                        className="inline-flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
+                      >
+                        <span className="text-xs text-gray-700 hidden sm:inline">Ver todos</span>
+                        <span className="text-xs text-gray-700 sm:hidden">Todos</span>
+                      </button>
+                      <button
+                        onClick={getCurrentLocationLeaflet}
+                        title="Mi ubicación"
+                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
+                      >
+                        <LocateFixed className="w-4 h-4 text-blue-600" />
+                        <span className="text-xs text-gray-700 hidden sm:inline">Mi ubicación</span>
+                        <span className="text-xs text-gray-700 sm:hidden">Mi pos.</span>
+                      </button>
+                    </div>
                     <div ref={mapRef} className="w-full h-full rounded-lg border" />
-                    {/* Leaflet mode: no Google-specific controls */}
                   </div>
                 ) : (!mapsApiKey ? (
                   <div className="flex items-center justify-center h-full">
@@ -2580,10 +2696,12 @@ export default function Visits() {
                     <div className="text-xs text-gray-500">Paradas</div>
                     <div className="font-semibold">{routeCustomers.length}</div>
                   </div>
-                  <div className="bg-blue-50 rounded-lg p-2">
-                    <div className="text-xs text-blue-700">Distancia</div>
-                    <div className="font-semibold text-blue-700">{totalDistance.toFixed(1)} km</div>
-                  </div>
+                  {(mapProvider !== 'leaflet' || totalDistance > 0) && (
+                    <div className="bg-blue-50 rounded-lg p-2">
+                      <div className="text-xs text-blue-700">Distancia</div>
+                      <div className="font-semibold text-blue-700">{totalDistance.toFixed(1)} km</div>
+                    </div>
+                  )}
                   {mapProvider !== 'leaflet' && (
                     <div className="bg-green-50 rounded-lg p-2">
                       <div className="text-xs text-green-700">Tiempo</div>
