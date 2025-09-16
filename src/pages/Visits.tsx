@@ -388,17 +388,54 @@ export default function Visits() {
     }
 
     await ensureLeafletImageLoaded()
-    // 等待圖磚載入完成再導出
-    await new Promise<void>((resolve) => tile.once('load', () => resolve()))
+    // 等待圖磚載入完成再導出，添加超時保護
+    await new Promise<void>((resolve) => {
+      let resolved = false
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          resolve()
+        }
+      }, 3000) // 3秒超時
 
-    const dataUrl = await new Promise<string>((resolve) => {
       try {
-        (window as any).leafletImage(map, (err: any, canvas: HTMLCanvasElement) => {
-          let url = ''
-          try { url = canvas?.toDataURL?.('image/png') || '' } catch {}
-          resolve(url)
+        tile.once('load', () => {
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            resolve()
+          }
         })
       } catch {
+        if (!resolved) {
+          resolved = true
+          clearTimeout(timeout)
+          resolve()
+        }
+      }
+    })
+
+    const dataUrl = await new Promise<string>((resolve) => {
+      const timeout = setTimeout(() => resolve(''), 5000) // 5秒超時
+      
+      try {
+        (window as any).leafletImage(map, (err: any, canvas: HTMLCanvasElement) => {
+          clearTimeout(timeout)
+          let url = ''
+          if (!err && canvas) {
+            try { 
+              url = canvas.toDataURL('image/png') || '' 
+            } catch (e) {
+              console.warn('[PDF] Canvas toDataURL failed:', e)
+            }
+          } else if (err) {
+            console.warn('[PDF] leafletImage failed:', err)
+          }
+          resolve(url)
+        })
+      } catch (e) {
+        clearTimeout(timeout)
+        console.warn('[PDF] leafletImage call failed:', e)
         resolve('')
       }
     })
@@ -821,11 +858,8 @@ export default function Visits() {
                 <a href=\"https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getAddress(c))}\" target=\"_blank\" class=\"inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md\">Direcciones</a>
               </div>
             </div>`
-          marker.addTo(map).bindPopup(popupHtml)
-          marker.on('click', () => {
-            try { setSelectedCustomer(c) } catch {}
-            try { setShowDetails(true) } catch {}
-          })
+          marker.addTo(map)
+          // 移除點擊彈出詳情功能，避免干擾路線規劃
           leafletMarkersRef.current.push(marker)
         })
 
@@ -872,26 +906,39 @@ export default function Visits() {
         const map = leafletMapInstanceRef.current
         if (!map) return
         
-        // 強制重新計算容器尺寸
-        map.invalidateSize({ animate: false })
+        // 強制重新計算容器尺寸（多次調用確保生效）
+        map.invalidateSize({ animate: false, pan: false })
+        setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 10)
+        setTimeout(() => map.invalidateSize({ animate: false, pan: false }), 50)
+        
+        // 強制觸發重繪事件
+        map.fire('resize')
+        
+        // 重新設置瓦片層
+        try {
+          map.eachLayer((layer: any) => {
+            if (layer.redraw && typeof layer.redraw === 'function') {
+              layer.redraw()
+            }
+          })
+        } catch {}
         
         // 如果有路線點，重新調整視野
         if (routeCustomers.length > 0) {
-          const latlngs: L.LatLngExpression[] = []
-          for (const c of routeCustomers) {
-            const pos = leafletCoordsRef.current[c.id]
-            if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
-              latlngs.push([pos.lat, pos.lng])
+          setTimeout(() => {
+            const latlngs: L.LatLngExpression[] = []
+            for (const c of routeCustomers) {
+              const pos = leafletCoordsRef.current[c.id]
+              if (pos && typeof pos.lat === 'number' && typeof pos.lng === 'number') {
+                latlngs.push([pos.lat, pos.lng])
+              }
             }
-          }
-          if (latlngs.length > 0) {
-            const bounds = L.latLngBounds(latlngs as any)
-            map.fitBounds(bounds, { padding: [20, 20], animate: false })
-          }
+            if (latlngs.length > 0) {
+              const bounds = L.latLngBounds(latlngs as any)
+              map.fitBounds(bounds, { padding: [20, 20], animate: false })
+            }
+          }, 100)
         }
-        
-        // 強制觸發重繪
-        map.fire('resize')
       } catch (e) {
         console.warn('[Fullscreen] Map size fix failed:', e)
       }
@@ -901,10 +948,14 @@ export default function Visits() {
     setTimeout(fixMapSize, 0)
     // 短延遲修復（DOM 更新後）
     setTimeout(fixMapSize, 50)
+    // 中等延遲修復
+    setTimeout(fixMapSize, 150)
     // 較長延遲修復（動畫完成後）
     setTimeout(fixMapSize, 300)
     // 最終修復（確保完全載入）
     setTimeout(fixMapSize, 600)
+    // 額外保險修復
+    setTimeout(fixMapSize, 1000)
   }
 
   // PDF 獨立導出（非截圖方式）
