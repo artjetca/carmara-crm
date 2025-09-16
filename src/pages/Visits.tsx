@@ -388,24 +388,47 @@ export default function Visits() {
     }
 
     await ensureLeafletImageLoaded()
+    
+    // 強制等待地圖完全渲染
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    // 強制重新計算地圖尺寸確保正確渲染
+    map.invalidateSize({ animate: false })
+    await new Promise(resolve => setTimeout(resolve, 200))
+    
     // 等待圖磚載入完成再導出，添加超時保護
     await new Promise<void>((resolve) => {
       let resolved = false
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true
+          console.log('[PDF] Tile load timeout, proceeding with export')
           resolve()
         }
-      }, 3000) // 3秒超時
+      }, 5000) // 增加到5秒超時
 
       try {
-        tile.once('load', () => {
-          if (!resolved) {
-            resolved = true
-            clearTimeout(timeout)
-            resolve()
+        // 檢查所有圖磚是否已載入
+        const checkTilesLoaded = () => {
+          const tileContainer = container.querySelector('.leaflet-tile-container')
+          if (tileContainer) {
+            const tiles = tileContainer.querySelectorAll('img')
+            const allLoaded = Array.from(tiles).every((img: any) => img.complete)
+            if (allLoaded && !resolved) {
+              resolved = true
+              clearTimeout(timeout)
+              console.log('[PDF] All tiles loaded')
+              resolve()
+            } else if (!resolved) {
+              setTimeout(checkTilesLoaded, 100)
+            }
+          } else if (!resolved) {
+            setTimeout(checkTilesLoaded, 100)
           }
-        })
+        }
+        
+        checkTilesLoaded()
+        
       } catch {
         if (!resolved) {
           resolved = true
@@ -934,10 +957,15 @@ export default function Visits() {
         try {
           const container = map.getContainer()
           if (container) {
+            // 強制觸發重排和重繪
+            container.style.display = 'none'
+            container.offsetHeight // 強制重排
+            container.style.display = ''
             container.style.transform = 'translateZ(0)' // 強制硬體加速
             setTimeout(() => {
               container.style.transform = ''
-            }, 100)
+              map.invalidateSize({ animate: false })
+            }, 150)
           }
         } catch {}
         
@@ -959,7 +987,7 @@ export default function Visits() {
             } catch (e) {
               console.warn('[Fullscreen] fitBounds failed:', e)
             }
-          }, 200)
+          }, 300)
         }
         
         // 最後嘗試：重新設置地圖中心和縮放
@@ -969,21 +997,23 @@ export default function Visits() {
             const zoom = map.getZoom()
             map.setView(center, zoom, { animate: false })
           } catch {}
-        }, 300)
+        }, 500)
         
       } catch (e) {
         console.warn(`[Fullscreen] Fix attempt ${attempt} failed:`, e)
       }
     }
     
-    // 多階段修復策略
+    // 多階段修復策略（增加更多時間點）
     setTimeout(() => fixMapSize(1), 0)     // 立即
     setTimeout(() => fixMapSize(2), 50)    // DOM 更新
     setTimeout(() => fixMapSize(3), 100)   // 快速
     setTimeout(() => fixMapSize(4), 200)   // 中等
     setTimeout(() => fixMapSize(5), 400)   // 較長
-    setTimeout(() => fixMapSize(6), 800)   // 最終
-    setTimeout(() => fixMapSize(7), 1500)  // 保險
+    setTimeout(() => fixMapSize(6), 600)   // 延長
+    setTimeout(() => fixMapSize(7), 1000)  // 最終
+    setTimeout(() => fixMapSize(8), 1500)  // 保險
+    setTimeout(() => fixMapSize(9), 2000)  // 終極保險
   }
 
   // PDF 獨立導出（非截圖方式）
@@ -1936,6 +1966,20 @@ export default function Visits() {
     setTotalDistance(0)
     setTotalDuration(0)
     setSelectedCustomer(null)
+    
+    // 強制重置地圖避免白屏
+    setTimeout(() => {
+      try {
+        const map = leafletMapInstanceRef.current
+        if (map) {
+          map.invalidateSize({ animate: false })
+          map.setView([36.7213, -4.4214], 7, { animate: false })
+        }
+      } catch (e) {
+        console.warn('[ClearRoute] Map reset failed:', e)
+      }
+    }, 100)
+    
     // clear draft when route is cleared
     try { localStorage.removeItem(draftKey) } catch {}
   }
