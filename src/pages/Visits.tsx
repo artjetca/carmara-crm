@@ -164,6 +164,22 @@ export default function Visits() {
     }
   }
 
+  // 格式化地址
+  const getAddress = (customer: Customer) => {
+    const parts = []
+    if (customer.address) parts.push(customer.address)
+    // 加入郵遞區號（若存在）提升地理編碼成功率
+    const cp = (customer as any).cp || (customer as any).postal_code
+    if (cp) parts.push(String(cp))
+    const city = displayCity(customer)
+    if (city) parts.push(city)
+    const province = displayProvince(customer)
+    if (province) parts.push(province)
+    // Add country to improve geocoding stability
+    parts.push('España')
+    return parts.join(', ') || 'Sin dirección'
+  }
+
   // 封裝：為客戶解析座標（帶有多級回退與本地持久化）
   const resolveCustomerCoords = async (c: Customer): Promise<{ lat: number; lng: number } | null> => {
     try {
@@ -2822,18 +2838,25 @@ export default function Visits() {
         return
       }
 
+      console.log('[RouteOptimization] Starting location-based optimization, mapProvider:', mapProvider)
+      
       // 取得當前位置 - 加入權限檢測、延長超時、watchPosition 後備
       if (!('geolocation' in navigator)) {
         alert('Geolocalización no disponible en este navegador')
         return
       }
+      
+      // 检查权限状态
       try {
         const perm = (navigator as any).permissions && await (navigator as any).permissions.query({ name: 'geolocation' as any })
+        console.log('[RouteOptimization] Permission state:', perm?.state)
         if (perm && perm.state === 'denied') {
           alert('Permiso de ubicación denegado. Habilítalo en la configuración del navegador para este sitio y vuelve a intentarlo.')
           return
         }
-      } catch {}
+      } catch (e) {
+        console.warn('[RouteOptimization] Permission check failed:', e)
+      }
 
       const tryGetPosition = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
         const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
@@ -2860,48 +2883,96 @@ export default function Visits() {
 
       let position: GeolocationPosition
       try {
+        console.log('[RouteOptimization] Trying getCurrentPosition...')
         position = await tryGetPosition()
+        console.log('[RouteOptimization] getCurrentPosition success:', position.coords.latitude, position.coords.longitude)
       } catch (e: any) {
-        console.warn('[RouteOptimization] getCurrentPosition failed, trying watchPosition:', e.message)
+        console.warn('[RouteOptimization] getCurrentPosition failed:', e.code, e.message)
         try {
+          console.log('[RouteOptimization] Trying watchPosition fallback...')
           position = await tryWatchOnce()
+          console.log('[RouteOptimization] watchPosition success:', position.coords.latitude, position.coords.longitude)
         } catch (e2: any) {
-          console.error('[RouteOptimization] Both getCurrentPosition and watchPosition failed:', e2.message)
+          console.error('[RouteOptimization] Both methods failed:', e2.code, e2.message)
           
-          // 手動位置輸入後備方案
-          const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual (dirección o coordenadas):\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
-          
-          if (!manualLocation?.trim()) {
-            alert('Se requiere una ubicación para optimizar la ruta')
-            return
-          }
-          
-          try {
-            // 嘗試解析為座標格式 (lat, lng)
-            const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
-            if (coordMatch) {
-              const lat = parseFloat(coordMatch[1])
-              const lng = parseFloat(coordMatch[2])
-              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                position = {
-                  coords: { latitude: lat, longitude: lng }
-                } as GeolocationPosition
-              } else {
-                throw new Error('Coordenadas inválidas')
-              }
-            } else {
-              // 使用地理編碼 API 將地址轉換為座標
-              const geocoded = await geocodeAddress(manualLocation.trim())
-              if (!geocoded) {
-                throw new Error('No se pudo geocodificar la dirección')
-              }
+          // 优先使用"Mi Ubicación"按钮的已获取位置
+          if (mapProvider === 'leaflet' && leafletMyLocationMarkerRef.current) {
+            try {
+              const latLng = leafletMyLocationMarkerRef.current.getLatLng()
               position = {
-                coords: { latitude: geocoded.lat, longitude: geocoded.lng }
+                coords: { latitude: latLng.lat, longitude: latLng.lng }
               } as GeolocationPosition
+              console.log('[RouteOptimization] Using cached Leaflet location:', latLng.lat, latLng.lng)
+            } catch {
+              // 如果没有缓存位置，继续手动输入
+              const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual (dirección o coordenadas):\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
+              if (!manualLocation?.trim()) {
+                alert('Se requiere una ubicación para optimizar la ruta')
+                return
+              }
+              // 继续处理手动输入
+              try {
+                const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
+                if (coordMatch) {
+                  const lat = parseFloat(coordMatch[1])
+                  const lng = parseFloat(coordMatch[2])
+                  if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                    position = {
+                      coords: { latitude: lat, longitude: lng }
+                    } as GeolocationPosition
+                  } else {
+                    throw new Error('Coordenadas inválidas')
+                  }
+                } else {
+                  const geocoded = await geocodeAddress(manualLocation.trim())
+                  if (!geocoded) {
+                    throw new Error('No se pudo geocodificar la dirección')
+                  }
+                  position = {
+                    coords: { latitude: geocoded.lat, longitude: geocoded.lng }
+                  } as GeolocationPosition
+                }
+              } catch (geoError: any) {
+                alert(`Error al procesar la ubicación manual: ${geoError.message}`)
+                return
+              }
             }
-          } catch (geoError: any) {
-            alert(`Error al procesar la ubicación manual: ${geoError.message}`)
-            return
+          } else {
+            // 手動位置輸入後備方案
+            const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual (dirección o coordenadas):\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
+          
+            if (!manualLocation?.trim()) {
+              alert('Se requiere una ubicación para optimizar la ruta')
+              return
+            }
+            
+            try {
+              // 嘗試解析為座標格式 (lat, lng)
+              const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
+              if (coordMatch) {
+                const lat = parseFloat(coordMatch[1])
+                const lng = parseFloat(coordMatch[2])
+                if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                  position = {
+                    coords: { latitude: lat, longitude: lng }
+                  } as GeolocationPosition
+                } else {
+                  throw new Error('Coordenadas inválidas')
+                }
+              } else {
+                // 使用地理編碼 API 將地址轉換為座標
+                const geocoded = await geocodeAddress(manualLocation.trim())
+                if (!geocoded) {
+                  throw new Error('No se pudo geocodificar la dirección')
+                }
+                position = {
+                  coords: { latitude: geocoded.lat, longitude: geocoded.lng }
+                } as GeolocationPosition
+              }
+            } catch (geoError: any) {
+              alert(`Error al procesar la ubicación manual: ${geoError.message}`)
+              return
+            }
           }
         }
       }
@@ -3045,22 +3116,6 @@ export default function Visits() {
     const address = getAddress(customer)
     const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving`
     window.open(url, '_blank')
-  }
-
-  // 格式化地址
-  const getAddress = (customer: Customer) => {
-    const parts = []
-    if (customer.address) parts.push(customer.address)
-    // 加入郵遞區號（若存在）提升地理編碼成功率
-    const cp = (customer as any).cp || (customer as any).postal_code
-    if (cp) parts.push(String(cp))
-    const city = displayCity(customer)
-    if (city) parts.push(city)
-    const province = displayProvince(customer)
-    if (province) parts.push(province)
-    // Add country to improve geocoding stability
-    parts.push('España')
-    return parts.join(', ') || 'Sin dirección'
   }
 
   // 根據地圖供應商選擇正確的定位函數（Header 按鈕使用）
