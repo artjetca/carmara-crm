@@ -1333,15 +1333,23 @@ export default function Visits() {
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
     } catch (e: any) {
       console.error('[Leaflet] getCurrentLocation failed:', e)
-      // 根據錯誤類型提供更明確提示
+      // 根據錯誤類型提供更明确和友好的提示
       if (e?.code === 1) {
-        alert('Permiso de ubicación denegado. Abre los ajustes del navegador para este sitio y permite el acceso a la ubicación, luego vuelve a intentarlo.')
+        alert('Permiso de ubicación denegado. Ve a Configuración del navegador → Sitios web → Ubicación y permite el acceso para este sitio. Luego podrás usar "Mi ubicación" nuevamente.')
         return
+      } else if (e?.code === 2) {
+        alert('Ubicación no disponible. Intenta moverte a un área con mejor señal GPS o usar WiFi, luego presiona "Mi ubicación" otra vez.')  
+        return
+      } else if (e?.code === 3) {
+        alert('Tiempo de espera agotado. Intenta nuevamente - a veces la primera vez falla pero la segunda funciona.')
+        return  
       }
-      // 手動位置輸入後備方案
-      const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual:\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
+      
+      // 只有在未知错误时才显示手动输入
+      const manualLocation = prompt(`GPS no disponible. Puedes:\n1. Intentar "Mi ubicación" nuevamente\n2. O ingresar tu ubicación manualmente:\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
       
       if (!manualLocation?.trim()) {
+        // 用户取消了手动输入，但可以再次尝试Mi ubicación按钮
         return
       }
       
@@ -2871,11 +2879,19 @@ export default function Visits() {
               } as GeolocationPosition
               console.log('[RouteOptimization] Using cached Leaflet location:', latLng.lat, latLng.lng)
             } catch {
-              // 如果没有缓存位置，继续手动输入
-              const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual (dirección o coordenadas):\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
-              if (!manualLocation?.trim()) {
-                alert('Se requiere una ubicación para optimizar la ruta')
+              // 提供更友好的错误提示
+              if (e2?.code === 1) {
+                alert('Permiso de ubicación denegado. Permite el acceso a la ubicación en la configuración del navegador, o primero usa el botón "Mi ubicación" para establecer tu posición.')
                 return
+              } else if (e2?.code === 2 || e2?.code === 3) {
+                alert('GPS no disponible. Intenta primero usar el botón "Mi ubicación" para establecer tu posición, luego podrás optimizar la ruta.')
+                return
+              }
+              
+              // 如果没有缓存位置，继续手动输入
+              const manualLocation = prompt(`GPS no disponible. Puedes:\n1. Usar primero "Mi ubicación" para establecer tu posición\n2. O ingresar tu ubicación manualmente:\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
+              if (!manualLocation?.trim()) {
+                return // 用户取消，可以再次尝试
               }
               // 继续处理手动输入
               try {
