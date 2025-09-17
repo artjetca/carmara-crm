@@ -106,6 +106,64 @@ export default function Visits() {
     }
   }
 
+  // 省份默认坐标（避开海域的安全坐标）
+  const provinceDefaultCoords: Record<string, { lat: number; lng: number }> = {
+    'Cádiz': { lat: 36.5297, lng: -6.2923 }, // Cádiz市中心，避开海域
+    'Huelva': { lat: 37.2614, lng: -6.9447 }, // Huelva市中心
+    'Sevilla': { lat: 37.3886, lng: -5.9823 }, // Sevilla市中心
+    'Málaga': { lat: 36.7213, lng: -4.4214 }, // Málaga市中心
+    'Granada': { lat: 37.1773, lng: -3.5986 }, // Granada市中心
+    'Córdoba': { lat: 37.8882, lng: -4.7794 }, // Córdoba市中心
+    'Jaén': { lat: 37.7796, lng: -3.7849 }, // Jaén市中心
+    'Almería': { lat: 36.8381, lng: -2.4597 } // Almería市中心
+  }
+
+  // 验证坐标是否在海中（简单的边界检查）
+  const isCoordinateInSea = (lat: number, lng: number): boolean => {
+    // 对于西班牙南部海岸，如果坐标在海岸线附近但明显在海中，则认为无效
+    // 这里使用简单的规则：如果在Cádiz省份范围内但经度小于-6.5，可能在海中
+    if (lat >= 36.0 && lat <= 37.0 && lng < -6.5) {
+      return true
+    }
+    return false
+  }
+
+  // 修复海中坐标，返回最近的陆地坐标
+  const fixSeaCoordinate = (lat: number, lng: number, province?: string): { lat: number; lng: number } => {
+    if (province && provinceDefaultCoords[province]) {
+      console.log(`[CoordFix] Using province default for ${province}:`, provinceDefaultCoords[province])
+      return provinceDefaultCoords[province]
+    }
+    // 默认返回Cádiz市中心
+    return { lat: 36.5297, lng: -6.2923 }
+  }
+
+  // 清理localStorage中的海中坐标
+  const cleanSeaCoordinatesFromStorage = () => {
+    try {
+      const coords = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+      let hasChanges = false
+      
+      Object.keys(coords).forEach(customerId => {
+        const coord = coords[customerId]
+        if (coord && typeof coord.lat === 'number' && typeof coord.lng === 'number') {
+          if (isCoordinateInSea(coord.lat, coord.lng)) {
+            console.log(`[CoordFix] Removing sea coordinate from localStorage for customer ${customerId}:`, coord)
+            delete coords[customerId]
+            hasChanges = true
+          }
+        }
+      })
+      
+      if (hasChanges) {
+        localStorage.setItem('carmara-customer-coords', JSON.stringify(coords))
+        console.log('[CoordFix] Cleaned sea coordinates from localStorage')
+      }
+    } catch (error) {
+      console.warn('[CoordFix] Failed to clean localStorage coordinates:', error)
+    }
+  }
+
   // 封裝：為客戶解析座標（帶有多級回退與本地持久化）
   const resolveCustomerCoords = async (c: Customer): Promise<{ lat: number; lng: number } | null> => {
     try {
@@ -118,7 +176,14 @@ export default function Visits() {
         typeof (c as any).latitude === 'number' && typeof (c as any).longitude === 'number' &&
         !isNaN((c as any).latitude) && !isNaN((c as any).longitude)
       ) {
-        const val = { lat: (c as any).latitude as number, lng: (c as any).longitude as number }
+        let val = { lat: (c as any).latitude as number, lng: (c as any).longitude as number }
+        
+        // 验证坐标是否在海中，如果是则修复
+        if (isCoordinateInSea(val.lat, val.lng)) {
+          console.log(`[CoordFix] DB coordinate in sea for ${c.name}:`, val)
+          val = fixSeaCoordinate(val.lat, val.lng, displayProvince(c))
+        }
+        
         leafletCoordsRef.current[c.id] = val
         try {
           const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
@@ -133,7 +198,19 @@ export default function Visits() {
         const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
         const lc = m && m[c.id]
         if (lc && typeof lc.lat === 'number' && typeof lc.lng === 'number') {
-          const val = { lat: Number(lc.lat), lng: Number(lc.lng) }
+          let val = { lat: Number(lc.lat), lng: Number(lc.lng) }
+          
+          // 验证localStorage中的坐标是否在海中，如果是则修复
+          if (isCoordinateInSea(val.lat, val.lng)) {
+            console.log(`[CoordFix] localStorage coordinate in sea for ${c.name}:`, val)
+            val = fixSeaCoordinate(val.lat, val.lng, displayProvince(c))
+            // 同时更新localStorage
+            try {
+              m[c.id] = val
+              localStorage.setItem('carmara-customer-coords', JSON.stringify(m))
+            } catch {}
+          }
+          
           leafletCoordsRef.current[c.id] = val
           return val
         }
@@ -144,7 +221,14 @@ export default function Visits() {
       if (full) {
         const gc1 = await geocodeAddress(full)
         if (gc1) {
-          const val = { lat: gc1.lat, lng: gc1.lng }
+          let val = { lat: gc1.lat, lng: gc1.lng }
+          
+          // 验证地理编码结果是否在海中，如果是则修复
+          if (isCoordinateInSea(val.lat, val.lng)) {
+            console.log(`[CoordFix] Geocoded coordinate in sea for ${c.name} (${full}):`, val)
+            val = fixSeaCoordinate(val.lat, val.lng, displayProvince(c))
+          }
+          
           leafletCoordsRef.current[c.id] = val
           try {
             const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
@@ -162,7 +246,14 @@ export default function Visits() {
         const q2 = [city, prov, 'España'].filter(Boolean).join(', ')
         const gc2 = await geocodeAddress(q2)
         if (gc2) {
-          const val = { lat: gc2.lat, lng: gc2.lng }
+          let val = { lat: gc2.lat, lng: gc2.lng }
+          
+          // 验证城市+省份地理编码结果是否在海中，如果是则修复
+          if (isCoordinateInSea(val.lat, val.lng)) {
+            console.log(`[CoordFix] City+Province coordinate in sea for ${c.name} (${q2}):`, val)
+            val = fixSeaCoordinate(val.lat, val.lng, prov)
+          }
+          
           leafletCoordsRef.current[c.id] = val
           try {
             const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
@@ -178,7 +269,14 @@ export default function Visits() {
         const q3 = [prov, 'España'].filter(Boolean).join(', ')
         const gc3 = await geocodeAddress(q3)
         if (gc3) {
-          const val = { lat: gc3.lat, lng: gc3.lng }
+          let val = { lat: gc3.lat, lng: gc3.lng }
+          
+          // 验证省份地理编码结果是否在海中，如果是则使用省份默认坐标
+          if (isCoordinateInSea(val.lat, val.lng)) {
+            console.log(`[CoordFix] Province coordinate in sea for ${c.name} (${q3}):`, val)
+            val = fixSeaCoordinate(val.lat, val.lng, prov)
+          }
+          
           leafletCoordsRef.current[c.id] = val
           try {
             const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
@@ -187,6 +285,20 @@ export default function Visits() {
           } catch {}
           return val
         }
+      }
+
+      // 6) 最终回退：如果所有地理编码都失败，使用省份默认坐标
+      const finalProvince = (displayProvince(c) || (c as any).province || '').trim()
+      if (finalProvince && provinceDefaultCoords[finalProvince]) {
+        console.log(`[CoordFix] Using final province fallback for ${c.name}:`, provinceDefaultCoords[finalProvince])
+        const val = provinceDefaultCoords[finalProvince]
+        leafletCoordsRef.current[c.id] = val
+        try {
+          const m = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+          m[c.id] = val
+          localStorage.setItem('carmara-customer-coords', JSON.stringify(m))
+        } catch {}
+        return val
       }
 
       return null
@@ -2488,6 +2600,8 @@ export default function Visits() {
     if (user) {
       loadCustomers()
       loadSavedRoutes()
+      // 清理localStorage中的海中坐标
+      cleanSeaCoordinatesFromStorage()
     }
   }, [user])
 
