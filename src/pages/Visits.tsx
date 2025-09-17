@@ -923,37 +923,70 @@ export default function Visits() {
           positionsByIdx[i] = { lat: base.lat + delta, lng: base.lng + delta }
         }
 
-        // 城市內近距離聚合 + 徑向分散，避免遮擋，提升同城識別度
+        // 增强的标记分散算法，确保所有编号清晰可见
         const mapObj = leafletMapInstanceRef.current
         if (mapObj) {
           const toPoint = (p: { lat: number; lng: number }) => mapObj.latLngToLayerPoint([p.lat, p.lng])
-          const fromGroup = (idxs: number[]) => {
-            // 根據像素距離做簡單聚類（單鏈法）
-            const clusters: number[][] = []
-            const thresholdPx = 34 // 約一個標記直徑
-            for (const idx of idxs) {
-              const p = positionsByIdx[idx]!
-              const pt = toPoint(p)
-              let placed = false
-              for (const cl of clusters) {
-                // 與現有簇任一點小於閾值即歸入
-                const anyIdx = cl[0]
-                const anyPt = toPoint(positionsByIdx[anyIdx]!)
-                const dx = pt.x - anyPt.x
-                const dy = pt.y - anyPt.y
-                const d = Math.hypot(dx, dy)
-                if (d <= thresholdPx) {
-                  cl.push(idx)
-                  placed = true
-                  break
+          
+          // 使用更积极的分散策略，避免任何重叠
+          const disperseOverlappingMarkers = () => {
+            const minDistancePx = 48 // 标记最小像素距离，匹配新的40px标记尺寸 + 边距
+            let changed = true
+            let iterations = 0
+            const maxIterations = 10
+            
+            while (changed && iterations < maxIterations) {
+              changed = false
+              iterations++
+              
+              for (let i = 0; i < positionsByIdx.length; i++) {
+                for (let j = i + 1; j < positionsByIdx.length; j++) {
+                  const pos1 = positionsByIdx[i]!
+                  const pos2 = positionsByIdx[j]!
+                  const pt1 = toPoint(pos1)
+                  const pt2 = toPoint(pos2)
+                  
+                  const dx = pt2.x - pt1.x
+                  const dy = pt2.y - pt1.y
+                  const distance = Math.hypot(dx, dy)
+                  
+                  if (distance < minDistancePx && distance > 0) {
+                    // 计算需要分离的距离
+                    const pushDistance = (minDistancePx - distance) / 2 + 2
+                    const angle = Math.atan2(dy, dx)
+                    
+                    // 将两个标记向相反方向推开
+                    const pushX = Math.cos(angle) * pushDistance
+                    const pushY = Math.sin(angle) * pushDistance
+                    
+                    // 转换回经纬度
+                    const newPt1 = { x: pt1.x - pushX, y: pt1.y - pushY }
+                    const newPt2 = { x: pt2.x + pushX, y: pt2.y + pushY }
+                    
+                    try {
+                      const newLatLng1 = mapObj.layerPointToLatLng([newPt1.x, newPt1.y])
+                      const newLatLng2 = mapObj.layerPointToLatLng([newPt2.x, newPt2.y])
+                      
+                      positionsByIdx[i] = { lat: newLatLng1.lat, lng: newLatLng1.lng }
+                      positionsByIdx[j] = { lat: newLatLng2.lat, lng: newLatLng2.lng }
+                      changed = true
+                    } catch (e) {
+                      // 转换失败时使用备用方案
+                      const baseLatRad = pos1.lat * (Math.PI / 180)
+                      const offsetLat = 0.0008 * Math.cos(angle)
+                      const offsetLng = (0.0008 * Math.sin(angle)) / Math.cos(baseLatRad)
+                      
+                      positionsByIdx[i] = { lat: pos1.lat - offsetLat, lng: pos1.lng - offsetLng }
+                      positionsByIdx[j] = { lat: pos2.lat + offsetLat, lng: pos2.lng + offsetLng }
+                      changed = true
+                    }
+                  }
                 }
               }
-              if (!placed) clusters.push([idx])
             }
-            return clusters
           }
-
-          // 先按城市分組，再在每組內按像素距離聚類
+          
+          // 先执行基本的城市分组和聚类
           const cityGroups = new Map<string, number[]>()
           positionsByIdx.forEach((_, i) => {
             const c = routeCustomers[i]
@@ -963,41 +996,42 @@ export default function Visits() {
             cityGroups.set(key, list)
           })
 
+          // 对每个城市组进行预分散
           cityGroups.forEach((idxs) => {
-            const clusters = fromGroup(idxs)
-            clusters.forEach((cl) => {
-              if (cl.length <= 1) return
-              // 簇中心（經緯度均值）
-              const center = cl.reduce((acc, i) => ({
-                lat: acc.lat + positionsByIdx[i]!.lat,
-                lng: acc.lng + positionsByIdx[i]!.lng
-              }), { lat: 0, lng: 0 })
-              center.lat /= cl.length
-              center.lng /= cl.length
-
-              let radius = cl.length <= 3 ? 0.0015 : 0.002 // 根據數量調整半徑，更明顯的分散
-              if (cl.length > 6) radius = 0.003 // 大簇使用更大半徑
-
-              cl.forEach((idx, i) => {
-                if (i === 0 && cl.length > 1) {
-                  // 第一個保持在中心稍微偏移
-                  positionsByIdx[idx] = { lat: center.lat + 0.0002, lng: center.lng + 0.0002 }
-                  return
-                }
-
-                const step = (2 * Math.PI) / Math.max(cl.length - 1, 1)
+            if (idxs.length <= 1) return
+            
+            // 计算组中心
+            const positions = idxs.map(i => positionsByIdx[i]!)
+            const center = positions.reduce((acc, p) => ({
+              lat: acc.lat + p.lat,
+              lng: acc.lng + p.lng
+            }), { lat: 0, lng: 0 })
+            center.lat /= positions.length
+            center.lng /= positions.length
+            
+            // 根据数量调整分散半径
+            let radius = Math.max(0.002, 0.0005 * idxs.length)
+            if (idxs.length > 10) radius = 0.004
+            
+            idxs.forEach((idx, i) => {
+              if (i === 0) {
+                // 第一个点保持在中心附近
+                positionsByIdx[idx] = { lat: center.lat + 0.0001, lng: center.lng + 0.0001 }
+              } else {
+                // 其他点围绕中心呈螺旋分布
+                const angle = (2 * Math.PI * i) / idxs.length + (Math.PI / 4)
+                const spiralRadius = radius * (0.5 + 0.7 * (i / idxs.length))
                 const baseLatRad = center.lat * (Math.PI / 180)
-                const angle = step * (i - 1) + (Math.PI / 4) // 從45度開始分散
-
-                // 每個標記使用不同的半徑形成螺旋效果
-                const dynamicRadius = radius * (1 + 0.3 * (i % 3))
-
-                const dLat = dynamicRadius * Math.cos(angle)
-                const dLng = (dynamicRadius * Math.sin(angle)) / Math.cos(baseLatRad)
+                
+                const dLat = spiralRadius * Math.cos(angle)
+                const dLng = (spiralRadius * Math.sin(angle)) / Math.cos(baseLatRad)
                 positionsByIdx[idx] = { lat: center.lat + dLat, lng: center.lng + dLng }
-              })
+              }
             })
           })
+          
+          // 执行全局重叠检查和分散
+          disperseOverlappingMarkers()
         }
         // 生成最終條目並寫入內存快取，使用連續編號
         const jittered: Array<{ c: RouteCustomer; routeOrder: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
@@ -1016,13 +1050,28 @@ export default function Visits() {
           return
         }
 
-        // Helper: numbered divIcon
+        // Helper: numbered divIcon with enhanced visibility
         const createLeafletNumberedIcon = (num: number) =>
           L.divIcon({
             className: '',
-            html: `<div style="width:34px;height:34px;border-radius:17px;background:#2563EB;color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 4px rgba(0,0,0,0.25)">${num}</div>`,
-            iconSize: [34, 34],
-            iconAnchor: [17, 17],
+            html: `<div style="
+              width:40px;
+              height:40px;
+              border-radius:20px;
+              background:#2563EB;
+              color:white;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              font-weight:bold;
+              font-size:16px;
+              border:3px solid white;
+              box-shadow:0 3px 8px rgba(0,0,0,0.3);
+              position:relative;
+              z-index:1000;
+            ">${num}</div>`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
           })
 
         // Place markers and build polyline path
