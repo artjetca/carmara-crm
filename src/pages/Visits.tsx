@@ -118,13 +118,27 @@ export default function Visits() {
     'Almería': { lat: 36.8381, lng: -2.4597 } // Almería市中心
   }
 
-  // 验证坐标是否在海中（简单的边界检查）
+  // 验证坐标是否在海中（改进的边界检查）
   const isCoordinateInSea = (lat: number, lng: number): boolean => {
-    // 对于西班牙南部海岸，如果坐标在海岸线附近但明显在海中，则认为无效
-    // 这里使用简单的规则：如果在Cádiz省份范围内但经度小于-6.5，可能在海中
-    if (lat >= 36.0 && lat <= 37.0 && lng < -6.5) {
-      return true
+    // 检查明显不合理的坐标
+    if (lat < 35.0 || lat > 44.0 || lng < -10.0 || lng > 5.0) {
+      return true // 超出西班牙合理范围
     }
+    
+    // 对于Cádiz海岸线，更精确的海中检测
+    // Cádiz省份沿海区域：如果经度太小（更西边）且在海岸纬度范围内
+    if (lat >= 36.0 && lat <= 37.0) {
+      // Cádiz海岸线大约在经度-6.3左右，-6.6以西基本是海洋
+      if (lng < -6.6) return true
+      // 如果经度在-6.6到-6.0之间但纬度很靠南（36.0-36.3），也可能是海中
+      if (lng >= -6.6 && lng <= -6.0 && lat < 36.3) return true
+    }
+    
+    // 检查其他明显的海中坐标（如地中海中）
+    if (lat >= 35.5 && lat <= 36.5 && lng >= -1.0 && lng <= 1.0) {
+      return true // 地中海区域
+    }
+    
     return false
   }
 
@@ -161,6 +175,23 @@ export default function Visits() {
       }
     } catch (error) {
       console.warn('[CoordFix] Failed to clean localStorage coordinates:', error)
+    }
+  }
+
+  // 强制刷新特定客户的坐标（用于修复错误的地理编码）
+  const refreshCustomerCoords = async (customerId: string) => {
+    try {
+      // 清理所有相关缓存
+      delete leafletCoordsRef.current[customerId]
+      try {
+        const coords = JSON.parse(localStorage.getItem('carmara-customer-coords') || '{}')
+        delete coords[customerId]
+        localStorage.setItem('carmara-customer-coords', JSON.stringify(coords))
+      } catch {}
+      
+      console.log(`[CoordFix] Cleared all cached coordinates for customer ${customerId}`)
+    } catch (error) {
+      console.warn('[CoordFix] Failed to refresh customer coordinates:', error)
     }
   }
 
@@ -2604,10 +2635,14 @@ export default function Visits() {
     if (user) {
       loadCustomers()
       loadSavedRoutes()
-      // 清理localStorage中的海中坐标
+      // 第一次载入时清理localStorage中的海中坐标，并强制清理内存缓存
       cleanSeaCoordinatesFromStorage()
+      // 同时清理内存中的坐标缓存，强制重新地理编码
+      leafletCoordsRef.current = {}
+      console.log('[CoordFix] Cleared all cached coordinates on page load')
     }
   }, [user])
+
 
   // Restore draft route (if any) on mount / when user is ready
   useEffect(() => {
