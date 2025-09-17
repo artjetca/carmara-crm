@@ -2840,7 +2840,33 @@ export default function Visits() {
     return null
   }
 
-  // 依據當前位置自動優化路線順序（最近鄰啟發式）
+  // 智能位置缓存管理
+  const getLastKnownLocation = (): { lat: number; lng: number } | null => {
+    try {
+      const cached = localStorage.getItem('carmara-last-user-location')
+      if (cached) {
+        const location = JSON.parse(cached)
+        const ageMs = Date.now() - (location.timestamp || 0)
+        // 如果位置缓存不超过24小时，使用它
+        if (ageMs < 24 * 60 * 60 * 1000 && location.lat && location.lng) {
+          console.log('[Location] Using cached location (age: ' + Math.round(ageMs / 1000 / 60) + ' min)')
+          return { lat: location.lat, lng: location.lng }
+        }
+      }
+    } catch {}
+    return null
+  }
+
+  const saveLastKnownLocation = (lat: number, lng: number) => {
+    try {
+      localStorage.setItem('carmara-last-user-location', JSON.stringify({
+        lat, lng, timestamp: Date.now()
+      }))
+      console.log('[Location] Saved location to cache:', lat, lng)
+    } catch {}
+  }
+
+  // 依據當前位置自動優化路線順序（简化版本，优先使用缓存）
   const reorderRouteByCurrentLocation = async () => {
     try {
       if (routeCustomers.length < 2) {
@@ -2849,152 +2875,83 @@ export default function Visits() {
       }
 
       console.log('[RouteOptimization] Starting location-based optimization, mapProvider:', mapProvider)
-      
-      // 取得當前位置 - 加入權限檢測、延長超時、watchPosition 後備
-      if (!('geolocation' in navigator)) {
-        alert('Geolocalización no disponible en este navegador')
-        return
+
+      let position: GeolocationPosition | null = null
+
+      // 1. 优先使用缓存的位置（24小时内有效）
+      const cachedLocation = getLastKnownLocation()
+      if (cachedLocation) {
+        console.log('[RouteOptimization] Using cached location instead of GPS')
+        position = {
+          coords: { latitude: cachedLocation.lat, longitude: cachedLocation.lng }
+        } as GeolocationPosition
       }
-      
-      // 检查权限状态
-      try {
-        const perm = (navigator as any).permissions && await (navigator as any).permissions.query({ name: 'geolocation' as any })
-        console.log('[RouteOptimization] Permission state:', perm?.state)
-        if (perm && perm.state === 'denied') {
-          alert('Permiso de ubicación denegado. Habilítalo en la configuración del navegador para este sitio y vuelve a intentarlo.')
+
+      // 2. 如果没有缓存，尝试使用"Mi Ubicación"标记
+      if (!position && mapProvider === 'leaflet' && leafletMyLocationMarkerRef.current) {
+        try {
+          const latLng = leafletMyLocationMarkerRef.current.getLatLng()
+          position = {
+            coords: { latitude: latLng.lat, longitude: latLng.lng }
+          } as GeolocationPosition
+          console.log('[RouteOptimization] Using Mi Ubicación marker position')
+        } catch {}
+      }
+
+      // 3. 如果都没有，快速尝试GPS（短超时）
+      if (!position && 'geolocation' in navigator) {
+        try {
+          console.log('[RouteOptimization] Trying quick GPS...')
+          position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            const opts = { enableHighAccuracy: false, timeout: 5000, maximumAge: 600000 }
+            navigator.geolocation.getCurrentPosition(resolve, reject, opts as any)
+          })
+          console.log('[RouteOptimization] GPS success')
+        } catch (e: any) {
+          console.warn('[RouteOptimization] Quick GPS failed:', e.code, e.message)
+        }
+      }
+
+      // 4. 最后手动输入选项
+      if (!position) {
+        const useManual = confirm('GPS no disponible.\n\n¿Usar ubicación manual?\n\n✓ Sí = Ingresar dirección\n✗ No = Usar "Mi ubicación" primero')
+        
+        if (!useManual) {
+          alert('Usa primero el botón "Mi ubicación" para establecer tu posición.')
           return
         }
-      } catch (e) {
-        console.warn('[RouteOptimization] Permission check failed:', e)
-      }
-
-      const tryGetPosition = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
-        const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
-        navigator.geolocation.getCurrentPosition(resolve, reject, opts as any)
-      })
-      
-      const tryWatchOnce = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
+        
+        const manualLocation = prompt(`Ingresa tu ubicación:\n\nEjemplos:\n• "Cádiz Centro"\n• "36.5297, -6.2923"`)
+        if (!manualLocation?.trim()) return
+        
         try {
-          const id = navigator.geolocation.watchPosition((pos) => {
-            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
-            resolve(pos)
-          }, (err) => {
-            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
-            reject(err)
-          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } as any)
+          const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
+          let lat: number, lng: number
           
-          // safety timeout
-          setTimeout(() => {
-            try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
-            reject(new Error('watchPosition timeout'))
-          }, 22000)
-        } catch (e) { reject(e as any) }
-      })
-
-      let position: GeolocationPosition
-      try {
-        console.log('[RouteOptimization] Trying getCurrentPosition...')
-        position = await tryGetPosition()
-        console.log('[RouteOptimization] getCurrentPosition success:', position.coords.latitude, position.coords.longitude)
-      } catch (e: any) {
-        console.warn('[RouteOptimization] getCurrentPosition failed:', e.code, e.message)
-        try {
-          console.log('[RouteOptimization] Trying watchPosition fallback...')
-          position = await tryWatchOnce()
-          console.log('[RouteOptimization] watchPosition success:', position.coords.latitude, position.coords.longitude)
-        } catch (e2: any) {
-          console.error('[RouteOptimization] Both methods failed:', e2.code, e2.message)
-          
-          // 优先使用"Mi Ubicación"按钮的已获取位置
-          if (mapProvider === 'leaflet' && leafletMyLocationMarkerRef.current) {
-            try {
-              const latLng = leafletMyLocationMarkerRef.current.getLatLng()
-              position = {
-                coords: { latitude: latLng.lat, longitude: latLng.lng }
-              } as GeolocationPosition
-              console.log('[RouteOptimization] Using cached Leaflet location:', latLng.lat, latLng.lng)
-            } catch {
-              // 提供更友好的错误提示
-              if (e2?.code === 1) {
-                alert('Permiso de ubicación denegado. Permite el acceso a la ubicación en la configuración del navegador, o primero usa el botón "Mi ubicación" para establecer tu posición.')
-                return
-              } else if (e2?.code === 2 || e2?.code === 3) {
-                alert('GPS no disponible. Intenta primero usar el botón "Mi ubicación" para establecer tu posición, luego podrás optimizar la ruta.')
-                return
-              }
-              
-              // 如果没有缓存位置，继续手动输入
-              const manualLocation = prompt(`GPS no disponible. Puedes:\n1. Usar primero "Mi ubicación" para establecer tu posición\n2. O ingresar tu ubicación manualmente:\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
-              if (!manualLocation?.trim()) {
-                return // 用户取消，可以再次尝试
-              }
-              // 继续处理手动输入
-              try {
-                const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
-                if (coordMatch) {
-                  const lat = parseFloat(coordMatch[1])
-                  const lng = parseFloat(coordMatch[2])
-                  if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                    position = {
-                      coords: { latitude: lat, longitude: lng }
-                    } as GeolocationPosition
-                  } else {
-                    throw new Error('Coordenadas inválidas')
-                  }
-                } else {
-                  const geocoded = await geocodeAddress(manualLocation.trim())
-                  if (!geocoded) {
-                    throw new Error('No se pudo geocodificar la dirección')
-                  }
-                  position = {
-                    coords: { latitude: geocoded.lat, longitude: geocoded.lng }
-                  } as GeolocationPosition
-                }
-              } catch (geoError: any) {
-                alert(`Error al procesar la ubicación manual: ${geoError.message}`)
-                return
-              }
-            }
+          if (coordMatch) {
+            lat = parseFloat(coordMatch[1])
+            lng = parseFloat(coordMatch[2])
+            if (isNaN(lat) || isNaN(lng)) throw new Error('Coordenadas inválidas')
           } else {
-            // 手動位置輸入後備方案
-            const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual (dirección o coordenadas):\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
-          
-            if (!manualLocation?.trim()) {
-              alert('Se requiere una ubicación para optimizar la ruta')
-              return
-            }
-            
-            try {
-              // 嘗試解析為座標格式 (lat, lng)
-              const coordMatch = manualLocation.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/)
-              if (coordMatch) {
-                const lat = parseFloat(coordMatch[1])
-                const lng = parseFloat(coordMatch[2])
-                if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                  position = {
-                    coords: { latitude: lat, longitude: lng }
-                  } as GeolocationPosition
-                } else {
-                  throw new Error('Coordenadas inválidas')
-                }
-              } else {
-                // 使用地理編碼 API 將地址轉換為座標
-                const geocoded = await geocodeAddress(manualLocation.trim())
-                if (!geocoded) {
-                  throw new Error('No se pudo geocodificar la dirección')
-                }
-                position = {
-                  coords: { latitude: geocoded.lat, longitude: geocoded.lng }
-                } as GeolocationPosition
-              }
-            } catch (geoError: any) {
-              alert(`Error al procesar la ubicación manual: ${geoError.message}`)
-              return
-            }
+            const geocoded = await geocodeAddress(manualLocation.trim())
+            if (!geocoded) throw new Error('Dirección no encontrada')
+            lat = geocoded.lat
+            lng = geocoded.lng
           }
+          
+          position = { coords: { latitude: lat, longitude: lng } } as GeolocationPosition
+        } catch (error: any) {
+          alert(`Error: ${error.message}`)
+          return
         }
       }
+
+      if (!position) return
+
       const { latitude: curLat, longitude: curLng } = position.coords
+      
+      // 保存成功的位置到缓存
+      saveLastKnownLocation(curLat, curLng)
 
       // Google provider: 使用 DirectionsService.optimizeWaypoints 進行真實駕車距離優化
       if (mapProvider === 'google') {
