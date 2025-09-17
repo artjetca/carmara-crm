@@ -2822,14 +2822,21 @@ export default function Visits() {
         return
       }
 
-      // 取得當前位置 - 增強版with fallback
+      // 取得當前位置 - 加入權限檢測、延長超時、watchPosition 後備
       if (!('geolocation' in navigator)) {
         alert('Geolocalización no disponible en este navegador')
         return
       }
+      try {
+        const perm = (navigator as any).permissions && await (navigator as any).permissions.query({ name: 'geolocation' as any })
+        if (perm && perm.state === 'denied') {
+          alert('Permiso de ubicación denegado. Habilítalo en la configuración del navegador para este sitio y vuelve a intentarlo.')
+          return
+        }
+      } catch {}
 
       const tryGetPosition = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
-        const opts = { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+        const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
         navigator.geolocation.getCurrentPosition(resolve, reject, opts as any)
       })
       
@@ -2841,13 +2848,13 @@ export default function Visits() {
           }, (err) => {
             try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
             reject(err)
-          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 } as any)
+          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } as any)
           
           // safety timeout
           setTimeout(() => {
             try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
             reject(new Error('watchPosition timeout'))
-          }, 13000)
+          }, 22000)
         } catch (e) { reject(e as any) }
       })
 
@@ -2900,6 +2907,49 @@ export default function Visits() {
       }
       const { latitude: curLat, longitude: curLng } = position.coords
 
+      // Google provider: 使用 DirectionsService.optimizeWaypoints 進行真實駕車距離優化
+      if (mapProvider === 'google') {
+        try {
+          const google = await ensureGoogleMapsLoaded()
+          const ds = directionsServiceRef.current || new google.maps.DirectionsService()
+          if (!directionsServiceRef.current) directionsServiceRef.current = ds
+
+          const origin = { lat: curLat, lng: curLng }
+          // 以當前列表最後一個客戶作為終點，以保留使用者意圖；其餘作為 waypoints
+          const last = routeCustomers[routeCustomers.length - 1]
+          const destination = getAddress(last)
+          const waypointCustomers = routeCustomers.slice(0, -1)
+          const waypoints = waypointCustomers.map(c => ({ location: getAddress(c), stopover: true }))
+
+          const req: any = {
+            origin,
+            destination,
+            waypoints,
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING
+          }
+
+          const result = await ds.route(req)
+          const route = result?.routes?.[0]
+          const order: number[] = route?.waypoint_order || []
+
+          if (order.length !== waypointCustomers.length) throw new Error('Optimización incompleta')
+
+          const reordered = [
+            ...order.map((i) => waypointCustomers[i]),
+            last
+          ]
+
+          const newOrderedCustomers: RouteCustomer[] = reordered.map((c, i) => ({ ...c, order: i + 1 }))
+          setRouteCustomers(newOrderedCustomers)
+          await calculateRouteDistanceAndTime(newOrderedCustomers)
+          return
+        } catch (e) {
+          console.warn('[RouteOptimization] Google optimizeWaypoints failed, fallback to offline:', (e as any)?.message)
+        }
+      }
+
+      // Leaflet provider: 離線最近鄰（加入海上坐標修復）
       // 取得各客戶座標（並行，使用帶回退的解析）
       const geocoded = await Promise.all(
         routeCustomers.map(async (c, idx) => {
@@ -2908,12 +2958,16 @@ export default function Visits() {
         })
       )
 
-      // 分離可用與不可用座標
-      const withCoords = geocoded.filter(g => g.coords).map(g => ({
-        customer: g.customer,
-        lat: (g.coords as any).lat as number,
-        lng: (g.coords as any).lng as number
-      }))
+      // 分離可用與不可用座標並修復海上坐標
+      const withCoords = geocoded.filter(g => g.coords).map(g => {
+        let lat = (g.coords as any).lat as number
+        let lng = (g.coords as any).lng as number
+        if (isCoordinateInSea(lat, lng)) {
+          const fixed = fixSeaCoordinate(lat, lng, displayProvince(g.customer))
+          lat = fixed.lat; lng = fixed.lng
+        }
+        return { customer: g.customer, lat, lng }
+      })
       const withoutCoords = geocoded.filter(g => !g.coords).map(g => g.customer)
 
       if (withCoords.length === 0) {
@@ -2921,7 +2975,7 @@ export default function Visits() {
         return
       }
 
-      // 最近鄰排序
+      // 最近鄰排序（以當前位置出發）
       const remaining = [...withCoords]
       const ordered: typeof withCoords = []
       let current = { lat: curLat, lng: curLng }
