@@ -1247,8 +1247,17 @@ export default function Visits() {
         alert('Geolocalización no disponible en este navegador')
         return
       }
+      // Comprobar permiso si el navegador lo soporta
+      try {
+        const perm = (navigator as any).permissions && await (navigator as any).permissions.query({ name: 'geolocation' as any })
+        if (perm && perm.state === 'denied') {
+          alert('Permiso de ubicación denegado. Habilítalo en la configuración del navegador para este sitio y vuelve a intentarlo.')
+          return
+        }
+      } catch {}
       const tryGetPosition = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
-        const opts = { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+        // 放寬時間與緩存：行動裝置在室內時常需要更久時間
+        const opts = { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
         navigator.geolocation.getCurrentPosition(resolve, reject, opts as any)
       })
       const tryWatchOnce = (): Promise<GeolocationPosition> => new Promise((resolve, reject) => {
@@ -1265,7 +1274,7 @@ export default function Visits() {
             try { if (id != null) navigator.geolocation.clearWatch(id) } catch {}
             leafletGeoWatchIdRef.current = null
             reject(err)
-          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 } as any)
+          }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 } as any)
           leafletGeoWatchIdRef.current = id as any
           // safety timeout
           setTimeout(() => {
@@ -1274,7 +1283,7 @@ export default function Visits() {
               leafletGeoWatchIdRef.current = null
               reject(new Error('watchPosition timeout'))
             }
-          }, 13000)
+          }, 22000)
         } catch (e) { reject(e as any) }
       })
 
@@ -1339,9 +1348,13 @@ export default function Visits() {
       }, 2000)
 
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
-    } catch (e) {
+    } catch (e: any) {
       console.error('[Leaflet] getCurrentLocation failed:', e)
-      
+      // 根據錯誤類型提供更明確提示
+      if (e?.code === 1) {
+        alert('Permiso de ubicación denegado. Abre los ajustes del navegador para este sitio y permite el acceso a la ubicación, luego vuelve a intentarlo.')
+        return
+      }
       // 手動位置輸入後備方案
       const manualLocation = prompt(`GPS no disponible. Ingresa tu ubicación actual:\n\nEjemplo:\n- "Calle Mayor 1, Sevilla"\n- "36.7213, -4.4214"`)
       
@@ -2996,6 +3009,14 @@ export default function Visits() {
     return parts.join(', ') || 'Sin dirección'
   }
 
+  // 根據地圖供應商選擇正確的定位函數（Header 按鈕使用）
+  const handleMyLocationClick = () => {
+    if (mapProvider === 'leaflet') {
+      return getCurrentLocationLeaflet()
+    }
+    return getCurrentLocation()
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -3015,7 +3036,7 @@ export default function Visits() {
         {/* Mobile-optimized button grid layout */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap gap-2 sm:gap-3">
           <button
-            onClick={getCurrentLocation}
+            onClick={handleMyLocationClick}
             className="inline-flex items-center justify-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-xs sm:text-sm"
           >
             <MapPin className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
