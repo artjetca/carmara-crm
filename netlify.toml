@@ -1,0 +1,29 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Environment variables for production
+# These should be set in Netlify dashboard:
+# VITE_SUPABASE_URL=https://aotpcnwjjpkzxnhvmcvb.supabase.co
+# VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdHBjbndqanBrenhuaHZtY3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIxMjUzNzYsImV4cCI6MjA1NzcwMTM3Nn0.utizL25OINRgojrwcrzIstf9BvvlQq0EKwj5aVht4Js
