@@ -7,7 +7,7 @@ import { translations } from '../lib/translations'
 
 export default function Customers() {
   const { user } = useAuth()
-  const { customers, setCustomers, importHighlightSince, setCurrentPage } = useStore()
+  const { customers, setCustomers, importHighlightSince, setCurrentPage, clearImportHighlight } = useStore()
   const [loading, setLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
@@ -177,7 +177,7 @@ export default function Customers() {
           .in('id', chunk)
         if (error) throw error
       }
-      setCustomers(prev => prev.filter(c => !selectedIds.has(c.id)))
+      setCustomers(customers.filter(c => !selectedIds.has(c.id)))
       setSelectedIds(new Set())
       setShowBulkConfirm(false)
     } catch (err) {
@@ -258,13 +258,7 @@ export default function Customers() {
               <span>{bulkDeleting ? 'Eliminando…' : `Eliminar (${selectedIds.size})`}</span>
             </button>
           )}
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t.customers.addCustomer}</span>
-          </button>
+          {/* Add customer button removed - modal not implemented */}
         </div>
       </div>
 
@@ -324,15 +318,7 @@ export default function Customers() {
             <p className="text-gray-600 mb-4">
               {customers.length === 0 ? t.customers.addFirstCustomer : t.customers.tryDifferentSearch}
             </p>
-            {customers.length === 0 && (
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{t.customers.addCustomer}</span>
-              </button>
-            )}
+            {/* Add customer button removed - modal not implemented */}
           </div>
         ) : (
           <div className="overflow-x-auto">
