@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear CRM Storage</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; background: #dc2626; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #b91c1c; }
+        .info { background: #f3f4f6; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .success { background: #d1fae5; color: #065f46; }
+        .warning { background: #fef3c7; color: #92400e; }
+    </style>
+</head>
+<body>
+    <h1>Clear Casmara CRM Storage</h1>
+    
+    <div class="info">
+        <h3>Current Storage Data:</h3>
+        <div id="storageInfo"></div>
+    </div>
+    
+    <button onclick="clearAllStorage()">Clear All Storage</button>
+    <button onclick="clearRoutesOnly()">Clear Routes Only</button>
+    <button onclick="clearCompletedVisits()">Clear Completed Visits</button>
+    <button onclick="showStorage()">Refresh Storage Info</button>
+    
+    <div id="messages"></div>
+    
+    <script>
+        function showStorage() {
+            const info = document.getElementById('storageInfo');
+            const savedRoutes = localStorage.getItem('savedRoutes');
+            const completedVisits = localStorage.getItem('completedVisits');
+            const draftRoute = localStorage.getItem('draftRoute');
+            
+            info.innerHTML = `
+                <p><strong>Saved Routes:</strong> ${savedRoutes ? JSON.parse(savedRoutes).length + ' routes' : 'None'}</p>
+                <p><strong>Completed Visits:</strong> ${completedVisits ? JSON.parse(completedVisits).length + ' visits' : 'None'}</p>
+                <p><strong>Draft Route:</strong> ${draftRoute ? 'Yes' : 'None'}</p>
+                <details>
+                    <summary>Raw Data</summary>
+                    <pre style="background: #f9fafb; padding: 10px; overflow: auto; max-height: 300px;">
+savedRoutes: ${savedRoutes || 'null'}
+
+completedVisits: ${completedVisits || 'null'}
+
+draftRoute: ${draftRoute || 'null'}
+                    </pre>
+                </details>
+            `;
+        }
+        
+        function addMessage(text, type = 'success') {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `info ${type}`;
+            div.textContent = text;
+            messages.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+        
+        function clearAllStorage() {
+            if (confirm('¿Estás seguro de que quieres eliminar TODOS los datos almacenados? Esto incluye rutas guardadas y visitas completadas.')) {
+                localStorage.removeItem('savedRoutes');
+                localStorage.removeItem('completedVisits');
+                localStorage.removeItem('draftRoute');
+                addMessage('✅ Todos los datos eliminados');
+                showStorage();
+            }
+        }
+        
+        function clearRoutesOnly() {
+            if (confirm('¿Eliminar solo las rutas guardadas?')) {
+                localStorage.removeItem('savedRoutes');
+                localStorage.removeItem('draftRoute');
+                addMessage('✅ Rutas eliminadas');
+                showStorage();
+            }
+        }
+        
+        function clearCompletedVisits() {
+            if (confirm('¿Eliminar solo las visitas completadas?')) {
+                localStorage.removeItem('completedVisits');
+                addMessage('✅ Visitas completadas eliminadas');
+                showStorage();
+            }
+        }
+        
+        // Show storage info on page load
+        showStorage();
+    </script>
+</body>
+</html>

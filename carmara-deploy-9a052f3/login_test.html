@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登入功能測試</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 700px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; }
+        .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .row input { flex:1; min-width:260px; }
+        #log { background: #f8f9fa; padding: 10px; border-radius: 5px; height: 300px; overflow-y: auto; font-family: monospace; }
+        small.hint { color:#6c757d }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Casmara CRM 登入功能測試</h1>
+        
+        <div class="test-section">
+            <h3>環境變數檢查</h3>
+            <div id="env-check">檢查中...</div>
+        </div>
+        
+        <div class="test-section">
+            <h3>手動配置（可選，優先生效）</h3>
+            <div class="row">
+              <input id="supabase-url" placeholder="Supabase URL，如 https://xxxx.supabase.co" />
+              <input id="supabase-key" placeholder="Anon Key" />
+            </div>
+            <small class="hint">若填寫以上欄位，將覆蓋 import.meta.env 取得的值；用於在純 HTML 測試時無法讀取環境變數的情況。</small>
+        </div>
+        
+        <div class="test-section">
+            <h3>Supabase 連接測試</h3>
+            <button onclick="testSupabaseConnection()">測試連接</button>
+            <div id="connection-result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>登入測試</h3>
+            <div class="row">
+              <input type="email" id="test-email" placeholder="Email" value="rosariog.almenglo@gmail.com">
+              <input type="password" id="test-password" placeholder="Password" value="admin123">
+            </div>
+            <button onclick="testLogin()">測試登入</button>
+            <div id="login-result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>實時日誌</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // 日誌函數
+        function addLog(message, type = 'info') {
+            const log = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? 'red' : type === 'success' ? 'green' : type === 'warning' ? 'orange' : 'black';
+            log.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function getConfig() {
+            const urlInput = document.getElementById('supabase-url');
+            const keyInput = document.getElementById('supabase-key');
+            const manualUrl = urlInput && urlInput.value.trim();
+            const manualKey = keyInput && keyInput.value.trim();
+            const envUrl = import.meta.env?.VITE_SUPABASE_URL;
+            const envKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
+            const supabaseUrl = manualUrl || envUrl;
+            const supabaseKey = manualKey || envKey;
+            addLog(`選用 Supabase URL 來源: ${manualUrl ? '手動輸入' : 'import.meta.env'}`);
+            addLog(`選用 Anon Key 來源: ${manualKey ? '手動輸入' : 'import.meta.env'}`);
+            return { supabaseUrl, supabaseKey };
+        }
+
+        // 檢查環境變數
+        function checkEnvironmentVariables() {
+            const envCheck = document.getElementById('env-check');
+            const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL;
+            const supabaseKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
+            let html = '';
+            if (supabaseUrl) {
+                html += `<div class="success">✅ VITE_SUPABASE_URL: ${supabaseUrl.substring(0, 30)}...</div>`;
+                addLog(`環境變數 VITE_SUPABASE_URL 已設置: ${supabaseUrl}`, 'success');
+            } else {
+                html += '<div class="error">❌ VITE_SUPABASE_URL 未設置</div>';
+                addLog('環境變數 VITE_SUPABASE_URL 未設置', 'error');
+            }
+            if (supabaseKey) {
+                html += `<div class="success">✅ VITE_SUPABASE_ANON_KEY: ${supabaseKey.substring(0, 20)}...</div>`;
+                addLog(`環境變數 VITE_SUPABASE_ANON_KEY 已設置: ${supabaseKey.substring(0, 20)}...`, 'success');
+            } else {
+                html += '<div class="error">❌ VITE_SUPABASE_ANON_KEY 未設置</div>';
+                addLog('環境變數 VITE_SUPABASE_ANON_KEY 未設置', 'error');
+            }
+            envCheck.innerHTML = html;
+        }
+
+        // 測試 Supabase 連接
+        window.testSupabaseConnection = async function() {
+            const result = document.getElementById('connection-result');
+            result.innerHTML = '測試中...';
+            addLog('開始測試 Supabase 連接');
+            try {
+                const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+                const { supabaseUrl, supabaseKey } = getConfig();
+                if (!supabaseUrl || !supabaseKey) throw new Error('請填入手動配置或提供環境變數');
+                const supabase = createClient(supabaseUrl, supabaseKey);
+                const { error } = await supabase.auth.getSession();
+                if (error) throw error;
+                result.innerHTML = '<div class="success">✅ Supabase 連接成功</div>';
+                addLog('Supabase 連接測試成功', 'success');
+            } catch (error) {
+                result.innerHTML = `<div class="error">❌ 連接失敗: ${error.message}</div>`;
+                addLog(`Supabase 連接測試失敗: ${error.message}`, 'error');
+            }
+        }
+
+        // 測試登入
+        window.testLogin = async function() {
+            const email = document.getElementById('test-email').value;
+            const password = document.getElementById('test-password').value;
+            const result = document.getElementById('login-result');
+            if (!email || !password) {
+                result.innerHTML = '<div class="error">請輸入 Email 和密碼</div>';
+                return;
+            }
+            result.innerHTML = '登入中...';
+            addLog(`開始測試登入: ${email}`);
+            try {
+                const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+                const { supabaseUrl, supabaseKey } = getConfig();
+                if (!supabaseUrl || !supabaseKey) throw new Error('請填入手動配置或提供環境變數');
+                const supabase = createClient(supabaseUrl, supabaseKey);
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+                if (data.user) {
+                    result.innerHTML = `<div class="success">✅ 登入成功！用戶 ID: ${data.user.id}</div>`;
+                    addLog(`登入成功！用戶: ${data.user.email}, ID: ${data.user.id}`, 'success');
+                    setTimeout(async () => { await supabase.auth.signOut(); addLog('已自動登出以便重複測試', 'info'); }, 1500);
+                } else {
+                    result.innerHTML = '<div class="warning">⚠️ 登入響應無用戶數據</div>';
+                    addLog('登入響應無用戶數據', 'warning');
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="error">❌ 登入失敗: ${error.message}</div>`;
+                addLog(`登入失敗: ${error.message}`, 'error');
+                console.error('登入錯誤詳情:', error);
+            }
+        }
+
+        // 頁面載入時檢查環境變數
+        checkEnvironmentVariables();
+        addLog('測試頁面已載入，若環境變數為空，可在「手動配置」區輸入 URL 與 Anon Key 進行測試');
+    </script>
+</body>
+</html>

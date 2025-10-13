@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail API 授權</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .step {
+            margin: 20px 0;
+            padding: 15px;
+            border-left: 4px solid #4285f4;
+            background-color: #f8f9fa;
+        }
+        .code-box {
+            background: #f1f3f4;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+        .auth-button {
+            display: inline-block;
+            background: #4285f4;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .auth-button:hover {
+            background: #3367d6;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        button {
+            background: #34a853;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #2d8a47;
+        }
+        .result {
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Gmail API 授權工具</h1>
+        
+        <div class="step">
+            <h3>步驟 1: 前往 Google 授權</h3>
+            <p>點擊下方按鈕進行 Gmail API 授權：</p>
+            <a href="https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.send&prompt=consent&response_type=code&client_id=YOUR_GMAIL_CLIENT_ID&redirect_uri=https%3A%2F%2Fdevelopers.google.com%2Foauthplayground" 
+               class="auth-button" target="_blank">
+                🚀 開始授權
+            </a>
+        </div>
+
+        <div class="step">
+            <h3>步驟 2: 複製授權碼</h3>
+            <p>授權後，頁面會重定向到 OAuth Playground，URL 會包含授權碼：</p>
+            <div class="code-box">
+                https://developers.google.com/oauthplayground?code=<strong>這裡是授權碼</strong>&scope=...
+            </div>
+            <p>複製 <code>code=</code> 後面的授權碼（直到 &amp; 符號前）</p>
+        </div>
+
+        <div class="step">
+            <h3>步驟 3: 輸入授權碼</h3>
+            <input type="text" id="authCode" placeholder="貼上授權碼...">
+            <button onclick="generateTokens()">生成 Refresh Token</button>
+        </div>
+
+        <div id="result" class="result">
+            <h3>✅ 成功！請將以下環境變數加入 Netlify：</h3>
+            <div id="envVars" class="code-box"></div>
+        </div>
+    </div>
+
+    <script>
+        async function generateTokens() {
+            const code = document.getElementById('authCode').value.trim();
+            if (!code) {
+                alert('請輸入授權碼');
+                return;
+            }
+
+            try {
+                const response = await fetch('https://oauth2.googleapis.com/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        code: code,
+                        client_id: 'YOUR_GMAIL_CLIENT_ID',
+                        client_secret: 'YOUR_GMAIL_CLIENT_SECRET',
+                        redirect_uri: 'https://developers.google.com/oauthplayground',
+                        grant_type: 'authorization_code'
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.refresh_token) {
+                    const envVars = `GMAIL_CLIENT_ID=YOUR_GMAIL_CLIENT_ID
+GMAIL_CLIENT_SECRET=YOUR_GMAIL_CLIENT_SECRET
+GMAIL_REFRESH_TOKEN=${data.refresh_token}
+GMAIL_FROM_EMAIL=artjet0805@gmail.com`;
+
+                    document.getElementById('envVars').textContent = envVars;
+                    document.getElementById('result').style.display = 'block';
+                } else {
+                    alert('錯誤: ' + JSON.stringify(data));
+                }
+            } catch (error) {
+                alert('錯誤: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

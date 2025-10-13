@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Saved Routes - Casmara CRM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        .test-section { 
+            border: 1px solid #ccc; 
+            margin: 10px 0; 
+            padding: 15px; 
+            border-radius: 5px; 
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 15px; 
+            margin: 5px; 
+            cursor: pointer; 
+            border-radius: 3px; 
+        }
+        button:hover { background: #0056b3; }
+        pre { 
+            background: #f5f5f5; 
+            padding: 10px; 
+            border-radius: 3px; 
+            overflow-x: auto; 
+        }
+        #results { 
+            max-height: 400px; 
+            overflow-y: auto; 
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Casmara CRM - Saved Routes 調試工具</h1>
+    
+    <div class="test-section">
+        <h2>步驟 1: Supabase 連接測試</h2>
+        <p>首先測試 Supabase 連接是否正常</p>
+        <button onclick="testConnection()">測試連接</button>
+        <div id="connection-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>步驟 2: 用戶認證測試</h2>
+        <p>檢查是否有登入的用戶</p>
+        <button onclick="testAuth()">測試認證</button>
+        <div id="auth-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>步驟 3: saved_routes 表存在性測試</h2>
+        <p>檢查 saved_routes 表是否存在</p>
+        <button onclick="testTable()">測試表存在</button>
+        <div id="table-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>步驟 4: 測試插入路線</h2>
+        <p>嘗試插入一條測試路線</p>
+        <button onclick="testInsert()">測試插入</button>
+        <div id="insert-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>步驟 5: 測試讀取路線</h2>
+        <p>讀取所有已儲存的路線</p>
+        <button onclick="testSelect()">測試讀取</button>
+        <div id="select-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>步驟 6: 清理測試數據</h2>
+        <p>刪除測試路線（可選）</p>
+        <button onclick="cleanupTest()">清理測試數據</button>
+        <div id="cleanup-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>🚨 完整診斷結果</h2>
+        <button onclick="runFullDiagnosis()">執行完整診斷</button>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // 配置 Supabase（從環境變數或直接配置）
+        const SUPABASE_URL = 'https://xpifsnwcjxklqvfvvzmw.supabase.co' // 替換為你的 URL
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwaWZzbndjanhra3F2ZnZ2em13Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQzNzk2NTMsImV4cCI6MjA0OTk1NTY1M30.rvBJGr0YWzHYudVNxRlPBa2D1Zv6EOrdmBa4W7psJgs' // 替換為你的 key
+        
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        
+        function log(message, type = 'info') {
+            const results = document.getElementById('results')
+            const timestamp = new Date().toLocaleTimeString()
+            results.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`
+            results.scrollTop = results.scrollHeight
+        }
+        
+        async function testConnection() {
+            const resultDiv = document.getElementById('connection-result')
+            try {
+                const { data, error } = await supabase.from('customers').select('count(*)').limit(1)
+                if (error) {
+                    resultDiv.innerHTML = `<div class="error">❌ 連接失敗: ${error.message}</div>`
+                    log(`連接測試失敗: ${error.message}`, 'error')
+                } else {
+                    resultDiv.innerHTML = `<div class="success">✅ Supabase 連接正常</div>`
+                    log('Supabase 連接測試成功', 'success')
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 連接錯誤: ${err.message}</div>`
+                log(`連接異常: ${err.message}`, 'error')
+            }
+        }
+        
+        async function testAuth() {
+            const resultDiv = document.getElementById('auth-result')
+            try {
+                const { data: { user }, error } = await supabase.auth.getUser()
+                if (error || !user) {
+                    resultDiv.innerHTML = `<div class="error">❌ 未登入或認證失敗</div>`
+                    log('用戶未登入 - 需要先登入才能測試 saved_routes', 'error')
+                    return null
+                } else {
+                    resultDiv.innerHTML = `<div class="success">✅ 用戶已登入: ${user.email}</div>`
+                    log(`用戶認證成功: ${user.email}`, 'success')
+                    return user
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 認證錯誤: ${err.message}</div>`
+                log(`認證異常: ${err.message}`, 'error')
+                return null
+            }
+        }
+        
+        async function testTable() {
+            const resultDiv = document.getElementById('table-result')
+            try {
+                const { data, error } = await supabase.from('saved_routes').select('count(*)').limit(1)
+                if (error) {
+                    if (error.message.includes('relation "public.saved_routes" does not exist')) {
+                        resultDiv.innerHTML = `<div class="error">❌ saved_routes 表不存在！需要執行 SQL 腳本</div>`
+                        log('saved_routes 表不存在 - 需要在 Supabase Dashboard 執行 SQL 腳本', 'error')
+                    } else {
+                        resultDiv.innerHTML = `<div class="error">❌ 表測試失敗: ${error.message}</div>`
+                        log(`表測試失敗: ${error.message}`, 'error')
+                    }
+                } else {
+                    resultDiv.innerHTML = `<div class="success">✅ saved_routes 表存在</div>`
+                    log('saved_routes 表存在且可訪問', 'success')
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 表測試錯誤: ${err.message}</div>`
+                log(`表測試異常: ${err.message}`, 'error')
+            }
+        }
+        
+        async function testInsert() {
+            const resultDiv = document.getElementById('insert-result')
+            const user = await supabase.auth.getUser()
+            
+            if (!user.data.user) {
+                resultDiv.innerHTML = `<div class="error">❌ 需要先登入</div>`
+                return
+            }
+            
+            try {
+                const testRoute = {
+                    name: 'Debug Test Route - ' + new Date().toISOString(),
+                    route_date: '2024-01-01',
+                    route_time: '10:00',
+                    customers: [{ id: 'test', name: 'Test Customer' }],
+                    total_distance: 10.5,
+                    total_duration: 30,
+                    created_by: user.data.user.id
+                }
+                
+                const { data, error } = await supabase
+                    .from('saved_routes')
+                    .insert([testRoute])
+                    .select()
+                
+                if (error) {
+                    resultDiv.innerHTML = `<div class="error">❌ 插入失敗: ${error.message}</div>`
+                    log(`路線插入失敗: ${error.message}`, 'error')
+                } else {
+                    resultDiv.innerHTML = `<div class="success">✅ 成功插入測試路線: ${data[0].id}</div>`
+                    log(`路線插入成功: ${data[0].name} (ID: ${data[0].id})`, 'success')
+                    window.testRouteId = data[0].id
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 插入錯誤: ${err.message}</div>`
+                log(`插入異常: ${err.message}`, 'error')
+            }
+        }
+        
+        async function testSelect() {
+            const resultDiv = document.getElementById('select-result')
+            const user = await supabase.auth.getUser()
+            
+            if (!user.data.user) {
+                resultDiv.innerHTML = `<div class="error">❌ 需要先登入</div>`
+                return
+            }
+            
+            try {
+                const { data, error } = await supabase
+                    .from('saved_routes')
+                    .select('*')
+                    .eq('created_by', user.data.user.id)
+                    .order('created_at', { ascending: false })
+                
+                if (error) {
+                    resultDiv.innerHTML = `<div class="error">❌ 讀取失敗: ${error.message}</div>`
+                    log(`路線讀取失敗: ${error.message}`, 'error')
+                } else {
+                    resultDiv.innerHTML = `<div class="success">✅ 成功讀取 ${data.length} 條路線</div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>`
+                    log(`路線讀取成功: 找到 ${data.length} 條路線`, 'success')
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 讀取錯誤: ${err.message}</div>`
+                log(`讀取異常: ${err.message}`, 'error')
+            }
+        }
+        
+        async function cleanupTest() {
+            const resultDiv = document.getElementById('cleanup-result')
+            if (!window.testRouteId) {
+                resultDiv.innerHTML = `<div class="info">ℹ️ 沒有測試路線需要清理</div>`
+                return
+            }
+            
+            try {
+                const { error } = await supabase
+                    .from('saved_routes')
+                    .delete()
+                    .eq('id', window.testRouteId)
+                
+                if (error) {
+                    resultDiv.innerHTML = `<div class="error">❌ 清理失敗: ${error.message}</div>`
+                    log(`測試數據清理失敗: ${error.message}`, 'error')
+                } else {
+                    resultDiv.innerHTML = `<div class="success">✅ 測試路線已清理</div>`
+                    log('測試數據清理成功', 'success')
+                    window.testRouteId = null
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="error">❌ 清理錯誤: ${err.message}</div>`
+                log(`清理異常: ${err.message}`, 'error')
+            }
+        }
+        
+        async function runFullDiagnosis() {
+            document.getElementById('results').innerHTML = '<h3>🔍 開始完整診斷...</h3>'
+            
+            log('=== 開始完整診斷 ===', 'info')
+            log('1. 測試 Supabase 連接...', 'info')
+            await testConnection()
+            
+            log('2. 測試用戶認證...', 'info')
+            const user = await testAuth()
+            
+            log('3. 測試 saved_routes 表...', 'info')
+            await testTable()
+            
+            if (user) {
+                log('4. 測試插入操作...', 'info')
+                await testInsert()
+                
+                log('5. 測試讀取操作...', 'info')
+                await testSelect()
+            } else {
+                log('4-5. 跳過插入/讀取測試 (用戶未登入)', 'error')
+            }
+            
+            log('=== 診斷完成 ===', 'info')
+        }
+        
+        // 頁面載入時顯示配置信息
+        window.addEventListener('load', () => {
+            log(`Supabase URL: ${SUPABASE_URL}`, 'info')
+            log('調試工具已準備就緒', 'info')
+        })
+    </script>
+</body>
+</html>

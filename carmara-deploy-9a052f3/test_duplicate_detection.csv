@@ -1,0 +1,4 @@
+nombre,empresa,teléfono,email,dirección,ciudad,provincia,contrato,notas
+TEST Juan Pérez,TEST-CSV-Empresa ABC,600111111,test-duplicate1@csvtest.com,TEST Calle Mayor 123,Huelva,Huelva,Activo,測試數據 - 重複檢測測試
+TEST María García,TEST-CSV-Empresa XYZ,700222222,test-duplicate2@csvtest.com,TEST Avenida Principal 456,Cádiz,Cádiz,Pendiente,測試數據 - 重複檢測測試
+TEST Juan Pérez,TEST-CSV-Empresa ABC,600111111,test-duplicate1@csvtest.com,TEST Calle Mayor 123,Huelva,Huelva,Activo,測試數據 - 這是重複的客戶

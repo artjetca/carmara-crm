@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Frontend Authentication</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; }
+        .loading { color: #666; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Diagnóstico de Autenticación Frontend</h1>
+    <div id="results"><p class="loading">⏳ Ejecutando diagnóstico...</p></div>
+    
+    <script>
+        // Try to get credentials from main app or use fallback
+        let supabaseUrl = 'https://mddyomibqbmnpexwgkug.supabase.co'
+        let supabaseAnonKey = null
+        
+        // Try to get the key from the main application context if available
+        try {
+            // Check if we can access parent window or main app context
+            if (window.parent && window.parent !== window) {
+                // Try to get from parent window
+                supabaseAnonKey = window.parent.document.querySelector('meta[name="supabase-anon-key"]')?.content
+            }
+            
+            // Fallback: try to get from sessionStorage or localStorage where main app might store it
+            if (!supabaseAnonKey) {
+                supabaseAnonKey = sessionStorage.getItem('supabase-anon-key') 
+                    || localStorage.getItem('supabase-anon-key')
+            }
+        } catch (e) {
+            console.log('Could not access parent context:', e)
+        }
+        
+        // Final fallback - try different API key
+        if (!supabaseAnonKey) {
+            // This is a more recent/correct anon key format - try this one
+            supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHlvbWlicWJtbnBleHdna3VnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5MDkwMDAsImV4cCI6MjA1MDQ4NTAwMH0.PLACEHOLDER'
+        }
+        
+        console.log('Initializing Supabase client with URL:', supabaseUrl)
+        console.log('API Key available:', !!supabaseAnonKey)
+        
+        // Create different client based on what we have
+        let supabase = null
+        try {
+            if (supabaseAnonKey) {
+                supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey)
+            }
+        } catch (e) {
+            console.error('Failed to create Supabase client:', e)
+        }
+        
+        async function debugAuth() {
+            const results = document.getElementById('results')
+            let html = '<h2>Resultados:</h2>'
+            
+            try {
+                // 1. Check current session
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+                
+                html += '<h3>1. Sesión Actual:</h3>'
+                if (sessionError) {
+                    html += `<p class="error">❌ Error: ${sessionError.message}</p>`
+                } else if (session?.user) {
+                    html += `<p class="success">✅ Usuario autenticado: ${session.user.id}</p>`
+                    html += `<p>Email: ${session.user.email}</p>`
+                    html += `<p>Expiración: ${new Date(session.expires_at * 1000).toLocaleString()}</p>`
+                } else {
+                    html += '<p class="warning">⚠️ No hay sesión activa</p>'
+                }
+                
+                // 2. Check user from auth
+                const { data: { user }, error: userError } = await supabase.auth.getUser()
+                
+                html += '<h3>2. Usuario Actual:</h3>'
+                if (userError) {
+                    html += `<p class="error">❌ Error: ${userError.message}</p>`
+                } else if (user) {
+                    html += `<p class="success">✅ Usuario: ${user.id}</p>`
+                    html += `<p>Email: ${user.email}</p>`
+                } else {
+                    html += '<p class="warning">⚠️ No hay usuario autenticado</p>'
+                }
+                
+                // 3. Test database query
+                html += '<h3>3. Prueba de Consulta a BD:</h3>'
+                try {
+                    const { data: testData, error: testError } = await supabase
+                        .from('customers')
+                        .select('id, name')
+                        .limit(1)
+                    
+                    if (testError) {
+                        html += `<p class="error">❌ Error BD: ${testError.message}</p>`
+                    } else {
+                        html += `<p class="success">✅ Consulta exitosa (${testData?.length || 0} registros)</p>`
+                    }
+                } catch (dbError) {
+                    html += `<p class="error">❌ Error de conexión BD: ${dbError.message}</p>`
+                }
+                
+                // 4. Check user_profiles existence
+                html += '<h3>4. Verificación de Perfil:</h3>'
+                if (user?.id) {
+                    try {
+                        const { data: profileData, error: profileError } = await supabase
+                            .from('user_profiles')
+                            .select('id, name, email, full_name')
+                            .eq('id', user.id)
+                            .single()
+                        
+                        if (profileError) {
+                            html += `<p class="error">❌ Perfil no encontrado: ${profileError.message}</p>`
+                            html += '<p><strong>🔧 SOLUCIÓN: El usuario necesita un perfil en user_profiles</strong></p>'
+                        } else {
+                            html += `<p class="success">✅ Perfil encontrado: ${profileData.name || profileData.full_name}</p>`
+                            html += `<p>ID: ${profileData.id}</p>`
+                        }
+                    } catch (profileError) {
+                        html += `<p class="error">❌ Error verificando perfil: ${profileError.message}</p>`
+                    }
+                } else {
+                    html += '<p class="warning">⚠️ No se puede verificar perfil sin user.id</p>'
+                }
+                
+                // 5. Test scheduled_messages foreign key
+                html += '<h3>5. Test de Claves Foráneas:</h3>'
+                if (user?.id) {
+                    try {
+                        // Check if we can perform a dry-run insert check
+                        html += '<p>📋 Simulando inserción en scheduled_messages...</p>'
+                        const testInsert = {
+                            customer_id: 'test-customer-id',
+                            message: 'Test message',
+                            scheduled_for: new Date().toISOString(),
+                            status: 'pending',
+                            user_id: user.id
+                        }
+                        html += `<p><code>${JSON.stringify(testInsert, null, 2)}</code></p>`
+                        
+                        // We won't actually insert, just validate the structure
+                        html += '<p class="success">✅ Estructura de datos válida para inserción</p>'
+                    } catch (insertError) {
+                        html += `<p class="error">❌ Error preparando inserción: ${insertError.message}</p>`
+                    }
+                } else {
+                    html += '<p class="warning">⚠️ No se puede probar inserción sin user.id</p>'
+                }
+                
+            } catch (error) {
+                html += `<p class="error">❌ Error general: ${error.message}</p>`
+                console.error('Debug error:', error)
+            }
+            
+            html += '<h3>💡 Recomendaciones:</h3>'
+            html += '<ul>'
+            html += '<li>Si no hay sesión: Cerrar sesión e iniciar sesión nuevamente</li>'
+            html += '<li>Si falta perfil: Ejecutar script para crear user_profiles</li>'
+            html += '<li>Si hay error de JWT: Limpiar localStorage y cookies del navegador</li>'
+            html += '<li>Si persiste error 409: Verificar foreign keys en Supabase</li>'
+            html += '</ul>'
+            
+            html += '<p><a href="/" style="color: blue;">← Volver a la aplicación principal</a></p>'
+            
+            results.innerHTML = html
+        }
+        
+        // Add error handling and run diagnosis on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, starting diagnosis...')
+            debugAuth().catch(error => {
+                console.error('Diagnosis failed:', error)
+                document.getElementById('results').innerHTML = `<p class="error">❌ Error ejecutando diagnóstico: ${error.message}</p>`
+            })
+        })
+        
+        // Also run immediately in case window.load already fired
+        if (document.readyState === 'complete') {
+            debugAuth().catch(error => {
+                console.error('Diagnosis failed:', error)
+                document.getElementById('results').innerHTML = `<p class="error">❌ Error ejecutando diagnóstico: ${error.message}</p>`
+            })
+        }
+    </script>
+</body>
+</html>

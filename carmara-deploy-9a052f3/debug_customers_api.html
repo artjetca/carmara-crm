@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Customers API</title>
+</head>
+<body>
+    <h1>Customers API Debug Test</h1>
+    <button onclick="testCustomersAPI()">Test Customers API</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testCustomersAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = 'Testing...';
+            
+            try {
+                console.log('Testing customers API...');
+                const response = await fetch('/api/customers', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+                
+                const result = await response.json();
+                console.log('API Result:', result);
+                
+                resultDiv.textContent = JSON.stringify({
+                    status: response.status,
+                    ok: response.ok,
+                    success: result.success,
+                    dataLength: result.data ? result.data.length : 0,
+                    error: result.error,
+                    sampleData: result.data ? result.data.slice(0, 3) : null
+                }, null, 2);
+                
+            } catch (error) {
+                console.error('Error testing customers API:', error);
+                resultDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端登入調試工具</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        .info {
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 前端登入調試工具</h1>
+        <p>此工具用於調試 Casmara CRM 的登入問題</p>
+        
+        <div class="form-group">
+            <label for="email">Email:</label>
+            <input type="email" id="email" value="rosariog.almenglo@gmail.com">
+        </div>
+        
+        <div class="form-group">
+            <label for="password">密碼:</label>
+            <input type="password" id="password" value="admin123">
+        </div>
+        
+        <button onclick="testLogin()">🔐 測試登入</button>
+        <button onclick="checkSession()">📋 檢查會話</button>
+        <button onclick="clearStorage()">🗑️ 清除儲存</button>
+        <button onclick="testEnvironment()">🌍 測試環境</button>
+        <button onclick="clearLog()">🧹 清除日誌</button>
+        
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        // 從環境變數讀取 Supabase 配置
+        const SUPABASE_URL = 'https://aotpcnwjjpkzxnhvmcvb.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdHBjbndqanBrenhuaHZtY3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIxMjUzNzYsImV4cCI6MjA1NzcwMTM3Nn0.utizL25OINRgojrwcrzIstf9BvvlQq0EKwj5aVht4Js';
+        
+        // 初始化 Supabase 客戶端
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            
+            const span = document.createElement('span');
+            span.className = type;
+            span.textContent = logEntry;
+            
+            logElement.appendChild(span);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        async function testEnvironment() {
+            log('🌍 測試環境配置...', 'info');
+            
+            // 檢查 Supabase 配置
+            log(`Supabase URL: ${SUPABASE_URL}`, 'info');
+            log(`Anon Key: ${SUPABASE_ANON_KEY.substring(0, 20)}...`, 'info');
+            
+            // 檢查瀏覽器支援
+            log(`瀏覽器: ${navigator.userAgent}`, 'info');
+            log(`Local Storage 支援: ${typeof(Storage) !== 'undefined'}`, 'info');
+            log(`Session Storage 支援: ${typeof(sessionStorage) !== 'undefined'}`, 'info');
+            
+            // 檢查網路連線
+            log(`網路狀態: ${navigator.onLine ? '線上' : '離線'}`, navigator.onLine ? 'success' : 'error');
+            
+            // 測試 Supabase 連線
+            try {
+                const { data, error } = await supabase.auth.getSession();
+                if (error) {
+                    log(`Supabase 連線錯誤: ${error.message}`, 'error');
+                } else {
+                    log('✅ Supabase 連線正常', 'success');
+                }
+            } catch (err) {
+                log(`Supabase 連線異常: ${err.message}`, 'error');
+            }
+        }
+        
+        async function checkSession() {
+            log('📋 檢查當前會話...', 'info');
+            
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    log(`會話檢查錯誤: ${error.message}`, 'error');
+                    return;
+                }
+                
+                if (session) {
+                    log('✅ 找到活躍會話', 'success');
+                    log(`用戶 ID: ${session.user.id}`, 'info');
+                    log(`Email: ${session.user.email}`, 'info');
+                    log(`會話到期: ${new Date(session.expires_at * 1000).toLocaleString()}`, 'info');
+                } else {
+                    log('❌ 沒有活躍會話', 'warning');
+                }
+                
+                // 檢查本地儲存
+                const localStorageKeys = Object.keys(localStorage).filter(key => 
+                    key.includes('supabase') || key.includes('auth')
+                );
+                
+                if (localStorageKeys.length > 0) {
+                    log('本地儲存中的認證相關資料:', 'info');
+                    localStorageKeys.forEach(key => {
+                        const value = localStorage.getItem(key);
+                        log(`  ${key}: ${value ? value.substring(0, 50) + '...' : 'null'}`, 'info');
+                    });
+                } else {
+                    log('本地儲存中沒有認證相關資料', 'warning');
+                }
+                
+            } catch (err) {
+                log(`會話檢查異常: ${err.message}`, 'error');
+            }
+        }
+        
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                log('❌ 請輸入 email 和密碼', 'error');
+                return;
+            }
+            
+            log(`🔐 嘗試登入: ${email}`, 'info');
+            
+            try {
+                // 先登出現有會話
+                await supabase.auth.signOut();
+                log('已清除現有會話', 'info');
+                
+                // 嘗試登入
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+                
+                if (error) {
+                    log(`❌ 登入失敗: ${error.message}`, 'error');
+                    log(`錯誤代碼: ${error.status || 'N/A'}`, 'error');
+                    log(`錯誤類型: ${error.name || 'N/A'}`, 'error');
+                    
+                    // 詳細錯誤分析
+                    if (error.message.includes('Invalid login credentials')) {
+                        log('🔍 錯誤分析: 登入憑證無效', 'warning');
+                        log('可能原因: 密碼錯誤、帳戶被禁用或 email 未確認', 'warning');
+                    }
+                    
+                    if (error.message.includes('Email not confirmed')) {
+                        log('🔍 錯誤分析: Email 未確認', 'warning');
+                        log('需要確認 email 後才能登入', 'warning');
+                    }
+                    
+                } else {
+                    log('✅ 登入成功!', 'success');
+                    log(`用戶 ID: ${data.user.id}`, 'success');
+                    log(`Email: ${data.user.email}`, 'success');
+                    log(`會話 Token: ${data.session.access_token.substring(0, 20)}...`, 'success');
+                    log(`會話到期: ${new Date(data.session.expires_at * 1000).toLocaleString()}`, 'success');
+                }
+                
+            } catch (err) {
+                log(`❌ 登入異常: ${err.message}`, 'error');
+                log(`完整錯誤: ${JSON.stringify(err, null, 2)}`, 'error');
+            }
+        }
+        
+        function clearStorage() {
+            log('🗑️ 清除瀏覽器儲存...', 'info');
+            
+            // 清除 localStorage
+            const localStorageKeys = Object.keys(localStorage);
+            localStorageKeys.forEach(key => {
+                if (key.includes('supabase') || key.includes('auth')) {
+                    localStorage.removeItem(key);
+                    log(`已清除 localStorage: ${key}`, 'info');
+                }
+            });
+            
+            // 清除 sessionStorage
+            const sessionStorageKeys = Object.keys(sessionStorage);
+            sessionStorageKeys.forEach(key => {
+                if (key.includes('supabase') || key.includes('auth')) {
+                    sessionStorage.removeItem(key);
+                    log(`已清除 sessionStorage: ${key}`, 'info');
+                }
+            });
+            
+            // 登出 Supabase
+            supabase.auth.signOut().then(() => {
+                log('✅ 已登出 Supabase 會話', 'success');
+            }).catch(err => {
+                log(`登出錯誤: ${err.message}`, 'error');
+            });
+            
+            log('✅ 儲存清除完成', 'success');
+        }
+        
+        // 頁面載入時自動檢查環境
+        window.addEventListener('load', () => {
+            log('🚀 前端登入調試工具已載入', 'success');
+            testEnvironment();
+        });
+        
+        // 監聽認證狀態變化
+        supabase.auth.onAuthStateChange((event, session) => {
+            log(`🔄 認證狀態變化: ${event}`, 'info');
+            if (session) {
+                log(`新會話: ${session.user.email}`, 'success');
+            } else {
+                log('會話已結束', 'warning');
+            }
+        });
+    </script>
+</body>
+</html>

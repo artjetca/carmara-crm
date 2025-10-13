@@ -1,0 +1,26 @@
+name: Email Scheduler
+
+on:
+  schedule:
+    # 每5分鐘執行一次 (免費GitHub Actions限制)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # 允許手動觸發
+  repository_dispatch:
+    types: [netlify-deploy-succeeded]
+
+jobs:
+  trigger-email-scheduler:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Trigger Email Scheduler
+      run: |
+        curl -X POST https://casmara-charo.netlify.app/.netlify/functions/email-scheduler \
+          -H "Content-Type: application/json" \
+          --max-time 30 \
+          --retry 2 \
+          --fail-with-body
+        
+    - name: Log Result
+      run: |
+        echo "Email scheduler triggered at $(date)"
