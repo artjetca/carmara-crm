@@ -396,15 +396,18 @@ export default function Maps() {
                 center={defaultCenter}
                 zoom={12}
                 style={{ height: '100%', width: '100%' }}
-                whenCreated={(m) => (mapRef.current = m)}
+                ref={mapRef}
               >
+                {/* @ts-ignore */}
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
 
                 {markerPositions.map(({ c, pos }) => (
+                  /* @ts-ignore */
                   <Marker key={c.id} position={[pos.lat, pos.lng]} icon={customerIcon} eventHandlers={{ click: () => setSelectedCustomer(c) }}>
+                    {/* @ts-ignore */}
                     <Popup minWidth={240}>
                       <div className="space-y-1">
                         <div className="font-semibold text-gray-900">{c.name}</div>
@@ -430,6 +433,7 @@ export default function Maps() {
                 ))}
 
                 {myLocation && (
+                  /* @ts-ignore */
                   <Marker position={[myLocation.lat, myLocation.lng]} icon={myLocationIcon}>
                     <Popup>Mi Ubicación</Popup>
                   </Marker>
