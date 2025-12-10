@@ -775,14 +775,31 @@ export default function Visits() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapProvider, routeCustomers, leafletReset])
 
-  // 地圖全屏切換（僅地圖容器）
-  const toggleMapFullscreen = () => {
-    setLeafletFullscreen(v => !v)
-    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 50)
-    setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 250)
+  // 地圖真正全螢幕切換（使用瀏覽器 Fullscreen API）
+  const toggleMapFullscreen = async () => {
+    try {
+      const mapContainer = mapRef.current?.parentElement
+      if (!mapContainer) return
+      
+      if (!document.fullscreenElement) {
+        // 進入全螢幕
+        await mapContainer.requestFullscreen()
+        setLeafletFullscreen(true)
+      } else {
+        // 退出全螢幕
+        await document.exitFullscreen()
+        setLeafletFullscreen(false)
+      }
+      
+      // 重新計算地圖尺寸
+      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 100)
+      setTimeout(() => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }, 300)
+    } catch (err) {
+      console.warn('[Fullscreen] Failed:', err)
+    }
   }
 
-  // PDF 獨立導出（非截圖方式）
+  // PDF 獨立導出（僅客戶列表，每頁15個停靠點）
   const generateIndependentPdf = async () => {
     try {
       if (!routeCustomers.length) {
@@ -801,63 +818,57 @@ export default function Visits() {
         })
       }
 
-      // 根據停靠點數量自適應佈局
+      // 每頁最多15個停靠點
+      const itemsPerPage = 15
       const stopCount = routeCustomers.length
-      // 如果超過8個停靠點，使用更緊湊的佈局
-      const isCompactMode = stopCount > 8
-      const fontSize = isCompactMode ? '8.5pt' : '10pt'
-      const itemMargin = isCompactMode ? '2.5mm' : '4mm'
-      const itemPadding = isCompactMode ? '1.5mm' : '2mm'
-      const headerMargin = isCompactMode ? '6mm' : '10mm'
-      const summaryMargin = isCompactMode ? '3mm' : '5mm'
+      const pageCount = Math.ceil(stopCount / itemsPerPage)
+      
+      // 統一佈局參數（縮小字體與間距）
+      const fontSize = '8pt'
+      const itemMargin = '2.5mm'
+      const itemPadding = '1.5mm'
 
-      // 創建 PDF 內容
+      // 移除地圖截圖功能（根據用戶需求，無法實現只顯示標記無連線）
+
+      // 創建 PDF 內容（純列表，每頁15個）
       const pdfContent = `
-        <div style="width: 297mm; height: 210mm; padding: 12mm; font-family: Arial, sans-serif; display: flex;">
-          <!-- 左側：客戶詳細列表 -->
-          <div style="width: 45%; padding-right: 8mm;">
-            <h2 style="margin: 0 0 ${headerMargin} 0; color: #1f2937; font-size: ${isCompactMode ? '16pt' : '18pt'};">Ruta Planificada</h2>
-            <div style="margin-bottom: ${summaryMargin}; font-size: ${isCompactMode ? '9pt' : '10pt'};">
-              <strong>Paradas:</strong> ${stopCount}<br>
-              ${totalDistance > 0 ? `<strong>Distancia total:</strong> ${totalDistance.toFixed(1)} km<br>` : ''}
-              ${totalDuration > 0 ? `<strong>Tiempo total:</strong> ${Math.round(totalDuration)} min<br>` : ''}
-              <strong>Fecha:</strong> ${new Date().toLocaleDateString('es-ES')}
-            </div>
-            <div style="font-size: ${fontSize}; line-height: 1.2; max-height: ${isCompactMode ? '168mm' : '160mm'}; overflow: hidden;">
-              ${routeCustomers.map((customer, index) => `
-                <div style="margin-bottom: ${itemMargin}; padding-bottom: ${itemPadding}; border-bottom: 1px solid #e5e7eb; page-break-inside: avoid;">
-                  <div style="font-weight: bold; color: #2563eb; margin-bottom: 0.8mm;">
-                    ${index + 1}. ${customer.name}
-                  </div>
-                  <div style="color: #6b7280; margin-bottom: 0.8mm; font-size: ${isCompactMode ? '8pt' : '9pt'};">${customer.company || '—'}</div>
-                  <div style="margin-bottom: 0.8mm; font-size: ${isCompactMode ? '8pt' : '9pt'};">${getAddress(customer)}</div>
-                  ${customer.phone || (customer as any).mobile_phone ? 
-                    `<div style="color: #059669; font-size: ${isCompactMode ? '7.5pt' : '9pt'};">📞 ${customer.phone || (customer as any).mobile_phone}</div>` : ''}
-                  ${customer.distance && customer.duration ? 
-                    `<div style="color: #7c3aed; font-size: ${isCompactMode ? '7.5pt' : '8.5pt'};">
-                      🚗 ${customer.distance.toFixed(1)} km • ⏱️ ${Math.round(customer.duration)} min
-                    </div>` : ''}
-                </div>
-              `).join('')}
-            </div>
-          </div>
-          
-          <!-- 右側：地圖區域 -->
-          <div style="width: 55%; position: relative;">
-            <div style="width: 100%; height: 186mm; border: 2px solid #d1d5db; border-radius: 8px; background: #f9fafb; display: flex; align-items: center; justify-content: center;">
-              <div style="text-align: center; color: #6b7280;">
-                <div style="font-size: 48pt; margin-bottom: 5mm;">🗺️</div>
-                <div style="font-size: 14pt;">Mapa de la Ruta</div>
-                <div style="font-size: 10pt; margin-top: 2mm;">
-                  ${stopCount} paradas planificadas
-                </div>
-                <div style="font-size: 9pt; margin-top: 3mm; color: #9ca3af;">
-                  ${totalDistance > 0 ? `${totalDistance.toFixed(1)} km` : ''} 
-                  ${totalDuration > 0 ? ` • ${Math.round(totalDuration)} min` : ''}
+        <div style="width: 210mm; font-family: Arial, sans-serif;">
+          ${Array.from({ length: pageCount }, (_, pageIndex) => {
+            const startIdx = pageIndex * itemsPerPage
+            const endIdx = Math.min(startIdx + itemsPerPage, stopCount)
+            const pageCustomers = routeCustomers.slice(startIdx, endIdx)
+            
+            return `
+              <div style="padding: 12mm; ${pageIndex > 0 ? 'page-break-before: always;' : ''}">
+                <div style="font-size: ${fontSize}; line-height: 1.3;">
+                  ${pageCustomers.map((customer, index) => {
+                    const globalIndex = startIdx + index
+                    return `
+                      <div style="margin-bottom: ${itemMargin}; padding: ${itemPadding}; border: 1px solid #e5e7eb; border-radius: 3px; background: #f9fafb; page-break-inside: avoid;">
+                        <div style="font-weight: bold; color: #2563eb; margin-bottom: 0.8mm; font-size: 9.5pt;">
+                          ${globalIndex + 1}. ${customer.name}
+                        </div>
+                        <div style="color: #6b7280; margin-bottom: 0.8mm; font-size: 8pt;">
+                          ${customer.company || '—'}
+                        </div>
+                        <div style="margin-bottom: 0.8mm; font-size: 8pt; color: #374151;">
+                          📍 ${getAddress(customer)}
+                        </div>
+                        ${customer.phone || (customer as any).mobile_phone ? 
+                          `<div style="color: #059669; font-size: 7.5pt; margin-bottom: 0.5mm;">
+                            📞 ${customer.phone || (customer as any).mobile_phone}
+                          </div>` : ''}
+                        ${customer.distance && customer.duration ? 
+                          `<div style="color: #7c3aed; font-size: 7.5pt;">
+                            🚗 ${customer.distance.toFixed(1)} km • ⏱️ ${Math.round(customer.duration)} min
+                          </div>` : ''}
+                      </div>
+                    `
+                  }).join('')}
                 </div>
               </div>
-            </div>
-          </div>
+            `
+          }).join('')}
         </div>
       `
       
@@ -869,7 +880,8 @@ export default function Visits() {
         filename: `Ruta_${routeName || 'Planificada'}_${new Date().toISOString().split('T')[0]}.pdf`,
         image: { type: 'jpeg', quality: 0.95 },
         html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       }
       
       await (window as any).html2pdf().set(opt).from(element).save()
@@ -907,8 +919,13 @@ export default function Visits() {
     }
     const onResize = () => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }
     const onFs = () => {
-      setIsDocFullscreen(!!document.fullscreenElement)
-      try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {}
+      const isFullscreen = !!document.fullscreenElement
+      setIsDocFullscreen(isFullscreen)
+      setLeafletFullscreen(isFullscreen)
+      try { 
+        setTimeout(() => leafletMapInstanceRef.current?.invalidateSize?.(), 100)
+        setTimeout(() => leafletMapInstanceRef.current?.invalidateSize?.(), 300)
+      } catch {}
     }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('resize', onResize)
@@ -2980,7 +2997,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className={`${leafletFullscreen ? 'fixed inset-0 z-[1200] bg-white' : 'h-[800px]'} relative`}>
+              <div className="h-[800px] relative bg-white">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
