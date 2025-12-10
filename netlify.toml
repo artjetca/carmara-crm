@@ -25,5 +25,5 @@
 
 # Environment variables for production
 # These should be set in Netlify dashboard:
-# VITE_SUPABASE_URL=https://aotpcnwjjpkzxnhvmcvb.supabase.co
+# VITE_SUPABASE_URL=https://mddyomibqbmnpexwgkug.supabase.co
 # VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdHBjbndqanBrenhuaHZtY3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIxMjUzNzYsImV4cCI6MjA1NzcwMTM3Nn0.utizL25OINRgojrwcrzIstf9BvvlQq0EKwj5aVht4Js
