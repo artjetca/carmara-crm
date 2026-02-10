@@ -13,20 +13,17 @@ jobs:
     steps:
     - name: Ping Supabase REST API
       run: |
-        response=$(curl -s -o /dev/null -w "%{http_code}" \
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
           "https://aotpcnwjjpkzxnhvmcvb.supabase.co/rest/v1/" \
           -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-          --max-time 15)
-        echo "Supabase response: $response"
-        if [ "$response" -ge 200 ] && [ "$response" -lt 400 ]; then
-          echo "✅ Supabase is alive"
-        else
-          echo "⚠️ Supabase returned $response"
-        fi
+          --max-time 30 --retry 3 || true)
+        echo "Supabase HTTP code: $HTTP_CODE"
+        echo "Ping completed at $(date -u)"
 
     - name: Ping Netlify site
       run: |
-        curl -s -o /dev/null -w "Netlify: %{http_code}\n" \
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
           https://casmara-charo.netlify.app \
-          --max-time 15
+          --max-time 30 --retry 3 || true)
+        echo "Netlify HTTP code: $HTTP_CODE"
