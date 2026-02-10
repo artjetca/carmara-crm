@@ -1,9 +1,15 @@
 [build]
   publish = "dist"
   command = "npm run build"
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
 
 [[redirects]]
   from = "/*"
@@ -23,7 +29,8 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Note: Netlify scheduled functions are not available on free plan
+# Use manual trigger or implement with external cron service
+
 # Environment variables for production
-# These should be set in Netlify dashboard:
-# VITE_SUPABASE_URL=https://mddyomibqbmnpexwgkug.supabase.co
-# VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvdHBjbndqanBrenhuaHZtY3ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIxMjUzNzYsImV4cCI6MjA1NzcwMTM3Nn0.utizL25OINRgojrwcrzIstf9BvvlQq0EKwj5aVht4Js
+# Set these in Netlify dashboard (no values here for security):
