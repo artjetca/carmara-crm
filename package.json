@@ -13,6 +13,7 @@
     "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\""
   },
   "dependencies": {
+    "@react-google-maps/api": "^2.20.8",
     "@supabase/auth-ui-react": "^0.4.7",
     "@supabase/auth-ui-shared": "^0.1.8",
     "@supabase/supabase-js": "^2.56.0",
@@ -20,10 +21,13 @@
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^17.2.1",
     "express": "^4.21.2",
+    "googleapis": "^159.0.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.511.0",
+    "node-fetch": "^3.3.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
