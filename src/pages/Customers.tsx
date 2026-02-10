@@ -206,7 +206,7 @@ export default function Customers() {
     return matchesSearch && matchesCity
   })
 
-  const cities = Array.from(new Set(customers.map(c => c.city).filter(Boolean)))
+  const cities = Array.from(new Set([...translations.cities, ...customers.map(c => c.city).filter(Boolean)])).sort()
 
   // 是否全選目前可見清單
   const allVisibleSelected = filteredCustomers.length > 0 && filteredCustomers.every(c => selectedIds.has(c.id))

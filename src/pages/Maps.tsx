@@ -82,7 +82,7 @@ export default function Maps() {
     return matchesSearch && matchesCity
   })
 
-  const cities = Array.from(new Set(customers.map(c => c.city).filter(Boolean))) as string[]
+  const cities = Array.from(new Set([...translations.cities, ...customers.map(c => c.city).filter(Boolean)])).sort() as string[]
 
   const getAddress = (c: Customer) => {
     // 嘗試從備註提取 Ciudad 作為 municipio
