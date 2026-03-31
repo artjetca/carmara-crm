@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vite-client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "client:dev"],
+      "port": 5173
+    },
+    {
+      "name": "express-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "server:dev"],
+      "port": 3035
+    },
+    {
+      "name": "dev-all",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    }
+  ]
+}
