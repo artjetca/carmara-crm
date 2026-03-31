@@ -63,6 +63,32 @@ export interface Visit {
   customer?: Customer
 }
 
+// ─── Prospect / Lead ──────────────────────────────────────────────────────────
+export interface Prospect {
+  id: string
+  business_name: string
+  contact_name?: string
+  phone?: string
+  address?: string
+  city?: string
+  province?: string               // 'Cádiz' | 'Huelva'
+  postal_code?: string
+  country?: string
+  category?: string               // estética, peluquería, spa …
+  source?: string                 // Google Maps | directorio | manual
+  website?: string
+  notes?: string
+  lat?: number | null
+  lng?: number | null
+  geocode_status?: 'valid' | 'approximate' | 'invalid' | 'pending'
+  duplicate_with_existing_client?: boolean
+  duplicate_prospect_id?: string | null
+  unsupported_province?: boolean
+  created_at: string
+  updated_at: string
+  created_by?: string
+}
+
 export interface ScheduledMessage {
   id: string
   customer_ids: string[]

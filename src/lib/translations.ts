@@ -185,6 +185,11 @@ export const translations = {
     loadError: 'Error al cargar las visitas'
   },
 
+  // Mapa de Prospectos
+  prospectMap: {
+    title: 'Prospectos',
+  },
+
   // Mapas
   maps: {
     title: 'Mapas y Navegación',

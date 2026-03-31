@@ -9,12 +9,13 @@ import Maps from './pages/Maps'
 import Communications from './pages/Communications'
 import DataImport from './pages/DataImport'
 import Settings from './pages/Settings'
+import ProspectMapPage from './pages/ProspectMapPage'
 import { useStore } from './store/useStore'
 
 // Componente para renderizar la página actual
 function CurrentPage() {
   const { currentPage } = useStore()
-  
+
   switch (currentPage) {
     case 'dashboard':
       return <Dashboard />
@@ -24,6 +25,8 @@ function CurrentPage() {
       return <Visits />
     case 'map':
       return <Maps />
+    case 'prospectMap':
+      return <ProspectMapPage />
     case 'communications':
       return <Communications />
     case 'dataImport':

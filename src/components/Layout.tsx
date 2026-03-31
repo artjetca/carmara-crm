@@ -14,7 +14,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  UserSearch,
 } from 'lucide-react'
 
 interface LayoutProps {
@@ -45,6 +46,12 @@ const navigationItems = [
     label: 'maps.title',
     icon: Map,
     path: '/map'
+  },
+  {
+    id: 'prospectMap',
+    label: 'prospectMap.title',
+    icon: UserSearch,
+    path: '/prospect-map'
   },
   {
     id: 'communications',
