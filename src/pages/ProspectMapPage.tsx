@@ -130,7 +130,7 @@ const createCustomerIcon = (approximate = false) =>
         <div style="
           width:16px;height:16px;border-radius:50%;
           background:#2563eb;
-          border:2px ${approximate ? 'dashed #93c5fd' : 'solid #ffffff'};
+          border:2px solid #ffffff;
           box-shadow:0 4px 12px rgba(15,23,42,.22);
         "></div>
         <div style="
