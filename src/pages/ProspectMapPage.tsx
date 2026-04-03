@@ -129,12 +129,12 @@ const createCustomerIcon = (approximate = false) =>
       <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
         <div style="
           width:16px;height:16px;border-radius:50%;
-          background:${approximate ? '#dbeafe' : '#2563eb'};
-          border:2px ${approximate ? 'dashed #2563eb' : 'solid #ffffff'};
+          background:#2563eb;
+          border:2px ${approximate ? 'dashed #93c5fd' : 'solid #ffffff'};
           box-shadow:0 4px 12px rgba(15,23,42,.22);
         "></div>
         <div style="
-          width:2px;height:8px;background:${approximate ? '#60a5fa' : '#2563eb'};
+          width:2px;height:8px;background:#2563eb;
           margin-top:-2px;opacity:.7;
         "></div>
       </div>`,
