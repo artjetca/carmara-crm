@@ -13,4 +13,5 @@ begin;
 
   revoke all on function public.refresh_pgrst_schema() from public;
   grant execute on function public.refresh_pgrst_schema() to authenticated;
+  grant execute on function public.refresh_pgrst_schema() to service_role;
 commit;

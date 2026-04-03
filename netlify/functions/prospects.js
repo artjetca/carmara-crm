@@ -196,9 +196,17 @@ function buildRecord(raw, province) {
     category:        raw.category        || null,
     source:          raw.source          || 'manual',
     website:         raw.website         || null,
+    instagram:       raw.instagram       || null,
     notes:           raw.notes           || null,
     lat:             raw.lat != null ? Number(raw.lat) : null,
     lng:             raw.lng != null ? Number(raw.lng) : null,
+    rating:          raw.rating != null ? Number(raw.rating) : null,
+    reviews_count:   raw.reviews_count != null ? Number(raw.reviews_count) : null,
+    status:          raw.status          || null,
+    interest:        raw.interest        || null,
+    lead_score:      raw.lead_score != null ? Number(raw.lead_score) : 0,
+    place_id:        raw.place_id        || null,
+    hash_dedupe:     raw.hash_dedupe     || null,
     geocode_status:
       raw.lat != null && raw.lng != null
         ? (raw.geocode_status || 'valid')

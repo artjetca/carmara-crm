@@ -5,30 +5,20 @@
 // ============================================================
 
 import type { Customer, Prospect } from '../lib/supabase'
-
-// ─── String normalisation helpers ────────────────────────────────────────────
-
-function norm(s?: string | null): string {
-  if (!s) return ''
-  return s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')  // strip accents
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function normPhone(p?: string | null): string {
-  if (!p) return ''
-  return p.replace(/\D/g, '').slice(-9) // last 9 digits
-}
+import {
+  buildAddressKey,
+  buildCustomerLookupMaps,
+  buildNameCityKey,
+  matchAgainstCustomerLookups,
+  normalizeBusinessName,
+  normalizePhoneForComparison,
+} from './prospectAutoCaptureUtils'
 
 // ─── Similarity scoring ──────────────────────────────────────────────────────
 
 function nameSimilarity(a: string, b: string): number {
-  const na = norm(a)
-  const nb = norm(b)
+  const na = normalizeBusinessName(a)
+  const nb = normalizeBusinessName(b)
   if (!na || !nb) return 0
   if (na === nb) return 1
   // Token overlap
@@ -53,10 +43,37 @@ export function checkProspectVsCustomers(
   prospect: Pick<Prospect, 'business_name' | 'phone' | 'address' | 'city'>,
   customers: Customer[]
 ): DuplicateCheckResult {
-  const prospectPhone = normPhone(prospect.phone)
-  const prospectName  = norm(prospect.business_name)
-  const prospectAddr  = norm(prospect.address)
-  const prospectCity  = norm(prospect.city)
+  const exactLookup = buildCustomerLookupMaps(customers)
+  const directMatch = matchAgainstCustomerLookups(
+    {
+      business_name: prospect.business_name,
+      phone: prospect.phone,
+      address: prospect.address,
+      city: prospect.city,
+    },
+    exactLookup
+  )
+
+  if (directMatch) {
+    return {
+      isDuplicate: true,
+      confidence: 1,
+      matchedCustomerId: directMatch.matchedId,
+      matchedCustomerName: directMatch.matchedName,
+      reason: directMatch.motivo,
+    }
+  }
+
+  const prospectPhone = normalizePhoneForComparison(prospect.phone)
+  const prospectName = normalizeBusinessName(prospect.business_name)
+  const prospectAddress = buildAddressKey({
+    address: prospect.address,
+    city: prospect.city,
+  })
+  const prospectNameCity = buildNameCityKey({
+    business_name: prospect.business_name,
+    city: prospect.city,
+  })
 
   let best: DuplicateCheckResult = { isDuplicate: false, confidence: 0 }
 
@@ -64,15 +81,13 @@ export function checkProspectVsCustomers(
     let score = 0
     const reasons: string[] = []
 
-    // Exact phone match is a very strong signal
-    const custPhone = normPhone(c.phone || c.mobile_phone)
+    const custPhone = normalizePhoneForComparison(c.mobile_phone || c.phone)
     if (prospectPhone && custPhone && prospectPhone === custPhone) {
       score += 0.7
       reasons.push('mismo teléfono')
     }
 
-    // Name similarity
-    const custName = norm(c.company || c.name)
+    const custName = normalizeBusinessName(c.company || c.name)
     const nameSim = nameSimilarity(prospectName, custName)
     if (nameSim > 0.8) {
       score += 0.5
@@ -82,13 +97,11 @@ export function checkProspectVsCustomers(
       reasons.push('nombre similar')
     }
 
-    // Same city
-    if (prospectCity && norm(c.city) === prospectCity) {
-      score += 0.1
+    if (prospectNameCity && buildNameCityKey({ company: c.company, name: c.name, city: c.city }) === prospectNameCity) {
+      score += 0.15
     }
 
-    // Address overlap
-    if (prospectAddr && norm(c.address) === prospectAddr) {
+    if (prospectAddress && buildAddressKey({ address: c.address, city: c.city, province: c.province }) === prospectAddress) {
       score += 0.3
       reasons.push('misma dirección')
     }
@@ -122,8 +135,8 @@ export function checkProspectVsProspects(
   existingProspects: Prospect[],
   excludeId?: string
 ): ProspectDuplicateResult {
-  const prospectPhone = normPhone(prospect.phone)
-  const prospectName  = norm(prospect.business_name)
+  const prospectPhone = normalizePhoneForComparison(prospect.phone)
+  const prospectName = normalizeBusinessName(prospect.business_name)
 
   let best: ProspectDuplicateResult = { isDuplicate: false, confidence: 0 }
 
@@ -131,9 +144,9 @@ export function checkProspectVsProspects(
     if (p.id === excludeId) continue
 
     let score = 0
-    const existingPhone = normPhone(p.phone)
+    const existingPhone = normalizePhoneForComparison(p.phone)
     if (prospectPhone && existingPhone && prospectPhone === existingPhone) score += 0.8
-    const nameSim = nameSimilarity(prospectName, norm(p.business_name))
+    const nameSim = nameSimilarity(prospectName, normalizeBusinessName(p.business_name))
     if (nameSim > 0.8) score += 0.5
     else if (nameSim > 0.5) score += 0.2
 

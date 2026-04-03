@@ -4,11 +4,16 @@
 // ============================================================
 
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertTriangle, X } from 'lucide-react'
 import type { Customer, Prospect } from '../../lib/supabase'
 import { checkProspectVsCustomers, checkProspectVsProspects } from '../../services/dedupeService'
+import {
+  getCitiesForProvince,
+  PROSPECT_PROVINCES,
+} from './prospectLocationOptions'
+import { getProspectModalButtonClass } from './prospectActionButtonStyles'
 
-const PROVINCES = ['Cádiz', 'Huelva'] as const
 const CATEGORIES = [
   'estética',
   'clínica estética',
@@ -96,6 +101,7 @@ export default function ProspectFormModal({
   const [errors, setErrors] = useState<Partial<FormData>>({})
   const [dupClient, setDupClient] = useState<string | null>(null)
   const [dupProspect, setDupProspect] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   const dupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -131,11 +137,36 @@ export default function ProspectFormModal({
     return () => { if (dupTimerRef.current) clearTimeout(dupTimerRef.current) }
   }, [form.business_name, form.phone, form.address, form.city])
 
+  useEffect(() => {
+    setMounted(true)
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [onClose])
+
+  const cityOptions = getCitiesForProvince(form.province)
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target
-    setForm((prev) => ({ ...prev, [name]: value }))
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'province' ? { city: '' } : {}),
+    }))
     setErrors((prev) => ({ ...prev, [name]: undefined }))
   }
 
@@ -143,7 +174,7 @@ export default function ProspectFormModal({
     const errs: Partial<FormData> = {}
     if (!form.business_name.trim()) errs.business_name = 'Nombre obligatorio'
     if (!form.province)              errs.province = 'Selecciona provincia'
-    if (form.province && !PROVINCES.includes(form.province as any))
+    if (form.province && !PROSPECT_PROVINCES.includes(form.province as any))
       errs.province = 'Solo Cádiz o Huelva'
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -182,11 +213,33 @@ export default function ProspectFormModal({
     }
   }
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+  if (!mounted) return null
+
+  return createPortal(
+    <>
+      <style>{`
+        .leaflet-pane,
+        .leaflet-top,
+        .leaflet-bottom,
+        .leaflet-control {
+          z-index: 400 !important;
+        }
+      `}</style>
+      <div
+        className="fixed inset-0 z-[5000] bg-black/55 p-4 sm:p-6"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="fixed inset-0 z-[5001] flex items-center justify-center p-4 sm:p-6">
+        <div
+          className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto overscroll-contain rounded-xl bg-white shadow-2xl"
+          onClick={event => event.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEdit ? 'Editar prospecto' : 'Nuevo prospecto'}
+        >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-200 sticky top-0 bg-white z-10">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white p-5">
           <h2 className="text-lg font-bold text-gray-900">
             {isEdit ? 'Editar prospecto' : 'Nuevo prospecto'}
           </h2>
@@ -266,13 +319,18 @@ export default function ProspectFormModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
-              <input
+              <select
                 name="city"
                 value={form.city}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                placeholder="Jerez de la Frontera"
-              />
+                disabled={cityOptions.length === 0}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white disabled:cursor-not-allowed disabled:bg-gray-100"
+              >
+                <option value="">Todas / Selecciona una ciudad</option>
+                {cityOptions.map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -286,7 +344,7 @@ export default function ProspectFormModal({
                   ${errors.province ? 'border-red-400' : 'border-gray-300'}`}
               >
                 <option value="">Seleccionar</option>
-                {PROVINCES.map((p) => (
+                {PROSPECT_PROVINCES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
@@ -368,20 +426,22 @@ export default function ProspectFormModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className={getProspectModalButtonClass('slate', 'secondary')}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+              className={getProspectModalButtonClass('emerald')}
             >
               {saving ? 'Guardando…' : isEdit ? 'Actualizar' : 'Añadir prospecto'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+      </div>
+    </>,
+    document.body
   )
 }

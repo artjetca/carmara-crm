@@ -77,16 +77,69 @@ export interface Prospect {
   category?: string               // estética, peluquería, spa …
   source?: string                 // Google Maps | directorio | manual
   website?: string
+  instagram?: string
   notes?: string
   lat?: number | null
   lng?: number | null
   geocode_status?: 'valid' | 'approximate' | 'invalid' | 'pending'
+  rating?: number | null
+  reviews_count?: number | null
+  status?: string | null
+  interest?: string | null
+  lead_score?: number | null
+  place_id?: string | null
+  hash_dedupe?: string | null
   duplicate_with_existing_client?: boolean
   duplicate_prospect_id?: string | null
   unsupported_province?: boolean
   created_at: string
   updated_at: string
   created_by?: string
+}
+
+export interface ScrapeJob {
+  id: string
+  province?: string | null
+  city?: string | null
+  keyword?: string | null
+  limit_count?: number | null
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  total_found: number
+  total_imported: number
+  total_failed: number
+  started_at?: string
+  finished_at?: string | null
+  request_payload?: unknown
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+  created_by?: string
+}
+
+export interface ScrapeJobItem {
+  id: string
+  job_id: string
+  business_name: string
+  phone?: string | null
+  address?: string | null
+  city?: string | null
+  province?: string | null
+  website?: string | null
+  instagram?: string | null
+  category?: string | null
+  rating?: number | null
+  reviews_count?: number | null
+  source?: string | null
+  status: 'captured' | 'imported' | 'duplicate' | 'failed'
+  lead_score?: number | null
+  place_id?: string | null
+  hash_dedupe?: string | null
+  lat?: number | null
+  lng?: number | null
+  geocode_status?: string | null
+  raw_payload?: unknown
+  created_at: string
+  updated_at: string
 }
 
 export interface ScheduledMessage {
