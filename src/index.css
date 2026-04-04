@@ -48,3 +48,9 @@
   /* Body background for clean print */
   body { background: white !important; }
 }
+
+/* ── Leaflet popup: force white text on styled buttons/links ────────── */
+.leaflet-popup-content a.text-white,
+.leaflet-popup-content button.text-white {
+  color: #ffffff !important;
+}
