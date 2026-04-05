@@ -12,7 +12,10 @@ import {
   Search,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
+import MarkerClusterGroup from 'react-leaflet-markercluster'
 import L, {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -1001,92 +1004,107 @@ export default function Maps() {
                 />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-                {markerClients.map(client => {
-                  const coords = getClientRenderableCoordinates(client)
-                  if (!coords) return null
+                <MarkerClusterGroup
+                  iconCreateFunction={(cluster: { getChildCount: () => number }) => {
+                    const count = cluster.getChildCount()
+                    return L.divIcon({
+                      html: `<div style="background:#2563eb;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+                      className: '',
+                      iconSize: L.point(36, 36),
+                    })
+                  }}
+                  maxClusterRadius={40}
+                  spiderfyOnMaxZoom
+                  showCoverageOnHover={false}
+                  zoomToBoundsOnClick
+                >
+                  {markerClients.map(client => {
+                    const coords = getClientRenderableCoordinates(client)
+                    if (!coords) return null
 
-                  const popupSummary = buildClientPopupHtml(client, myLocation)
+                    const popupSummary = buildClientPopupHtml(client, myLocation)
 
-                  return (
-                    <Marker
-                      key={client.id}
-                      position={[coords.lat, coords.lng]}
-                      icon={createCustomerIcon(
-                        client.geocodeStatus === 'approximate',
-                        client.id === selectedCustomerId
-                      )}
-                      ref={marker => upsertMarkerForClient(client, marker)}
-                      eventHandlers={{
-                        click: () => setSelectedCustomerId(client.id),
-                      }}
-                    >
-                      <Popup minWidth={280}>
-                        <div className="space-y-3" data-popup-summary={popupSummary}>
-                          <div className="border-b border-gray-200 pb-2">
-                            <div className="text-base font-semibold text-gray-900">{client.name}</div>
-                            {client.company && (
-                              <div className="mt-1 text-sm text-gray-600">{client.company}</div>
-                            )}
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="flex items-start space-x-2">
-                              <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-                              <div className="text-sm text-gray-700">{client.address}</div>
-                            </div>
-
-                            <div className="text-sm text-gray-700">
-                              Distancia desde mi ubicación:{' '}
-                              {formatDistanceKm(client.distanceFromUser, 'Distancia no disponible')}
-                            </div>
-                            <div className="text-sm text-gray-700">
-                              Cliente más cercano:{' '}
-                              {formatDistanceKm(
-                                client.nearestNeighborDistanceInCity,
-                                'Distancia no disponible'
+                    return (
+                      <Marker
+                        key={client.id}
+                        position={[coords.lat, coords.lng]}
+                        icon={createCustomerIcon(
+                          client.geocodeStatus === 'approximate',
+                          client.id === selectedCustomerId
+                        )}
+                        ref={marker => upsertMarkerForClient(client, marker)}
+                        eventHandlers={{
+                          click: () => setSelectedCustomerId(client.id),
+                        }}
+                      >
+                        <Popup minWidth={280}>
+                          <div className="space-y-3" data-popup-summary={popupSummary}>
+                            <div className="border-b border-gray-200 pb-2">
+                              <div className="text-base font-semibold text-gray-900">{client.name}</div>
+                              {client.company && (
+                                <div className="mt-1 text-sm text-gray-600">{client.company}</div>
                               )}
                             </div>
 
-                            {client.geocodeStatus === 'approximate' && (
-                              <div className="text-sm text-amber-600">
-                                Ubicación aproximada. Dirección pendiente de validación.
+                            <div className="space-y-2">
+                              <div className="flex items-start space-x-2">
+                                <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+                                <div className="text-sm text-gray-700">{client.address}</div>
                               </div>
-                            )}
-                          </div>
 
-                          <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
-                            {client.phone && (
-                              <a
-                                href={`tel:${client.phone}`}
-                                className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-600 transition-colors hover:bg-blue-100"
+                              <div className="text-sm text-gray-700">
+                                Distancia desde mi ubicación:{' '}
+                                {formatDistanceKm(client.distanceFromUser, 'Distancia no disponible')}
+                              </div>
+                              <div className="text-sm text-gray-700">
+                                Cliente más cercano:{' '}
+                                {formatDistanceKm(
+                                  client.nearestNeighborDistanceInCity,
+                                  'Distancia no disponible'
+                                )}
+                              </div>
+
+                              {client.geocodeStatus === 'approximate' && (
+                                <div className="text-sm text-amber-600">
+                                  Ubicación aproximada. Dirección pendiente de validación.
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
+                              {client.phone && (
+                                <a
+                                  href={`tel:${client.phone}`}
+                                  className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-600 transition-colors hover:bg-blue-100"
+                                >
+                                  <Phone className="mr-1 h-3 w-3" /> Llamar
+                                </a>
+                              )}
+                              <button
+                                onClick={() => window.open(
+                                  `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(client.address)}`,
+                                  '_blank'
+                                )}
+                                className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs text-green-600 transition-colors hover:bg-green-100"
                               >
-                                <Phone className="mr-1 h-3 w-3" /> Llamar
-                              </a>
-                            )}
-                            <button
-                              onClick={() => window.open(
-                                `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(client.address)}`,
-                                '_blank'
-                              )}
-                              className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs text-green-600 transition-colors hover:bg-green-100"
-                            >
-                              <Navigation className="mr-1 h-3 w-3" /> Direcciones
-                            </button>
-                            <button
-                              onClick={() => window.open(
-                                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`,
-                                '_blank'
-                              )}
-                              className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs text-indigo-600 transition-colors hover:bg-indigo-100"
-                            >
-                              <ExternalLink className="mr-1 h-3 w-3" /> Google Maps
-                            </button>
+                                <Navigation className="mr-1 h-3 w-3" /> Direcciones
+                              </button>
+                              <button
+                                onClick={() => window.open(
+                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`,
+                                  '_blank'
+                                )}
+                                className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs text-indigo-600 transition-colors hover:bg-indigo-100"
+                              >
+                                <ExternalLink className="mr-1 h-3 w-3" /> Google Maps
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  )
-                })}
+                        </Popup>
+                      </Marker>
+                    )
+                  })}
+                </MarkerClusterGroup>
 
                 {myLocation && (
                   <Marker position={[myLocation.lat, myLocation.lng]} icon={myLocationIcon}>
