@@ -170,6 +170,20 @@ function FlyToMarker({ coords }: { coords: [number, number] | null }) {
   return null
 }
 
+// ─── Resize helper (mobile layout fix) ───────────────────────────────────────
+
+function MapResizeHandler() {
+  const map = useMap()
+  useEffect(() => {
+    // invalidate once after mount so Leaflet picks up the real container size
+    const t = setTimeout(() => map.invalidateSize(), 200)
+    const onResize = () => map.invalidateSize()
+    window.addEventListener('resize', onResize)
+    return () => { clearTimeout(t); window.removeEventListener('resize', onResize) }
+  }, [map])
+  return null
+}
+
 // ─── Import modal ─────────────────────────────────────────────────────────────
 
 interface ImportModalProps {
@@ -955,9 +969,9 @@ export default function ProspectMapPage() {
       </div>
 
       {/* ── Main content ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* ── Sidebar ── */}
-        <div className="w-80 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
+        <div className="w-full md:w-80 md:flex-shrink-0 max-h-[45vh] md:max-h-none border-b md:border-b-0 md:border-r border-gray-200 bg-white flex flex-col overflow-hidden order-2 md:order-1">
           <div className="flex-1 overflow-y-auto">
             {loading || customersLoading ? (
               <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
@@ -1009,7 +1023,7 @@ export default function ProspectMapPage() {
         </div>
 
         {/* ── Map ── */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-[50vh] order-1 md:order-2">
           <MapContainer
             center={CADIZ_CENTER}
             zoom={9}
@@ -1022,6 +1036,7 @@ export default function ProspectMapPage() {
             />
 
             <FlyToMarker coords={flyTo} />
+            <MapResizeHandler />
 
             {mappableCustomers.map((customer) => {
               const coords = getClientRenderableCoordinates(customer)
