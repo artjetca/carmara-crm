@@ -32,7 +32,10 @@ import {
 } from 'lucide-react'
 
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
+import MarkerClusterGroup from 'react-leaflet-markercluster'
 import L from 'leaflet'
 
 import type { Customer, Prospect } from '../lib/supabase'
@@ -1038,152 +1041,184 @@ export default function ProspectMapPage() {
             <FlyToMarker coords={flyTo} />
             <MapResizeHandler />
 
-            {mappableCustomers.map((customer) => {
-              const coords = getClientRenderableCoordinates(customer)
-              if (!coords) return null
+            {/* Customer cluster (blue) */}
+            <MarkerClusterGroup
+              iconCreateFunction={(cluster: { getChildCount: () => number }) => {
+                const count = cluster.getChildCount()
+                return L.divIcon({
+                  html: `<div style="background:#2563eb;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+                  className: '',
+                  iconSize: L.point(36, 36),
+                })
+              }}
+              maxClusterRadius={40}
+              spiderfyOnMaxZoom
+              showCoverageOnHover={false}
+              zoomToBoundsOnClick
+            >
+              {mappableCustomers.map((customer) => {
+                const coords = getClientRenderableCoordinates(customer)
+                if (!coords) return null
 
-              return (
+                return (
+                  <Marker
+                    key={`customer-${customer.id}`}
+                    position={[coords.lat, coords.lng]}
+                    icon={createCustomerIcon(customer.geocodeStatus === 'approximate')}
+                  >
+                    <Popup maxWidth={280}>
+                      <div className="text-sm space-y-1.5 min-w-[220px]">
+                        <div className="font-bold text-gray-900 text-base leading-tight">
+                          {customer.company || customer.name}
+                        </div>
+                        <div className="text-xs font-medium uppercase tracking-wide text-blue-700">
+                          Gestión de Clientes
+                        </div>
+                        {customer.phone && (
+                          <div className="flex items-center gap-1.5 text-gray-700">
+                            <Phone className="w-3.5 h-3.5 text-gray-400" />
+                            <a href={`tel:${customer.phone}`} className="text-blue-600 hover:underline">
+                              {customer.phone}
+                            </a>
+                          </div>
+                        )}
+                        {customer.address && (
+                          <div className="flex items-start gap-1.5 text-gray-600 text-xs">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <span>{customer.address}</span>
+                          </div>
+                        )}
+                        {(customer.city || customer.province) && (
+                          <div className="text-xs text-gray-500">{[customer.city, customer.province].filter(Boolean).join(', ')}</div>
+                        )}
+                        {customer.geocodeStatus === 'approximate' && (
+                          <div className="flex items-center gap-1 text-amber-600 text-xs">
+                            <AlertTriangle className="w-3 h-3" /> Ubicación aproximada. Dirección pendiente de validación.
+                          </div>
+                        )}
+                        <div className="flex gap-2 pt-1.5 border-t border-gray-100">
+                          {customer.phone && (
+                            <a
+                              href={`tel:${customer.phone}`}
+                              className={getProspectPopupButtonClass('blue')}
+                            >
+                              <Phone className="w-3 h-3" /> Llamar
+                            </a>
+                          )}
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={getProspectPopupButtonClass('indigo')}
+                          >
+                            <Navigation className="w-3 h-3" /> Navegar
+                          </a>
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )
+              })}
+            </MarkerClusterGroup>
+
+            {/* Prospect cluster (pink) */}
+            <MarkerClusterGroup
+              iconCreateFunction={(cluster: { getChildCount: () => number }) => {
+                const count = cluster.getChildCount()
+                return L.divIcon({
+                  html: `<div style="background:#ec4899;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+                  className: '',
+                  iconSize: L.point(36, 36),
+                })
+              }}
+              maxClusterRadius={40}
+              spiderfyOnMaxZoom
+              showCoverageOnHover={false}
+              zoomToBoundsOnClick
+            >
+              {mappable.map((p) => (
                 <Marker
-                  key={`customer-${customer.id}`}
-                  position={[coords.lat, coords.lng]}
-                  icon={createCustomerIcon(customer.geocodeStatus === 'approximate')}
+                  key={p.id}
+                  position={[p.lat!, p.lng!]}
+                  icon={createProspectIcon(p.geocode_status, selectedId === p.id)}
+                  eventHandlers={{ click: () => setSelectedId(p.id) }}
                 >
                   <Popup maxWidth={280}>
                     <div className="text-sm space-y-1.5 min-w-[220px]">
-                      <div className="font-bold text-gray-900 text-base leading-tight">
-                        {customer.company || customer.name}
-                      </div>
-                      <div className="text-xs font-medium uppercase tracking-wide text-blue-700">
-                        Gestión de Clientes
-                      </div>
-                      {customer.phone && (
+                      <div className="font-bold text-gray-900 text-base leading-tight">{p.business_name}</div>
+                      {p.category && (
+                        <div className="text-xs text-emerald-700 font-medium uppercase tracking-wide">{p.category}</div>
+                      )}
+                      {p.geocode_status === 'approximate' && (
+                        <div className="flex items-center gap-1 text-amber-600 text-xs">
+                          <AlertTriangle className="w-3 h-3" /> Ubicación aproximada
+                        </div>
+                      )}
+                      {p.phone && (
                         <div className="flex items-center gap-1.5 text-gray-700">
                           <Phone className="w-3.5 h-3.5 text-gray-400" />
-                          <a href={`tel:${customer.phone}`} className="text-blue-600 hover:underline">
-                            {customer.phone}
+                          <a href={`tel:${p.phone}`} className="text-blue-600 hover:underline">{p.phone}</a>
+                        </div>
+                      )}
+                      {p.website && (
+                        <div className="flex items-center gap-1.5 text-gray-700">
+                          <Globe className="w-3.5 h-3.5 text-gray-400" />
+                          <a href={p.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                            {p.website}
                           </a>
                         </div>
                       )}
-                      {customer.address && (
+                      {p.address && (
                         <div className="flex items-start gap-1.5 text-gray-600 text-xs">
                           <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-                          <span>{customer.address}</span>
+                          <span>{p.address}</span>
                         </div>
                       )}
-                      {(customer.city || customer.province) && (
-                        <div className="text-xs text-gray-500">{[customer.city, customer.province].filter(Boolean).join(', ')}</div>
+                      {(p.city || p.province) && (
+                        <div className="text-xs text-gray-500">{[p.city, p.province].filter(Boolean).join(', ')}</div>
                       )}
-                      {customer.geocodeStatus === 'approximate' && (
-                        <div className="flex items-center gap-1 text-amber-600 text-xs">
-                          <AlertTriangle className="w-3 h-3" /> Ubicación aproximada. Dirección pendiente de validación.
+                      {p.source && (
+                        <div className="text-xs text-gray-400">Fuente: {p.source}</div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                        {typeof p.rating === 'number' && <span>⭐ {p.rating.toFixed(1)}</span>}
+                        {typeof p.reviews_count === 'number' && <span>{p.reviews_count} reseñas</span>}
+                        {typeof p.lead_score === 'number' && (
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-700">
+                            Lead {p.lead_score}
+                          </span>
+                        )}
+                      </div>
+                      {p.duplicate_with_existing_client && (
+                        <div className="flex items-center gap-1 text-amber-700 text-xs bg-amber-50 rounded px-2 py-1">
+                          <AlertTriangle className="w-3 h-3" /> Posible duplicado con cliente existente
                         </div>
                       )}
                       <div className="flex gap-2 pt-1.5 border-t border-gray-100">
-                        {customer.phone && (
+                        {p.phone && (
                           <a
-                            href={`tel:${customer.phone}`}
+                            href={`tel:${p.phone}`}
                             className={getProspectPopupButtonClass('blue')}
                           >
                             <Phone className="w-3 h-3" /> Llamar
                           </a>
                         )}
-                        <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={getProspectPopupButtonClass('indigo')}
-                        >
-                          <Navigation className="w-3 h-3" /> Navegar
-                        </a>
+                        {p.lat != null && p.lng != null && (
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={getProspectPopupButtonClass('emerald')}
+                          >
+                            <Navigation className="w-3 h-3" /> Navegar
+                          </a>
+                        )}
                       </div>
                     </div>
                   </Popup>
                 </Marker>
-              )
-            })}
-
-            {mappable.map((p) => (
-              <Marker
-                key={p.id}
-                position={[p.lat!, p.lng!]}
-                icon={createProspectIcon(p.geocode_status, selectedId === p.id)}
-                eventHandlers={{ click: () => setSelectedId(p.id) }}
-              >
-                <Popup maxWidth={280}>
-                  <div className="text-sm space-y-1.5 min-w-[220px]">
-                    <div className="font-bold text-gray-900 text-base leading-tight">{p.business_name}</div>
-                    {p.category && (
-                      <div className="text-xs text-emerald-700 font-medium uppercase tracking-wide">{p.category}</div>
-                    )}
-                    {p.geocode_status === 'approximate' && (
-                      <div className="flex items-center gap-1 text-amber-600 text-xs">
-                        <AlertTriangle className="w-3 h-3" /> Ubicación aproximada
-                      </div>
-                    )}
-                    {p.phone && (
-                      <div className="flex items-center gap-1.5 text-gray-700">
-                        <Phone className="w-3.5 h-3.5 text-gray-400" />
-                        <a href={`tel:${p.phone}`} className="text-blue-600 hover:underline">{p.phone}</a>
-                      </div>
-                    )}
-                    {p.website && (
-                      <div className="flex items-center gap-1.5 text-gray-700">
-                        <Globe className="w-3.5 h-3.5 text-gray-400" />
-                        <a href={p.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                          {p.website}
-                        </a>
-                      </div>
-                    )}
-                    {p.address && (
-                      <div className="flex items-start gap-1.5 text-gray-600 text-xs">
-                        <MapPin className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />
-                        <span>{p.address}</span>
-                      </div>
-                    )}
-                    {(p.city || p.province) && (
-                      <div className="text-xs text-gray-500">{[p.city, p.province].filter(Boolean).join(', ')}</div>
-                    )}
-                    {p.source && (
-                      <div className="text-xs text-gray-400">Fuente: {p.source}</div>
-                    )}
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                      {typeof p.rating === 'number' && <span>⭐ {p.rating.toFixed(1)}</span>}
-                      {typeof p.reviews_count === 'number' && <span>{p.reviews_count} reseñas</span>}
-                      {typeof p.lead_score === 'number' && (
-                        <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-700">
-                          Lead {p.lead_score}
-                        </span>
-                      )}
-                    </div>
-                    {p.duplicate_with_existing_client && (
-                      <div className="flex items-center gap-1 text-amber-700 text-xs bg-amber-50 rounded px-2 py-1">
-                        <AlertTriangle className="w-3 h-3" /> Posible duplicado con cliente existente
-                      </div>
-                    )}
-                    <div className="flex gap-2 pt-1.5 border-t border-gray-100">
-                      {p.phone && (
-                        <a
-                          href={`tel:${p.phone}`}
-                          className={getProspectPopupButtonClass('blue')}
-                        >
-                          <Phone className="w-3 h-3" /> Llamar
-                        </a>
-                      )}
-                      {p.lat != null && p.lng != null && (
-                        <a
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={getProspectPopupButtonClass('emerald')}
-                        >
-                          <Navigation className="w-3 h-3" /> Navegar
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+              ))}
+            </MarkerClusterGroup>
           </MapContainer>
 
           {/* Map legend + stats */}
