@@ -89,26 +89,32 @@ const municipiosByProvince: Record<string, string[]> = {
   Ceuta: ['Ceuta'],
 }
 
-const createCustomerIcon = (approximate: boolean, selected: boolean) =>
-  L.divIcon({
+const createCustomerIcon = (approximate: boolean, selected: boolean) => {
+  const size = selected ? 20 : 18
+  return L.divIcon({
     className: '',
     html: `
       <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
         <div style="
-          width:${selected ? 20 : 18}px;
-          height:${selected ? 20 : 18}px;
+          width:${size}px;
+          height:${size}px;
           border-radius:999px;
-          background:${approximate ? '#f8fafc' : '#ef4444'};
-          border:${approximate ? '2px dashed #f59e0b' : '2px solid #ffffff'};
+          background:${approximate ? '#eff6ff' : '#2563eb'};
+          border:2px ${approximate ? 'dashed #2563eb' : 'solid #ffffff'};
           box-shadow:0 4px 12px rgba(15,23,42,.22);
           outline:${selected ? '3px solid rgba(59,130,246,.28)' : 'none'};
         "></div>
+        <div style="
+          width:2px;height:${size * 0.45}px;background:#2563eb;
+          margin-top:-2px;opacity:.7;
+        "></div>
       </div>
     `,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -10],
+    iconSize: [size, size + size * 0.45],
+    iconAnchor: [size / 2, size + size * 0.45],
+    popupAnchor: [0, -(size + 4)],
   })
+}
 
 const myLocationIcon = L.divIcon({
   className: '',
@@ -1127,6 +1133,36 @@ export default function Maps() {
 
                 <MapBridge mapRef={mapRef} />
               </MapContainer>
+
+              {/* Map legend + stats */}
+              <div className="absolute bottom-4 right-3 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px]">
+                <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Cliente
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-dashed border-blue-600 shadow"></span> Cliente aproximado
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-blue-600 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(37,99,235,.18), 0 4px 12px rgba(37,99,235,.18)' }}></span> Mi ubicación
+                </div>
+                <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-gray-500">En mapa</span>
+                    <span className="font-semibold text-blue-600">{markerClients.length}</span>
+                  </div>
+                  {resolvedCustomers.length > markerClients.length && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-gray-500">Sin coordenadas</span>
+                      <span className="font-semibold text-amber-600">{resolvedCustomers.length - markerClients.length}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1">
+                    <span className="text-gray-600 font-medium">Total</span>
+                    <span className="font-bold text-gray-800">{resolvedCustomers.length}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
