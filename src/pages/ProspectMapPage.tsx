@@ -1186,8 +1186,8 @@ export default function ProspectMapPage() {
             ))}
           </MapContainer>
 
-          {/* Map legend */}
-          <div className="absolute bottom-6 right-4 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000]">
+          {/* Map legend + stats */}
+          <div className="absolute bottom-6 right-4 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[180px]">
             <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Gestión de Clientes
@@ -1200,6 +1200,21 @@ export default function ProspectMapPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-300 shadow"></span> Sin coordenadas
+            </div>
+            {/* Stats */}
+            <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-gray-500">Clientes</span>
+                <span className="font-semibold text-blue-600">{mappableCustomers.length}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-gray-500">Prospectos</span>
+                <span className="font-semibold text-pink-600">{mappable.length}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1">
+                <span className="text-gray-600 font-medium">Total</span>
+                <span className="font-bold text-gray-800">{mappableCustomers.length + mappable.length}</span>
+              </div>
             </div>
           </div>
         </div>
