@@ -1205,15 +1205,44 @@ export default function ProspectMapPage() {
             <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-gray-500">Clientes</span>
-                <span className="font-semibold text-blue-600">{mappableCustomers.length}</span>
+                <span className="font-semibold text-blue-600">
+                  {mappableCustomers.length}
+                  {resolvedCustomers.length > mappableCustomers.length && (
+                    <span className="text-gray-400 font-normal"> / {resolvedCustomers.length}</span>
+                  )}
+                </span>
               </div>
+              {resolvedCustomers.length > mappableCustomers.length && (
+                <div className="pl-3 space-y-0.5 text-[10px] text-gray-400">
+                  {(() => {
+                    const missing = resolvedCustomers.filter(
+                      (c): c is ResolvedMapClient => !hasRenderableCoordinates(c)
+                    )
+                    const noCoords = missing.filter(c => c.finalLat == null || c.finalLng == null).length
+                    const invalid = missing.filter(c => c.geocodeStatus === 'invalid').length
+                    const sea = missing.filter(c => c.geocodeStatus === 'sea_suspect').length
+                    return (
+                      <>
+                        {noCoords > 0 && <div>Sin coordenadas: {noCoords}</div>}
+                        {invalid > 0 && <div>Coord. inválidas: {invalid}</div>}
+                        {sea > 0 && <div>Sospecha mar: {sea}</div>}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <span className="text-gray-500">Prospectos</span>
                 <span className="font-semibold text-pink-600">{mappable.length}</span>
               </div>
               <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1">
                 <span className="text-gray-600 font-medium">Total</span>
-                <span className="font-bold text-gray-800">{mappableCustomers.length + mappable.length}</span>
+                <span className="font-bold text-gray-800">
+                  {mappableCustomers.length + mappable.length}
+                  {resolvedCustomers.length > mappableCustomers.length && (
+                    <span className="text-gray-400 font-normal"> / {resolvedCustomers.length + mappable.length}</span>
+                  )}
+                </span>
               </div>
             </div>
           </div>
