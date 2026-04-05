@@ -750,7 +750,14 @@ export default function Maps() {
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 p-4">
               <h2 className="text-lg font-semibold text-gray-900">{t.maps.customerList}</h2>
-              <p className="text-sm text-gray-600">{resolvedCustomers.length} {t.maps.customersFound}</p>
+              <p className="text-sm text-gray-600">
+                {resolvedCustomers.length} {t.maps.customersFound}
+                {resolvedCustomers.length > renderableClients.length && (
+                  <span className="text-xs text-amber-600 ml-1">
+                    ({renderableClients.length} en mapa · {resolvedCustomers.length - renderableClients.length} sin coordenadas)
+                  </span>
+                )}
+              </p>
             </div>
             <div className="max-h-[720px] overflow-y-auto">
               {cityGroups.length === 0 ? (
@@ -781,6 +788,12 @@ export default function Maps() {
                             <span className="text-sm font-semibold text-gray-900">{cityGroup.city}</span>
                             <span className="ml-2 text-xs text-gray-500">
                               {cityGroup.clientCount} {cityGroup.clientCount === 1 ? 'cliente' : 'clientes'}
+                              {(() => {
+                                const onMap = cityGroup.clients.filter(c => hasRenderableCoordinates(c)).length
+                                return onMap < cityGroup.clientCount ? (
+                                  <span className="text-amber-500 ml-1">({onMap} en mapa)</span>
+                                ) : null
+                              })()}
                             </span>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
