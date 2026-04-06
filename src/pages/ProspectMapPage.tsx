@@ -173,6 +173,49 @@ function FlyToMarker({ coords }: { coords: [number, number] | null }) {
   return null
 }
 
+// ─── Province / city centroids (fallback when no markers have coords) ────────
+
+const PROVINCE_CENTERS: Record<string, [number, number]> = {
+  'Cádiz': [36.53, -6.29],
+  'Huelva': [37.26, -6.95],
+  'Ceuta': [35.89, -5.32],
+}
+
+// ─── Auto-fit map to filtered markers ────────────────────────────────────────
+
+function FilterBoundsHandler({
+  points,
+  filterProvince,
+  filterCity,
+}: {
+  points: [number, number][]
+  filterProvince: string
+  filterCity: string
+}) {
+  const map = useMap()
+  const filterKey = `${filterProvince}|${filterCity}`
+  const prevFilterRef = useRef(filterKey)
+
+  useEffect(() => {
+    if (filterKey === prevFilterRef.current) return
+    prevFilterRef.current = filterKey
+
+    if (points.length >= 2) {
+      map.fitBounds(points, { padding: [48, 48], maxZoom: 14, animate: true })
+    } else if (points.length === 1) {
+      map.flyTo(points[0], 13, { duration: 0.6 })
+    } else {
+      // No markers — fly to province center or default
+      const center = PROVINCE_CENTERS[filterProvince]
+      if (center) {
+        map.flyTo(center, 10, { duration: 0.6 })
+      }
+    }
+  }, [filterKey, map, points, filterProvince])
+
+  return null
+}
+
 // ─── Resize helper (mobile layout fix) ───────────────────────────────────────
 
 function MapResizeHandler() {
@@ -700,6 +743,19 @@ export default function ProspectMapPage() {
     [filtered]
   )
 
+  // All renderable points (customers + prospects) for fitBounds
+  const allMapPoints = useMemo<[number, number][]>(() => {
+    const pts: [number, number][] = []
+    for (const c of mappableCustomers) {
+      const coords = getClientRenderableCoordinates(c)
+      if (coords) pts.push([coords.lat, coords.lng])
+    }
+    for (const p of mappable) {
+      pts.push([p.lat!, p.lng!])
+    }
+    return pts
+  }, [mappableCustomers, mappable])
+
   useEffect(() => {
     const customerRowsWithoutCoords = resolvedCustomers
       .filter(customer => !getClientRenderableCoordinates(customer))
@@ -1076,6 +1132,11 @@ export default function ProspectMapPage() {
             />
 
             <FlyToMarker coords={flyTo} />
+            <FilterBoundsHandler
+              points={allMapPoints}
+              filterProvince={filterProvince}
+              filterCity={filterCity}
+            />
             <MapResizeHandler />
 
             {/* Customer cluster (blue) */}

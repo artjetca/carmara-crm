@@ -128,23 +128,50 @@ const myLocationIcon = L.divIcon({
   iconAnchor: [9, 9],
 })
 
+const PROVINCE_CENTERS: Record<string, [number, number]> = {
+  'Cádiz': [36.53, -6.29],
+  'Huelva': [37.26, -6.95],
+  'Ceuta': [35.89, -5.32],
+}
+
 function MapViewport({
   bounds,
   defaultCenter,
+  filterProvince,
+  filterCity,
 }: {
   bounds: LatLngBoundsExpression | null
   defaultCenter: [number, number]
+  filterProvince: string
+  filterCity: string
 }) {
   const map = useMap()
+  const filterKey = `${filterProvince}|${filterCity}`
+  const prevFilterRef = useRef(filterKey)
 
   useEffect(() => {
     map.invalidateSize()
+
+    const filterChanged = filterKey !== prevFilterRef.current
+    prevFilterRef.current = filterKey
+
     if (bounds) {
-      map.fitBounds(bounds, { padding: [48, 48] })
+      map.fitBounds(bounds, {
+        padding: [48, 48],
+        maxZoom: 14,
+        animate: filterChanged,
+      })
       return
     }
+
+    // No markers — fall back to province center or default
+    if (filterProvince && PROVINCE_CENTERS[filterProvince]) {
+      map.flyTo(PROVINCE_CENTERS[filterProvince], 10, { duration: 0.6 })
+      return
+    }
+
     map.setView(defaultCenter, 8)
-  }, [bounds, defaultCenter, map])
+  }, [bounds, defaultCenter, filterKey, filterProvince, map])
 
   return null
 }
@@ -1034,6 +1061,8 @@ export default function Maps() {
                 <MapViewport
                   bounds={mapBounds}
                   defaultCenter={defaultCenter as [number, number]}
+                  filterProvince={selectedProvince}
+                  filterCity={selectedCity}
                 />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
