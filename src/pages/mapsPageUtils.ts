@@ -259,8 +259,12 @@ export const buildResolvedMapClient = (
   province: string,
   phone: string
 ): ResolvedMapClient => {
-  const finalLat = typeof audit.correctedLat === 'number' ? audit.correctedLat : null
-  const finalLng = typeof audit.correctedLng === 'number' ? audit.correctedLng : null
+  // Prefer markerCoords (includes offset for approximate markers) over correctedLat/Lng
+  // (which is the raw city center without offset, causing all approximate markers to overlap)
+  const finalLat = audit.markerCoords?.lat
+    ?? (typeof audit.correctedLat === 'number' ? audit.correctedLat : null)
+  const finalLng = audit.markerCoords?.lng
+    ?? (typeof audit.correctedLng === 'number' ? audit.correctedLng : null)
 
   return {
     id: customer.id,

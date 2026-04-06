@@ -720,7 +720,44 @@ export default function ProspectMapPage() {
     if (customerRowsWithoutCoords.length > 0) {
       console.table(customerRowsWithoutCoords)
     }
-  }, [mappable.length, mappableCustomers.length, prospects.length, resolvedCustomers])
+
+    // ── Debug: full coordinate audit for all filtered customers ──
+    console.log('[MAP_DEBUG] ── Full customer coordinate audit ──')
+    console.log('[MAP_DEBUG] filteredCustomers:', filteredCustomers.length,
+      '→ resolvedCustomers:', resolvedCustomers.length,
+      '→ mappableCustomers:', mappableCustomers.length)
+    console.table(
+      resolvedCustomers.map(c => ({
+        id: c.id?.slice(0, 8),
+        name: c.name,
+        city: c.city,
+        province: c.province,
+        originalLat: c.originalLat,
+        originalLng: c.originalLng,
+        finalLat: c.finalLat,
+        finalLng: c.finalLng,
+        geocodeStatus: c.geocodeStatus,
+        geocodeReason: c.geocodeReason?.slice(0, 60),
+        renderable: hasRenderableCoordinates(c),
+      }))
+    )
+
+    // ── Debug: detect duplicate coordinates ──
+    const coordMap = new Map<string, string[]>()
+    for (const c of mappableCustomers) {
+      const key = `${c.finalLat?.toFixed(6)},${c.finalLng?.toFixed(6)}`
+      const names = coordMap.get(key) ?? []
+      names.push(c.name)
+      coordMap.set(key, names)
+    }
+    const duplicates = [...coordMap.entries()].filter(([, names]) => names.length > 1)
+    if (duplicates.length > 0) {
+      console.warn('[MAP_DEBUG] ⚠ Customers sharing identical coordinates:')
+      duplicates.forEach(([coord, names]) =>
+        console.warn(`  ${coord} → ${names.join(', ')}`)
+      )
+    }
+  }, [filteredCustomers.length, mappable.length, mappableCustomers, mappableCustomers.length, prospects.length, resolvedCustomers])
 
   // ── Actions ──────────────────────────────────────────────────────────────────
   const handleSave = useCallback(
