@@ -125,15 +125,15 @@ const createProspectIcon = (status: Prospect['geocode_status'], selected: boolea
   })
 }
 
-const createCustomerIcon = (approximate = false) =>
+const createCustomerIcon = (_approximate = false) =>
   L.divIcon({
     className: '',
     html: `
       <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
         <div style="
           width:16px;height:16px;border-radius:50%;
-          background:${approximate ? '#eff6ff' : '#2563eb'};
-          border:2px ${approximate ? 'dashed #2563eb' : 'solid #ffffff'};
+          background:#2563eb;
+          border:2px solid #ffffff;
           box-shadow:0 4px 12px rgba(15,23,42,.22);
         "></div>
         <div style="
@@ -1265,9 +1265,6 @@ export default function ProspectMapPage() {
               <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Gestión de Clientes
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-dashed border-blue-600 shadow"></span> Cliente aproximado
-            </div>
-            <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-pink-500 border-2 border-white shadow"></span> Prospectos nuevos
             </div>
             <div className="flex items-center gap-2">
@@ -1307,8 +1304,16 @@ export default function ProspectMapPage() {
                 </div>
               )}
               <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-500">Prospectos</span>
-                <span className="font-semibold text-pink-600">{mappable.length}</span>
+                <span className="text-gray-500">Prospectos nuevos</span>
+                <span className="font-semibold text-pink-600">
+                  {mappable.filter(p => p.geocode_status !== 'approximate').length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-gray-500">Prosp. aproximado</span>
+                <span className="font-semibold text-pink-400">
+                  {mappable.filter(p => p.geocode_status === 'approximate').length}
+                </span>
               </div>
               <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1">
                 <span className="text-gray-600 font-medium">Total</span>

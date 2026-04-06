@@ -431,11 +431,17 @@ export default function Maps() {
     return distanceViewModel.cities
   }, [distanceViewModel.cities])
 
-  // Auto-expand all city groups when a filter is active; collapse all when cleared
+  // Auto-expand city groups when filtered results are small enough to scan
   useEffect(() => {
-    if (selectedCity || selectedProvince || searchTerm) {
-      const allKeys = new Set(cityGroups.map(g => `${g.province}|${g.city}`))
-      setExpandedCities(allKeys)
+    if (!selectedCity && !selectedProvince && !searchTerm) {
+      // No filter → collapse all
+      setExpandedCities(new Set())
+      return
+    }
+    // Only auto-expand when the filtered result is manageable (≤ 5 city groups)
+    // or when a specific city is selected (always exactly 1 group)
+    if (selectedCity || cityGroups.length <= 5) {
+      setExpandedCities(new Set(cityGroups.map(g => `${g.province}|${g.city}`)))
     } else {
       setExpandedCities(new Set())
     }
