@@ -15,7 +15,7 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
-import MarkerClusterGroup from 'react-leaflet-markercluster'
+import MarkerClusterGroup from '@changey/react-leaflet-markercluster'
 import L, {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -89,9 +89,9 @@ const municipiosByProvince: Record<string, string[]> = {
   Ceuta: ['Ceuta'],
 }
 
-const MARKER_PINK = '#ec4899'
-const MARKER_PINK_LIGHT = '#fdf2f8'
-const MARKER_PINK_RING = 'rgba(236,72,153,.22)'
+const MARKER_PINK = '#ff69b4'
+const MARKER_PINK_LIGHT = '#fff0f7'
+const MARKER_PINK_RING = 'rgba(255,105,180,.22)'
 
 const createCustomerIcon = (approximate: boolean, selected: boolean) => {
   const size = selected ? 20 : 18
@@ -822,7 +822,7 @@ export default function Maps() {
                               <div
                                 key={customer.id}
                                 className={`cursor-pointer p-4 pl-6 transition-colors hover:bg-gray-100 ${
-                                  selectedCustomerId === customer.id ? 'border-r-2 border-pink-500 bg-pink-50' : ''
+                                  selectedCustomerId === customer.id ? 'border-r-2 border-[#ff69b4] bg-[#fff0f7]' : ''
                                 }`}
                                 onClick={() => flyToCustomer(customer)}
                               >
@@ -1142,18 +1142,18 @@ export default function Maps() {
               <div className="absolute bottom-4 right-3 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px]">
                 <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-pink-500 border-2 border-white shadow"></span> Cliente
+                  <span className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: '#ff69b4' }}></span> Cliente
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-pink-50 border-2 border-dashed border-pink-500 shadow"></span> Cliente aproximado
+                  <span className="w-3 h-3 rounded-full border-2 border-dashed shadow" style={{ background: '#fff0f7', borderColor: '#ff69b4' }}></span> Cliente aproximado
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-pink-500 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(236,72,153,.18), 0 4px 12px rgba(236,72,153,.18)' }}></span> Mi ubicación
+                  <span className="w-3 h-3 rounded-full border-[3px] border-white shadow" style={{ background: '#ff69b4', boxShadow: '0 0 0 4px rgba(255,105,180,.18), 0 4px 12px rgba(255,105,180,.18)' }}></span> Mi ubicación
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-gray-500">En mapa</span>
-                    <span className="font-semibold text-pink-600">{markerClients.length}</span>
+                    <span className="font-semibold" style={{ color: '#ff69b4' }}>{markerClients.length}</span>
                   </div>
                   {resolvedCustomers.length > markerClients.length && (
                     <div className="flex items-center justify-between gap-3">
