@@ -89,6 +89,10 @@ const municipiosByProvince: Record<string, string[]> = {
   Ceuta: ['Ceuta'],
 }
 
+const MARKER_PINK = '#ec4899'
+const MARKER_PINK_LIGHT = '#fdf2f8'
+const MARKER_PINK_RING = 'rgba(236,72,153,.22)'
+
 const createCustomerIcon = (approximate: boolean, selected: boolean) => {
   const size = selected ? 20 : 18
   return L.divIcon({
@@ -99,13 +103,13 @@ const createCustomerIcon = (approximate: boolean, selected: boolean) => {
           width:${size}px;
           height:${size}px;
           border-radius:999px;
-          background:${approximate ? '#eff6ff' : '#2563eb'};
-          border:2px ${approximate ? 'dashed #2563eb' : 'solid #ffffff'};
+          background:${approximate ? MARKER_PINK_LIGHT : MARKER_PINK};
+          border:2px ${approximate ? `dashed ${MARKER_PINK}` : 'solid #ffffff'};
           box-shadow:0 4px 12px rgba(15,23,42,.22);
-          outline:${selected ? '3px solid rgba(59,130,246,.28)' : 'none'};
+          outline:${selected ? `3px solid ${MARKER_PINK_RING}` : 'none'};
         "></div>
         <div style="
-          width:2px;height:${size * 0.45}px;background:#2563eb;
+          width:2px;height:${size * 0.45}px;background:${MARKER_PINK};
           margin-top:-2px;opacity:.7;
         "></div>
       </div>
@@ -119,7 +123,7 @@ const createCustomerIcon = (approximate: boolean, selected: boolean) => {
 const myLocationIcon = L.divIcon({
   className: '',
   html: `
-    <div style="width:18px;height:18px;border-radius:999px;background:#2563eb;border:3px solid #ffffff;box-shadow:0 0 0 6px rgba(37,99,235,.18),0 4px 12px rgba(37,99,235,.18)"></div>
+    <div style="width:18px;height:18px;border-radius:999px;background:${MARKER_PINK};border:3px solid #ffffff;box-shadow:0 0 0 6px ${MARKER_PINK_RING},0 4px 12px ${MARKER_PINK_RING}"></div>
   `,
   iconSize: [18, 18],
   iconAnchor: [9, 9],
@@ -818,7 +822,7 @@ export default function Maps() {
                               <div
                                 key={customer.id}
                                 className={`cursor-pointer p-4 pl-6 transition-colors hover:bg-gray-100 ${
-                                  selectedCustomerId === customer.id ? 'border-r-2 border-blue-500 bg-blue-50' : ''
+                                  selectedCustomerId === customer.id ? 'border-r-2 border-pink-500 bg-pink-50' : ''
                                 }`}
                                 onClick={() => flyToCustomer(customer)}
                               >
@@ -1027,7 +1031,7 @@ export default function Maps() {
                   iconCreateFunction={(cluster: { getChildCount: () => number }) => {
                     const count = cluster.getChildCount()
                     return L.divIcon({
-                      html: `<div style="background:#2563eb;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+                      html: `<div style="background:${MARKER_PINK};color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
                       className: '',
                       iconSize: L.point(36, 36),
                     })
@@ -1138,18 +1142,18 @@ export default function Maps() {
               <div className="absolute bottom-4 right-3 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px]">
                 <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Cliente
+                  <span className="w-3 h-3 rounded-full bg-pink-500 border-2 border-white shadow"></span> Cliente
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-50 border-2 border-dashed border-blue-600 shadow"></span> Cliente aproximado
+                  <span className="w-3 h-3 rounded-full bg-pink-50 border-2 border-dashed border-pink-500 shadow"></span> Cliente aproximado
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(37,99,235,.18), 0 4px 12px rgba(37,99,235,.18)' }}></span> Mi ubicación
+                  <span className="w-3 h-3 rounded-full bg-pink-500 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(236,72,153,.18), 0 4px 12px rgba(236,72,153,.18)' }}></span> Mi ubicación
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-gray-500">En mapa</span>
-                    <span className="font-semibold text-blue-600">{markerClients.length}</span>
+                    <span className="font-semibold text-pink-600">{markerClients.length}</span>
                   </div>
                   {resolvedCustomers.length > markerClients.length && (
                     <div className="flex items-center justify-between gap-3">
