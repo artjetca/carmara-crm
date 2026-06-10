@@ -149,12 +149,24 @@ export default function Dashboard() {
       ).length
       
       // Add completed routes (count routes, not individual visits)
+      // Database first; localStorage fallback for offline / pre-migration
       try {
-        if (typeof window !== 'undefined') {
-          const savedRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-          const completedRoutesCount = savedRoutes.filter((route: any) => route.completed).length
-          completedVisits += completedRoutesCount
+        let completedRoutesCount: number | null = null
+        if (user?.id) {
+          const { count, error } = await supabase
+            .from('saved_routes')
+            .select('*', { count: 'exact', head: true })
+            .eq('created_by', user.id)
+            .eq('completed', true)
+          if (!error && typeof count === 'number') {
+            completedRoutesCount = count
+          }
         }
+        if (completedRoutesCount === null && typeof window !== 'undefined') {
+          const savedRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+          completedRoutesCount = savedRoutes.filter((route: any) => route.completed).length
+        }
+        completedVisits += completedRoutesCount || 0
       } catch (e) {
         console.warn('Dashboard: failed to include completed routes', e)
       }

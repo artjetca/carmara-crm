@@ -23,33 +23,49 @@ import L, {
   Marker as LeafletMarker,
 } from 'leaflet'
 
-import VisitsMapModal from '../components/communications/VisitsMapModal'
 import {
+  buildGeocodeQueries,
   getCoordinateAuditForClient,
+  isLikelyInSea,
+  isSuspiciousDistanceFromCityCenter,
+  isValidCoordinate,
+  isWithinServiceArea,
   normalizeAddressForGeocoding,
   normalizeGeocodeResults,
   sanitizeCoordinateCache,
+  selectBestGeocodeResult,
   validateAndFixClientCoordinates,
   type ClientCoordinateAudit,
+  type GeocodeQueryPlan,
   type MapCoordinates,
 } from '../components/communications/visitsGeocodeUtils'
 import {
   deriveCity,
   deriveProvince,
   formatDistanceKm,
+  formatDistanceAndTime,
   getCustomerDisplayAddress,
   getCustomerPhone,
+  getUserLocation,
+  JEREZ_ORIGIN,
+  type DistanceOrigin,
+  refreshMapAndSidebarDistances as refreshWithDistances,
 } from '../components/communications/visitsMapUtils'
+import {
+  getRouteTimeFromUserToClient,
+  type RouteTimeEntry,
+} from '../components/communications/visitsRoutingUtils'
 import {
   buildClientPopupHtml,
   buildResolvedMapClient,
   getClientRenderableCoordinates,
   hasRenderableCoordinates,
   isValidClient,
-  refreshMapAndSidebarDistances,
+  refreshMapAndSidebarDistances as refreshMapBasic,
   sanitizeClients,
   type ResolvedMapClient,
 } from './mapsPageUtils'
+import { PROVINCE_CENTERS } from '../utils/mapCentroids'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 
@@ -91,24 +107,47 @@ const municipiosByProvince: Record<string, string[]> = {
 
 const MARKER_BLUE = '#2563eb'
 const MARKER_BLUE_RING = 'rgba(37,99,235,.28)'
+const MARKER_RED = '#dc2626'
+const MARKER_RED_RING = 'rgba(220,38,38,.28)'
+const MARKER_AMBER = '#d97706'
+const MARKER_AMBER_RING = 'rgba(217,119,6,.28)'
+const MARKER_GRAY = '#6b7280'
 
-const createCustomerIcon = (_approximate: boolean, selected: boolean) => {
+// Unified marker icon factory - all client markers use blue color scheme
+// Status differences shown via border style only, not color
+const createCustomerIcon = (
+  geocodeStatus: 'valid' | 'approximate' | 'invalid' | 'sea_suspect',
+  selected: boolean
+) => {
   const size = selected ? 20 : 18
+
+  // All markers use blue base color for consistency
+  const color = MARKER_BLUE
+  const ringColor = MARKER_BLUE_RING
+
+  // Status differentiation via border style only (not color)
+  // valid: solid white border
+  // approximate: dashed amber border (keep blue fill)
+  // invalid/sea_suspect: should be filtered out by hasRenderableCoordinates
+  const isApproximate = geocodeStatus === 'approximate'
+  const borderStyle = isApproximate ? 'dashed' : 'solid'
+  const borderColor = isApproximate ? MARKER_AMBER : '#ffffff'
+
   return L.divIcon({
-    className: '',
+    className: 'client-marker-icon',
     html: `
       <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
         <div style="
           width:${size}px;
           height:${size}px;
           border-radius:999px;
-          background:${MARKER_BLUE};
-          border:2px solid #ffffff;
+          background:${color};
+          border:2px ${borderStyle} ${borderColor};
           box-shadow:0 4px 12px rgba(15,23,42,.22);
-          outline:${selected ? `3px solid ${MARKER_BLUE_RING}` : 'none'};
+          outline:${selected ? `3px solid ${ringColor}` : 'none'};
         "></div>
         <div style="
-          width:2px;height:${size * 0.45}px;background:${MARKER_BLUE};
+          width:2px;height:${size * 0.45}px;background:${color};
           margin-top:-2px;opacity:.7;
         "></div>
       </div>
@@ -122,17 +161,13 @@ const createCustomerIcon = (_approximate: boolean, selected: boolean) => {
 const myLocationIcon = L.divIcon({
   className: '',
   html: `
-    <div style="width:18px;height:18px;border-radius:999px;background:${MARKER_BLUE};border:3px solid #ffffff;box-shadow:0 0 0 6px ${MARKER_BLUE_RING},0 4px 12px ${MARKER_BLUE_RING}"></div>
+    <div style="width:18px;height:18px;border-radius:999px;background:${MARKER_RED};border:3px solid #ffffff;box-shadow:0 0 0 6px ${MARKER_RED_RING},0 4px 12px ${MARKER_RED_RING}"></div>
   `,
   iconSize: [18, 18],
   iconAnchor: [9, 9],
 })
 
-const PROVINCE_CENTERS: Record<string, [number, number]> = {
-  'Cádiz': [36.53, -6.29],
-  'Huelva': [37.26, -6.95],
-  'Ceuta': [35.89, -5.32],
-}
+// Province centers now imported from shared utils/mapCentroids.ts
 
 function MapViewport({
   bounds,
@@ -184,7 +219,9 @@ export default function Maps() {
   const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
-  const [showVisitsMapModal, setShowVisitsMapModal] = useState(false)
+  const [distanceMode, setDistanceMode] = useState(false)
+  const [distanceOrigin, setDistanceOrigin] = useState<DistanceOrigin>(JEREZ_ORIGIN)
+  const [routeTimeByClientId, setRouteTimeByClientId] = useState<Record<string, RouteTimeEntry>>({})
   const [coordsById, setCoordsById] = useState<CoordinateCache>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
@@ -197,6 +234,13 @@ export default function Maps() {
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [fittingAll, setFittingAll] = useState(false)
   const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
+  const [repairingCoordinates, setRepairingCoordinates] = useState(false)
+  const [repairStats, setRepairStats] = useState<{
+    total: number
+    repaired: number
+    failed: number
+    skipped: number
+  } | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
@@ -205,11 +249,80 @@ export default function Maps() {
   const cityDistanceCacheRef = useRef(new Map<string, import('./mapsPageUtils').CityDistanceSummary>())
   const t = translations
 
+  const persistedDbCoordSignaturesRef = useRef(new Map<string, string>())
+
+  // Write validated coordinates back to the customers table so they
+  // survive localStorage eviction and sync across devices.
+  const persistCoordinatesToDb = useCallback((entries: CoordinateCache) => {
+    for (const [customerId, entry] of Object.entries(entries)) {
+      if (!entry || typeof entry !== 'object') continue
+      const audit = entry as ClientCoordinateAudit
+      const coords = audit.markerCoords
+      if (!coords || audit.geocodeStatus !== 'valid') continue
+      if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) continue
+
+      const signature = `${coords.lat.toFixed(6)}|${coords.lng.toFixed(6)}`
+      if (persistedDbCoordSignaturesRef.current.get(customerId) === signature) continue
+      persistedDbCoordSignaturesRef.current.set(customerId, signature)
+
+      fetch('/api/customers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: customerId,
+          latitude: coords.lat,
+          longitude: coords.lng,
+          coordinates: `${coords.lat},${coords.lng}`,
+        }),
+      })
+        .then(response => {
+          if (!response.ok) {
+            persistedDbCoordSignaturesRef.current.delete(customerId)
+            console.warn('[COORDS_DB] Persist failed for', customerId, response.status)
+          }
+        })
+        .catch(error => {
+          persistedDbCoordSignaturesRef.current.delete(customerId)
+          console.warn('[COORDS_DB] Persist error for', customerId, error)
+        })
+    }
+  }, [])
+
   const persistCoordinateCache = useCallback((nextEntries: CoordinateCache) => {
     setCoordsById(previous => {
       const merged = { ...previous, ...nextEntries }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
       return merged
+    })
+    persistCoordinatesToDb(nextEntries)
+  }, [persistCoordinatesToDb])
+
+  useEffect(() => {
+    setCoordsById(previous => {
+      const cleaned = Object.fromEntries(
+        Object.entries(previous).filter(([, entry]) => {
+          if (!entry || typeof entry !== 'object') return true
+          const record = entry as Record<string, unknown>
+          // Remove cached entries whose marker coordinates are in the sea
+          if ('markerCoords' in record && record.markerCoords && typeof record.markerCoords === 'object') {
+            const mc = record.markerCoords as { lat?: number; lng?: number }
+            if (typeof mc.lat === 'number' && typeof mc.lng === 'number' && isLikelyInSea(mc.lat, mc.lng)) {
+              return false
+            }
+          }
+          // Remove plain lat/lng entries that are in the sea
+          if ('lat' in record && 'lng' in record && typeof record.lat === 'number' && typeof record.lng === 'number') {
+            if (isLikelyInSea(record.lat, record.lng)) return false
+          }
+          return true
+        })
+      ) as CoordinateCache
+
+      if (Object.keys(cleaned).length !== Object.keys(previous).length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned))
+      }
+
+      return cleaned
     })
   }, [])
 
@@ -301,52 +414,97 @@ export default function Maps() {
     return normalized
   }, [])
 
+  // Execute multi-query geocoding strategy (matching prospectGeocodeService pattern)
   const geocodeCustomerPrecise = useCallback(
     async (customer: Customer, force = false) => {
-      const address = normalizeAddressForGeocoding(customer)
-
       console.log(`[GEOCODE_PRECISE] Customer: ${customer.name}`)
-      console.log(`[GEOCODE_PRECISE] Full query: "${address}"`)
 
-      if (!address || address === 'Spain') {
-        console.warn('[GEOCODE_PRECISE] Empty or invalid query, skipping')
+      // Build multiple query plans with priority tiers
+      const queryPlans = buildGeocodeQueries(customer)
+      console.log(`[GEOCODE_PRECISE] Built ${queryPlans.length} query plans:`, queryPlans.map(p => ({ tier: p.tier, query: p.query })))
+
+      if (queryPlans.length === 0) {
+        console.warn('[GEOCODE_PRECISE] No valid query plans, skipping')
         return null
       }
 
-      try {
-        const response = await fetch('/api/geocode', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address }),
-        })
+      // Try each query plan in priority order
+      for (const queryPlan of queryPlans) {
+        console.log(`[GEOCODE_PRECISE] Trying tier ${queryPlan.tier}: "${queryPlan.query}"`)
 
-        console.log(`[GEOCODE_PRECISE] API response status: ${response.status}`)
+        try {
+          const response = await fetch('/api/geocode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: queryPlan.query }),
+          })
 
-        const apiResult = await response.json()
-        const normalizedResults = normalizeGeocodeResults(apiResult)
-        console.log('[GEOCODE_PRECISE] API result:', apiResult)
-        console.log('[GEOCODE_PRECISE] normalized results:', normalizedResults)
+          if (!response.ok) {
+            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} API error: ${response.status}`)
+            continue
+          }
 
-        if (!response.ok) {
-          console.error(`[GEOCODE_PRECISE] API error ${response.status}:`, apiResult)
-          return null
+          const apiResult = await response.json()
+          const normalizedResults = normalizeGeocodeResults(apiResult)
+
+          console.log(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} got ${normalizedResults.length} results`)
+
+          if (normalizedResults.length === 0) {
+            continue
+          }
+
+          // Use selectBestGeocodeResult to find the best match (same scoring as prospects)
+          const bestResult = selectBestGeocodeResult(normalizedResults, customer)
+
+          if (!bestResult) {
+            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} no valid result after scoring`)
+            continue
+          }
+
+          console.log(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} selected result:`, {
+            lat: bestResult.lat,
+            lng: bestResult.lng,
+            displayName: bestResult.displayName
+          })
+
+          // Validate the result (matching prospectGeocodeService validation)
+          if (!isValidCoordinate(bestResult.lat, bestResult.lng)) {
+            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} invalid coordinates`)
+            continue
+          }
+
+          if (!isWithinServiceArea(bestResult.lat, bestResult.lng)) {
+            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} outside service area`)
+            continue
+          }
+
+          if (isLikelyInSea(bestResult.lat, bestResult.lng)) {
+            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} in sea, trying next query`)
+            continue
+          }
+
+          if (isSuspiciousDistanceFromCityCenter(customer, bestResult.lat, bestResult.lng)) {
+            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} suspicious distance from city center`)
+            // Still accept but mark as approximate
+          }
+
+          // Build audit from the successful result
+          const audit = await validateAndFixClientCoordinates(customer, {
+            cachedAudit: force ? null : coordsById[customer.id],
+            geocodeFetcher: async () => [bestResult],
+          })
+
+          console.log(`[GEOCODE_PRECISE] Success with tier ${queryPlan.tier}:`, audit)
+          return audit
+
+        } catch (error) {
+          console.error(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} exception:`, error)
+          continue
         }
-
-        if (normalizedResults.length === 0) {
-          console.warn('[GEOCODE_PRECISE] Invalid result format or no usable results')
-          return null
-        }
-
-        const audit = await validateAndFixClientCoordinates(customer, {
-          cachedAudit: force ? null : coordsById[customer.id],
-          geocodeFetcher: async () => normalizedResults,
-        })
-
-        return audit
-      } catch (error) {
-        console.error('[GEOCODE_PRECISE] Exception:', error)
-        return null
       }
+
+      console.warn('[GEOCODE_PRECISE] All query tiers exhausted, no valid result')
+      return null
     },
     [coordsById]
   )
@@ -435,8 +593,20 @@ export default function Maps() {
   }, [coordsById, filteredCustomers])
 
   const distanceViewModel = useMemo(
-    () => refreshMapAndSidebarDistances(resolvedCustomersBase, myLocation),
-    [myLocation, resolvedCustomersBase]
+    () => {
+      if (!distanceMode) {
+        // Non-distance mode: use basic grouping without advanced distance features
+        return refreshMapBasic(resolvedCustomersBase, myLocation)
+      }
+      // Distance mode: use distanceOrigin and routeTimeByClientId
+      return refreshWithDistances({
+        customers: resolvedCustomersBase.map(c => c.sourceCustomer),
+        coordsById,
+        activeOrigin: distanceOrigin,
+        routeTimeByClientId,
+      })
+    },
+    [distanceMode, resolvedCustomersBase, myLocation, coordsById, distanceOrigin, routeTimeByClientId]
   )
 
   const resolvedCustomers = useMemo(
@@ -496,7 +666,7 @@ export default function Maps() {
     return sanitizeClients(clients).filter(client => hasRenderableCoordinates(client))
   }, [])
 
-  const markerClients = useMemo(() => renderAllMarkers(resolvedCustomersBase), [renderAllMarkers, resolvedCustomersBase])
+  const markerClients = useMemo(() => renderAllMarkers(resolvedCustomers), [renderAllMarkers, resolvedCustomers])
 
   useEffect(() => {
     clearMarkers()
@@ -521,30 +691,57 @@ export default function Maps() {
   }, [resolvedCustomers])
 
   useEffect(() => {
-    const missingFinalCoords = resolvedCustomers.reduce<
-      Array<{
-        id: string
-        name: string
-        city: string
-        geocodeStatus: ResolvedMapClient['geocodeStatus']
-        finalLat: number | null
-        finalLng: number | null
-      }>
-    >((rows, client) => {
-      if (getClientRenderableCoordinates(client)) return rows
-      rows.push({
-        id: client.id,
-        name: client.name,
-        city: client.city,
-        geocodeStatus: client.geocodeStatus,
-        finalLat: client.finalLat,
-        finalLng: client.finalLng,
-      })
-      return rows
-    }, [])
+    const sinCoordenadasRows = resolvedCustomers
+      .filter(client => !getClientRenderableCoordinates(client))
+      .map(client => {
+        const src = client.sourceCustomer
+        const hasLat = typeof src.latitude === 'number' && Number.isFinite(src.latitude)
+        const hasLng = typeof src.longitude === 'number' && Number.isFinite(src.longitude)
+        const hasAddress = Boolean(src.address && src.address.trim().length >= 4)
+        const hasCity = Boolean(src.city && src.city.trim())
 
-    if (missingFinalCoords.length > 0) {
-      console.table(missingFinalCoords)
+        let missingReason: string
+        if (!hasLat && !hasLng) {
+          missingReason = 'missing_lat_lng'
+        } else if (hasLat && hasLng && (client.geocodeStatus === 'sea_suspect')) {
+          missingReason = 'sea_suspect_coords'
+        } else if (hasLat && hasLng && client.geocodeStatus === 'invalid') {
+          missingReason = 'invalid_lat_lng'
+        } else if (!hasAddress && !hasCity) {
+          missingReason = 'incomplete_address'
+        } else if (!hasAddress) {
+          missingReason = 'missing_street_address'
+        } else if (client.geocodeStatus === 'invalid') {
+          missingReason = 'geocode_failed'
+        } else {
+          missingReason = 'pending_validation'
+        }
+
+        return {
+          id: client.id,
+          name: client.name,
+          province: client.province,
+          city: client.city,
+          address: client.address,
+          latitude: src.latitude ?? null,
+          longitude: src.longitude ?? null,
+          hasPreciseLocation: Boolean(hasLat && hasLng && client.geocodeStatus === 'valid'),
+          isApproximate: client.geocodeStatus === 'approximate',
+          geocodeStatus: client.geocodeStatus,
+          geocodeReason: client.geocodeReason,
+          missingReason,
+        }
+      })
+
+    if (sinCoordenadasRows.length > 0) {
+      console.log(`[SIN_COORDENADAS] ${sinCoordenadasRows.length} clients without renderable coordinates:`)
+      console.table(sinCoordenadasRows)
+
+      const byReason = sinCoordenadasRows.reduce<Record<string, number>>((acc, row) => {
+        acc[row.missingReason] = (acc[row.missingReason] || 0) + 1
+        return acc
+      }, {})
+      console.log('[SIN_COORDENADAS] breakdown by reason:', byReason)
     }
   }, [resolvedCustomers])
 
@@ -576,6 +773,35 @@ export default function Maps() {
       console.warn('[MAP_MARKERS] Marker registry exceeds renderable clients', stats)
     }
   }, [markerClients, resolvedCustomers])
+
+  useEffect(() => {
+    if (selectedProvince !== 'Cádiz') return
+
+    const cadizRows = markerClients.map(client => {
+      const coords = getClientRenderableCoordinates(client)
+      const audit = getCoordinateAuditForClient(client.sourceCustomer, coordsById[client.id])
+      return {
+        id: client.id,
+        name: client.name,
+        province: client.province,
+        city: client.city,
+        address: client.address,
+        latitude: client.originalLat,
+        longitude: client.originalLng,
+        isApproximate: client.geocodeStatus === 'approximate',
+        hasPreciseLocation: audit.hasExactCoords,
+        finalMarkerLat: coords?.lat ?? null,
+        finalMarkerLng: coords?.lng ?? null,
+        coordinateSource: audit.source,
+        geocodeStatus: audit.geocodeStatus,
+        inSea: coords ? isLikelyInSea(coords.lat, coords.lng) : false,
+      }
+    })
+
+    console.log('[MAP_CADIZ_DEBUG] renderable marker rows:', cadizRows.length)
+    console.table(cadizRows)
+    console.table(cadizRows.filter(row => row.inSea))
+  }, [selectedProvince, markerClients, coordsById])
 
   const defaultCenter: LatLngExpression = useMemo(() => {
     if (myLocation) return [myLocation.lat, myLocation.lng]
@@ -691,6 +917,94 @@ export default function Maps() {
     }
   }, [ensureCustomerCoordinates, filteredCustomers, locatingAllPrecise, persistCoordinateCache])
 
+  // Detect suspicious coordinates that need repair
+  const detectSuspiciousCoordinates = useCallback((customer: Customer): boolean => {
+    const lat = typeof customer.latitude === 'number' ? customer.latitude : null
+    const lng = typeof customer.longitude === 'number' ? customer.longitude : null
+
+    if (lat === null || lng === null) return false
+
+    // Check if coordinates are in the sea
+    if (isLikelyInSea(lat, lng)) return true
+
+    // Check if coordinates are suspiciously far from city center
+    if (isSuspiciousDistanceFromCityCenter(customer, lat, lng)) return true
+
+    // Check if existing audit shows invalid status
+    const audit = getCoordinateAuditForClient(customer, coordsById[customer.id])
+    if (audit.geocodeStatus === 'invalid' || audit.geocodeStatus === 'sea_suspect') return true
+
+    return false
+  }, [coordsById])
+
+  // Repair all customers with suspicious coordinates
+  const repairAllSuspiciousCoordinates = useCallback(async () => {
+    if (repairingCoordinates) return
+    setRepairingCoordinates(true)
+    setRepairStats(null)
+
+    const stats = { total: 0, repaired: 0, failed: 0, skipped: 0 }
+
+    try {
+      // Clear all geocode attempts to force re-evaluation
+      geocodeAttemptedRef.current.clear()
+
+      // Find customers with suspicious coordinates
+      const customersToRepair = filteredCustomers.filter(customer => {
+        const isSuspicious = detectSuspiciousCoordinates(customer)
+        if (isSuspicious) stats.total++
+        return isSuspicious
+      })
+
+      if (customersToRepair.length === 0) {
+        setLocationMessage('No se encontraron coordenadas sospechosas para reparar')
+        setRepairStats(stats)
+        return
+      }
+
+      const batchEntries: CoordinateCache = {}
+
+      for (const customer of customersToRepair) {
+        // Force clear cached audit for this customer
+        const existingEntry = coordsById[customer.id]
+        if (existingEntry) {
+          delete coordsById[customer.id]
+        }
+
+        // Re-geocode with force flag
+        const audit = await ensureCustomerCoordinates(customer, true)
+        batchEntries[customer.id] = audit
+
+        // Update stats based on result
+        if (audit.geocodeStatus === 'valid') {
+          stats.repaired++
+        } else if (audit.geocodeStatus === 'approximate') {
+          stats.repaired++ // Approximate is still better than sea/invalid
+        } else {
+          stats.failed++
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+
+      // Update customers without suspicious coordinates (they're already fine)
+      stats.skipped = filteredCustomers.length - customersToRepair.length
+
+      // Persist all changes
+      if (Object.keys(batchEntries).length > 0) {
+        persistCoordinateCache(batchEntries)
+      }
+
+      setRepairStats(stats)
+      setLocationMessage(`Reparación completada: ${stats.repaired} reparados, ${stats.failed} fallidos, ${stats.skipped} correctos`)
+    } catch (error) {
+      console.error('[REPAIR_ALL] Error:', error)
+      setLocationMessage('Error durante la reparación de coordenadas')
+    } finally {
+      setRepairingCoordinates(false)
+    }
+  }, [coordsById, detectSuspiciousCoordinates, ensureCustomerCoordinates, filteredCustomers, persistCoordinateCache, repairingCoordinates])
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -721,14 +1035,34 @@ export default function Maps() {
             </div>
           )}
         </div>
-        <div className="flex items-center">
-          <button
-            onClick={() => setShowVisitsMapModal(true)}
-            className="inline-flex items-center space-x-2 rounded-lg bg-violet-600 px-4 py-2 text-white hover:bg-violet-700"
-          >
-            <MapPin className="h-4 w-4" />
-            <span>Mapa de Visitas</span>
-          </button>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={distanceMode}
+              onChange={e => setDistanceMode(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Modo distancia (km/min)</span>
+          </label>
+          {distanceMode && (
+            <button
+              onClick={async () => {
+                setLocationMessage('Obteniendo ubicación...')
+                const location = await getUserLocation()
+                if (location) {
+                  setDistanceOrigin({ name: 'Mi ubicación', coords: location })
+                  setLocationMessage('Usando tu ubicación actual')
+                } else {
+                  setLocationMessage('No se pudo obtener la ubicación')
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+            >
+              <LocateFixed className="h-4 w-4" />
+              <span>Mi ubicación</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -790,6 +1124,52 @@ export default function Maps() {
             </button>
           </div>
         </div>
+
+        {/* Coordinate Repair Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={repairAllSuspiciousCoordinates}
+            disabled={repairingCoordinates}
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {repairingCoordinates ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                <span>Reparando...</span>
+              </>
+            ) : (
+              <>
+                <LocateFixed className="h-4 w-4" />
+                <span>Reparar coordenadas</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={preciseLocate}
+            disabled={locatingAllPrecise}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {locatingAllPrecise ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                <span>Geocodificando...</span>
+              </>
+            ) : (
+              <>
+                <MapPin className="h-4 w-4" />
+                <span>Geocodificar todos</span>
+              </>
+            )}
+          </button>
+          {repairStats && (
+            <div className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm">
+              <span className="text-green-600 font-medium">{repairStats.repaired} reparados</span>
+              {repairStats.failed > 0 && (
+                <span className="text-red-600">· {repairStats.failed} fallidos</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
@@ -807,7 +1187,7 @@ export default function Maps() {
               </p>
             </div>
             <div className="max-h-[720px] overflow-y-auto">
-              {cityGroups.length === 0 ? (
+              {resolvedCustomers.length === 0 ? (
                 <div className="py-8 text-center">
                   <MapPin className="mx-auto mb-2 h-8 w-8 text-gray-400" />
                   <p className="text-gray-600">{t.maps.noCustomersFound}</p>
@@ -1075,10 +1455,14 @@ export default function Maps() {
                       iconSize: L.point(36, 36),
                     })
                   }}
-                  maxClusterRadius={40}
+                  maxClusterRadius={35}
                   spiderfyOnMaxZoom
+                  spiderfyOnEveryZoom
+                  spiderfyDistanceMultiplier={3}
+                  disableClusteringAtZoom={15}
                   showCoverageOnHover={false}
                   zoomToBoundsOnClick
+                  animate
                 >
                   {markerClients.map(client => {
                     const coords = getClientRenderableCoordinates(client)
@@ -1091,7 +1475,7 @@ export default function Maps() {
                         key={client.id}
                         position={[coords.lat, coords.lng]}
                         icon={createCustomerIcon(
-                          client.geocodeStatus === 'approximate',
+                          client.geocodeStatus,
                           client.id === selectedCustomerId
                         )}
                         ref={marker => upsertMarkerForClient(client, marker)}
@@ -1181,10 +1565,13 @@ export default function Maps() {
               <div className="absolute bottom-4 right-3 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px]">
                 <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Cliente
+                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Cliente preciso
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(37,99,235,.18), 0 4px 12px rgba(37,99,235,.18)' }}></span> Mi ubicación
+                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-dashed border-amber-500 shadow"></span> Cliente aproximado
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-red-600 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(220,38,38,.18), 0 4px 12px rgba(220,38,38,.18)' }}></span> Mi ubicación
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
                   <div className="flex items-center justify-between gap-3">
@@ -1207,10 +1594,6 @@ export default function Maps() {
           </div>
         </div>
       </div>
-
-      {showVisitsMapModal && (
-        <VisitsMapModal customers={customers} onClose={() => setShowVisitsMapModal(false)} />
-      )}
     </div>
   )
 }

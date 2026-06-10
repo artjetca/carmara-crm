@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
+import {
+  saveCompletedVisitsToDb,
+  syncLocalCompletedVisitsToDb,
+  deleteCompletedVisitsByRoute,
+  readLocalCompletedVisits,
+  writeLocalCompletedVisits,
+} from '../services/completedVisitsService'
 import {
   MapPin,
   Users,
@@ -44,6 +51,114 @@ interface RouteCustomer extends Customer {
   duration?: number // minutes
 }
 
+const formatKm = (value: number | undefined | null): string => {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num)) return '0 km'
+  return `${num.toFixed(1)} km`
+}
+
+// ── Unified Route Distance Model ──────────────────────────────
+interface RouteDistanceStop {
+  id: string
+  name: string
+  lat: number | null
+  lng: number | null
+  distanceFromUserKm: number | null
+  distanceFromPreviousStopKm: number | null
+  cumulativeDistanceKm: number | null
+}
+
+interface RouteDistanceState {
+  userLocation: { lat: number; lng: number } | null
+  stops: RouteDistanceStop[]
+  totalDistanceKm: number | null
+  calculatedAt: string | null
+}
+
+const EMPTY_ROUTE_DISTANCES: RouteDistanceState = {
+  userLocation: null,
+  stops: [],
+  totalDistanceKm: null,
+  calculatedAt: null,
+}
+
+const formatDistanceKm = (value: number | null | undefined): string => {
+  if (value == null || !Number.isFinite(value)) return '—'
+  if (value < 1) return `${value.toFixed(2)} km`
+  return `${value.toFixed(1)} km`
+}
+
+const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function computeRouteDistances(
+  routeCustomers: RouteCustomer[],
+  coordsLookup: Record<string, { lat: number; lng: number }>,
+  userLocation: { lat: number; lng: number } | null,
+): RouteDistanceState {
+  if (routeCustomers.length === 0) return { ...EMPTY_ROUTE_DISTANCES, userLocation }
+
+  let cumulative = 0
+  const stops: RouteDistanceStop[] = routeCustomers.map((c, idx) => {
+    const pos = coordsLookup[c.id] ?? null
+    const lat = pos?.lat ?? null
+    const lng = pos?.lng ?? null
+
+    let distanceFromUserKm: number | null = null
+    let distanceFromPreviousStopKm: number | null = null
+
+    if (idx === 0) {
+      if (userLocation && lat != null && lng != null) {
+        distanceFromUserKm = haversineKm(userLocation.lat, userLocation.lng, lat, lng)
+        cumulative += distanceFromUserKm
+      }
+    } else {
+      const prev = coordsLookup[routeCustomers[idx - 1].id]
+      if (prev && lat != null && lng != null) {
+        distanceFromPreviousStopKm = haversineKm(prev.lat, prev.lng, lat, lng)
+        cumulative += distanceFromPreviousStopKm
+      }
+    }
+
+    return {
+      id: c.id,
+      name: c.name,
+      lat,
+      lng,
+      distanceFromUserKm,
+      distanceFromPreviousStopKm,
+      cumulativeDistanceKm: cumulative > 0 ? Number(cumulative.toFixed(2)) : null,
+    }
+  })
+
+  const totalDistanceKm = cumulative > 0 ? Number(cumulative.toFixed(1)) : null
+
+  console.log('[ROUTE_DISTANCE] user location:', userLocation)
+  console.log('[ROUTE_DISTANCE] stop distances:', stops.map(s => ({
+    name: s.name,
+    fromUser: s.distanceFromUserKm,
+    fromPrev: s.distanceFromPreviousStopKm,
+    cumul: s.cumulativeDistanceKm,
+  })))
+  console.log('[ROUTE_DISTANCE] total:', totalDistanceKm)
+
+  return {
+    userLocation,
+    stops,
+    totalDistanceKm,
+    calculatedAt: new Date().toISOString(),
+  }
+}
+
 export default function Visits() {
   const { user } = useAuth()
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -74,6 +189,9 @@ export default function Visits() {
   const [savedRoutesCity, setSavedRoutesCity] = useState('')
   // Edit mode for save functionality
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null)
+  // ── Unified route distance state ──────────────────────────
+  const [routeDistances, setRouteDistances] = useState<RouteDistanceState>(EMPTY_ROUTE_DISTANCES)
+  const userLocationRef = useRef<{ lat: number; lng: number } | null>(null)
   // Detect if a saved route already exists with the same name (case-insensitive)
   const existingRouteSameName = useMemo(() => {
     try {
@@ -301,6 +419,21 @@ export default function Visits() {
   const isCalculatingRef = useRef(false)
   const lastCalcKeyRef = useRef<string>('')
   const lastComputedDistanceRef = useRef<number>(-1)
+
+  // ── Unified distance recalculation (single entry point) ────
+  const recalcRouteDistances = useCallback((
+    customers?: RouteCustomer[],
+    userLoc?: { lat: number; lng: number } | null,
+  ) => {
+    const rc = customers ?? routeCustomers
+    const ul = userLoc !== undefined ? userLoc : userLocationRef.current
+    const state = computeRouteDistances(rc, leafletCoordsRef.current, ul)
+    setRouteDistances(state)
+    // Also sync the legacy totalDistance so existing summary cards stay accurate
+    if (state.totalDistanceKm != null && state.totalDistanceKm > 0) {
+      setTotalDistance(state.totalDistanceKm)
+    }
+  }, [routeCustomers])
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -830,6 +963,20 @@ export default function Visits() {
 
       // 移除地圖截圖功能（根據用戶需求，無法實現只顯示標記無連線）
 
+      // Route header for PDF — reads from the unified routeDistances state
+      const pdfTitle = routeName || 'Ruta Planificada'
+      const pdfDate = routeDate || new Date().toISOString().split('T')[0]
+      const pdfTime = routeTime || ''
+      const pdfDistanceKm = routeDistances.totalDistanceKm != null
+        ? formatDistanceKm(routeDistances.totalDistanceKm)
+        : (totalDistance > 0 ? formatKm(totalDistance) : '—')
+      console.log('[PDF_ROUTE_DISTANCE] exported data:', {
+        totalDistanceKm: routeDistances.totalDistanceKm,
+        stops: routeDistances.stops.length,
+        userLocation: routeDistances.userLocation,
+        calculatedAt: routeDistances.calculatedAt,
+      })
+
       // 創建 PDF 內容（純列表，每頁15個）
       const pdfContent = `
         <div style="width: 210mm; font-family: Arial, sans-serif;">
@@ -840,6 +987,18 @@ export default function Visits() {
             
             return `
               <div style="padding: 12mm; ${pageIndex > 0 ? 'page-break-before: always;' : ''}">
+                ${pageIndex === 0 ? `
+                  <div style="margin-bottom: 6mm; border-bottom: 2px solid #2563eb; padding-bottom: 4mm;">
+                    <div style="font-size: 14pt; font-weight: bold; color: #111827;">${pdfTitle}</div>
+                    <div style="font-size: 9pt; color: #6b7280; margin-top: 2mm;">
+                      ${stopCount} paradas · ${pdfDistanceKm}${pdfDate ? ` · ${pdfDate}` : ''}${pdfTime ? ` ${pdfTime}` : ''}
+                    </div>
+                  </div>
+                ` : `
+                  <div style="margin-bottom: 4mm; font-size: 8pt; color: #9ca3af; text-align: right;">
+                    ${pdfTitle} — página ${pageIndex + 1}
+                  </div>
+                `}
                 <div style="font-size: ${fontSize}; line-height: 1.3;">
                   ${pageCustomers.map((customer, index) => {
                     const globalIndex = startIdx + index
@@ -858,10 +1017,17 @@ export default function Visits() {
                           `<div style="color: #059669; font-size: 7.5pt; margin-bottom: 0.5mm;">
                             📞 ${customer.phone || (customer as any).mobile_phone}
                           </div>` : ''}
-                        ${customer.distance && customer.duration ? 
-                          `<div style="color: #7c3aed; font-size: 7.5pt;">
-                            🚗 ${customer.distance.toFixed(1)} km • ⏱️ ${Math.round(customer.duration)} min
-                          </div>` : ''}
+                        ${(() => {
+                          const sd = routeDistances.stops.find(s => s.id === customer.id)
+                          if (!sd) return ''
+                          const distLine = globalIndex === 0
+                            ? `📍 Desde mi ubicación: ${formatDistanceKm(sd.distanceFromUserKm)}`
+                            : `🚗 Desde parada anterior: ${formatDistanceKm(sd.distanceFromPreviousStopKm)}`
+                          const cumulLine = sd.cumulativeDistanceKm != null
+                            ? `Acumulado: ${formatDistanceKm(sd.cumulativeDistanceKm)}`
+                            : ''
+                          return `<div style="color: #7c3aed; font-size: 7.5pt;">${distLine}${cumulLine ? ` · ${cumulLine}` : ''}</div>`
+                        })()}
                       </div>
                     `
                   }).join('')}
@@ -1025,6 +1191,11 @@ export default function Visits() {
       leafletMyLocationMarkerRef.current = marker
 
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
+
+      // Store user location and recalculate route distances
+      const userLoc = { lat: latitude, lng: longitude }
+      userLocationRef.current = userLoc
+      recalcRouteDistances(undefined, userLoc)
     } catch (e) {
       console.error('[Leaflet] getCurrentLocation failed:', e)
       alert('No se pudo obtener la ubicación actual')
@@ -1301,11 +1472,11 @@ export default function Visits() {
   }
 
   // 遷移 localStorage 路線到資料庫
-  const migrateLocalRoutesToDatabase = async () => {
+  const migrateLocalRoutesToDatabase = async (routesToMigrate?: any[]) => {
     if (!user?.id) return
 
     try {
-      const localRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+      const localRoutes = routesToMigrate ?? JSON.parse(localStorage.getItem('savedRoutes') || '[]')
       if (localRoutes.length === 0) return
 
       console.log('[RoutesMigration] Found', localRoutes.length, 'local routes to migrate')
@@ -1340,10 +1511,17 @@ export default function Visits() {
         }
       }
       
-      // Only clear localStorage if ALL routes were successfully migrated
+      // Only clear migrated routes from localStorage if ALL succeeded
       if (successCount > 0 && failCount === 0) {
-        localStorage.removeItem('savedRoutes')
-        console.log('[RoutesMigration] Migration completed successfully, localStorage cleared')
+        const migratedIds = new Set(localRoutes.map((r: any) => r.id))
+        const remaining = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
+          .filter((r: any) => !migratedIds.has(r.id))
+        if (remaining.length > 0) {
+          localStorage.setItem('savedRoutes', JSON.stringify(remaining))
+        } else {
+          localStorage.removeItem('savedRoutes')
+        }
+        console.log('[RoutesMigration] Migration completed successfully, localStorage cleaned')
         return true
       } else if (successCount > 0 && failCount > 0) {
         console.warn(`[RoutesMigration] Partial migration: ${successCount} success, ${failCount} failed. Keeping localStorage for retry.`)
@@ -1367,6 +1545,20 @@ export default function Visits() {
       let dbRoutes: any[] = []
       let localRoutes: any[] = []
       
+      const mapDbRoute = (route: any) => ({
+        id: route.id,
+        name: route.name,
+        date: route.route_date,
+        time: route.route_time,
+        customers: route.customers,
+        totalDistance: route.total_distance,
+        totalDuration: route.total_duration,
+        completed: route.completed || false,
+        completedAt: route.completed_at || null,
+        completedVisits: route.completed_visits || [],
+        createdAt: route.created_at
+      })
+
       // Try to load from database first for cross-device synchronization
       if (user?.id) {
         try {
@@ -1375,18 +1567,9 @@ export default function Visits() {
             .select('*')
             .eq('created_by', user.id)
             .order('created_at', { ascending: false })
-          
+
           if (!error && data) {
-            dbRoutes = data.map((route: any) => ({
-              id: route.id,
-              name: route.name,
-              date: route.route_date,
-              time: route.route_time,
-              customers: route.customers,
-              totalDistance: route.total_distance,
-              totalDuration: route.total_duration,
-              createdAt: route.created_at
-            }))
+            dbRoutes = data.map(mapDbRoute)
             console.log('[RouteLoading] Loaded', dbRoutes.length, 'routes from database')
           } else {
             console.warn('[RouteLoading] Database query failed:', error)
@@ -1406,11 +1589,17 @@ export default function Visits() {
         localRoutes = []
       }
       
-      // If we have local routes but no database routes, try migration
-      if (localRoutes.length > 0 && dbRoutes.length === 0 && user?.id) {
-        console.log('[RouteLoading] Found local routes, attempting migration...')
-        const migrationSuccess = await migrateLocalRoutesToDatabase()
-        
+      // Migrate any local routes that aren't in the database yet
+      // (matched by id or name) so offline saves reach the database.
+      const dbIdsPre = new Set(dbRoutes.map((r: any) => r.id))
+      const dbNamesPre = new Set(dbRoutes.map((r: any) => String(r?.name || '').trim().toLowerCase()))
+      const localPendingMigration = localRoutes.filter((r: any) =>
+        !dbIdsPre.has(r.id) && !dbNamesPre.has(String(r?.name || '').trim().toLowerCase())
+      )
+      if (localPendingMigration.length > 0 && user?.id) {
+        console.log('[RouteLoading] Found', localPendingMigration.length, 'local-only routes, attempting migration...')
+        const migrationSuccess = await migrateLocalRoutesToDatabase(localPendingMigration)
+
         if (migrationSuccess) {
           // Reload from database after successful migration
           try {
@@ -1421,7 +1610,7 @@ export default function Visits() {
               .order('created_at', { ascending: false })
             
             if (data) {
-              dbRoutes = data
+              dbRoutes = data.map(mapDbRoute)
               console.log('[RouteLoading] Reloaded', dbRoutes.length, 'routes after migration')
             }
           } catch (reloadError) {
@@ -1430,10 +1619,16 @@ export default function Visits() {
         }
       }
       
-      // Use database routes if available, otherwise fall back to localStorage
-      const finalRoutes = dbRoutes.length > 0 ? dbRoutes : localRoutes
+      // Merge: database routes win, but local-only routes (saved while
+      // offline) stay visible instead of silently disappearing.
+      const dbIds = new Set(dbRoutes.map((r: any) => r.id))
+      const dbNames = new Set(dbRoutes.map((r: any) => String(r?.name || '').trim().toLowerCase()))
+      const localOnly = localRoutes.filter((r: any) =>
+        !dbIds.has(r.id) && !dbNames.has(String(r?.name || '').trim().toLowerCase())
+      )
+      const finalRoutes = [...dbRoutes, ...localOnly]
       setSavedRoutes(finalRoutes)
-      console.log('[RouteLoading] Using', finalRoutes.length, 'routes from', dbRoutes.length > 0 ? 'database' : 'localStorage')
+      console.log('[RouteLoading] Using', dbRoutes.length, 'db routes +', localOnly.length, 'local-only routes')
       
     } catch (error) {
       console.error('[RouteLoading] Unexpected error:', error)
@@ -1478,8 +1673,8 @@ export default function Visits() {
     const city = String(customer.city || '').trim()
     if (city) {
       if (isProvinceName(city)) {
-        const province = (customer as any).province || ''
-        if (province === city) {
+        const province = String((customer as any).province || '').trim()
+        if (province.toLowerCase() === city.toLowerCase()) {
           return city
         }
         return ''
@@ -1576,12 +1771,8 @@ export default function Visits() {
       const matchesProvince = !selectedProvince || customerProvince === selectedProvince
 
       const customerCity = displayCity(customer)
-      const customerCityRaw = String(customer.city || '').trim()
-      // 僅當選擇了具體城市時，嚴格匹配該城市名稱，允許與省同名的城市（與 Customers.tsx 一致）
-      const matchesCity = !selectedCity || (
-        (!!customerCity && customerCity.toLowerCase() === selectedCity.toLowerCase()) ||
-        (!!customerCityRaw && customerCityRaw.toLowerCase() === selectedCity.toLowerCase())
-      )
+      const matchesCity = !selectedCity ||
+        (!!customerCity && customerCity.toLowerCase() === selectedCity.toLowerCase())
 
       return matchesSearch && matchesProvince && matchesCity
     })
@@ -1610,6 +1801,7 @@ export default function Visits() {
       if (mapProvider === 'leaflet') {
         // Use cached coordinates computed by Leaflet render to avoid extra geocoding
         let totalKm = 0
+        let pairsResolved = 0
         const updatedRoute = [...route]
         for (let i = 0; i < route.length - 1; i++) {
           const a = leafletCoordsRef.current[route[i].id]
@@ -1617,18 +1809,26 @@ export default function Visits() {
           if (a && b) {
             const segKm = haversineDistance(a.lat, a.lng, b.lat, b.lng)
             totalKm += segKm
+            pairsResolved++
             if (i + 1 < updatedRoute.length) {
               updatedRoute[i + 1].distance = Number(segKm.toFixed(2))
               updatedRoute[i + 1].duration = undefined as any
             }
           }
         }
-        setTotalDistance(Number(totalKm.toFixed(1)))
+        // Only update totalDistance when we have real coords to compute from.
+        // If coords aren't cached yet (e.g. route just loaded), preserve the
+        // existing/saved value — the map render will trigger recalculation once ready.
+        if (pairsResolved > 0) {
+          setTotalDistance(Number(totalKm.toFixed(1)))
+          lastComputedDistanceRef.current = Number(totalKm.toFixed(1))
+        }
         setTotalDuration(0)
         // Mark calculation snapshot
         lastCalcKeyRef.current = routeKey
-        lastComputedDistanceRef.current = Number(totalKm.toFixed(1))
         setRouteCustomers(updatedRoute)
+        // Sync unified route distance model
+        recalcRouteDistances(updatedRoute)
         return
       }
       
@@ -1753,6 +1953,7 @@ export default function Visits() {
     setTotalDistance(0)
     setTotalDuration(0)
     setSelectedCustomer(null)
+    setRouteDistances({ ...EMPTY_ROUTE_DISTANCES, userLocation: userLocationRef.current })
     // clear draft when route is cleared
     try { localStorage.removeItem(draftKey) } catch {}
   }
@@ -1840,20 +2041,28 @@ export default function Visits() {
         }
       }
       
-      // Save to localStorage as backup/fallback
+      // Database is the source of truth. Only keep a localStorage copy
+      // when the database save failed (offline fallback); otherwise prune
+      // stale local copies so they never resurface or re-migrate later.
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
       let updatedRoutes
-      
-      if (isUpdating) {
+
+      if (savedToDatabase) {
+        const nameKey = String(routeData.name || '').trim().toLowerCase()
+        updatedRoutes = existingRoutes.filter((route: any) =>
+          route.id !== routeData.id &&
+          String(route?.name || '').trim().toLowerCase() !== nameKey
+        )
+      } else if (isUpdating) {
         // Update existing route
-        updatedRoutes = existingRoutes.map((route: any) => 
+        updatedRoutes = existingRoutes.map((route: any) =>
           route.id === targetUpdateId ? routeData : route
         )
       } else {
         // Add new route
         updatedRoutes = [...existingRoutes, routeData]
       }
-      
+
       localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
       
       // Reload saved routes to get updated list
@@ -1921,32 +2130,66 @@ export default function Visits() {
       const routeName = routeData.name
       
       if (confirm(`¿Marcar como completada la ruta "${routeName}" con ${visitCount} visitas?\n\nEsto registrará todas las paradas como visitadas en el Panel de Control.`)) {
-        // Save completed visits to localStorage for dashboard
-        const existingVisits = JSON.parse(localStorage.getItem('completedVisits') || '[]')
-        const updatedVisits = [...existingVisits, ...completedVisits]
-        localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
-        
+        // Database first: persist completed visits to the visits table
+        let dbSaved = false
+        if (user?.id) {
+          try {
+            const { saved, failed } = await saveCompletedVisitsToDb(completedVisits, user.id)
+            dbSaved = saved > 0 && failed === 0
+            console.log(`[CompleteRoute] DB visits saved: ${saved}, failed: ${failed}`)
+          } catch (dbError) {
+            console.warn('[CompleteRoute] DB visit save failed, keeping localStorage copy:', dbError)
+          }
+        }
+
+        // localStorage as offline cache / fallback
+        const existingVisits = readLocalCompletedVisits()
+        writeLocalCompletedVisits([...existingVisits, ...completedVisits])
+
         // Mark route as completed and update saved routes
+        const completedAtIso = new Date().toISOString()
         const updatedRouteData = {
           ...routeData,
           completed: true,
-          completedAt: new Date().toISOString(),
+          completedAt: completedAtIso,
           completedVisits: completedVisits
         }
-        
-        // Update the route in savedRoutes
+
+        // Database first: persist completion state on the saved route
+        // (only when the id is a DB UUID; local-only routes have numeric ids)
+        const isDbRouteId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(routeData.id))
+        if (user?.id && isDbRouteId) {
+          try {
+            const { error: routeUpdateError } = await supabase
+              .from('saved_routes')
+              .update({
+                completed: true,
+                completed_at: completedAtIso,
+                completed_visits: completedVisits,
+              })
+              .eq('id', routeData.id)
+              .eq('created_by', user.id)
+            if (routeUpdateError) {
+              console.warn('[CompleteRoute] DB route completion update failed:', routeUpdateError.message)
+            }
+          } catch (routeError) {
+            console.warn('[CompleteRoute] DB route completion update error:', routeError)
+          }
+        }
+
+        // Update the route in savedRoutes (localStorage cache)
         const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-        const updatedRoutes = existingRoutes.map((route: any) => 
+        const updatedRoutes = existingRoutes.map((route: any) =>
           route.id === routeData.id ? updatedRouteData : route
         )
         localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
-        
+
         // Refresh saved routes list
         await loadSavedRoutes()
-        
-        console.log('Completed visits:', completedVisits)
-        
-        alert(`✅ Ruta "${routeName}" marcada como completada!\n\n${visitCount} visitas registradas en el Panel de Control.`)
+
+        console.log('Completed visits:', completedVisits, 'dbSaved:', dbSaved)
+
+        alert(`✅ Ruta "${routeName}" marcada como completada!\n\n${visitCount} visitas registradas en el Panel de Control.${dbSaved ? '' : '\n\n⚠ Guardado solo en este dispositivo (sin conexión a la base de datos).'}`)
         
         // Optionally load current route to continue working
         if (confirm('¿Cargar esta ruta para continuar planificando?')) {
@@ -2123,17 +2366,15 @@ export default function Visits() {
         }
       }
       
+      // Remove the route's completed visits everywhere (DB + cache)
+      try {
+        await deleteCompletedVisitsByRoute(routeId, user?.id || '')
+      } catch (visitsErr) {
+        console.warn('Failed to delete completed visits for route:', visitsErr)
+      }
+
       // Fallback to localStorage
       const existingRoutes = JSON.parse(localStorage.getItem('savedRoutes') || '[]')
-      const routeToDelete = existingRoutes.find((route: any) => route.id === routeId)
-      
-      // If route was completed, remove its visits from completed visits
-      if (routeToDelete && routeToDelete.completed && routeToDelete.completedVisits) {
-        const existingVisits = JSON.parse(localStorage.getItem('completedVisits') || '[]')
-        const updatedVisits = existingVisits.filter((visit: any) => visit.route_id !== routeId)
-        localStorage.setItem('completedVisits', JSON.stringify(updatedVisits))
-      }
-      
       const updatedRoutes = existingRoutes.filter((route: any) => route.id !== routeId)
       localStorage.setItem('savedRoutes', JSON.stringify(updatedRoutes))
       
@@ -2153,6 +2394,11 @@ export default function Visits() {
     if (user) {
       loadCustomers()
       loadSavedRoutes()
+      // Upload any completed visits that only exist in this browser
+      // (idempotent: deduplicated by legacy_id in the visits table)
+      syncLocalCompletedVisitsToDb(user.id).catch(err =>
+        console.warn('[CompletedVisits] startup sync failed:', err)
+      )
     }
   }, [user])
 
@@ -2303,6 +2549,11 @@ export default function Visits() {
             const currentZoom = map.getZoom?.() ?? 0
             if (!currentZoom || currentZoom < 13) map.setZoom(13)
           } catch {}
+
+          // Store user location and recalculate route distances
+          const userLoc = { lat: latitude, lng: longitude }
+          userLocationRef.current = userLoc
+          recalcRouteDistances(undefined, userLoc)
         },
         (error) => {
           console.error('Error getting location:', error)
@@ -2731,7 +2982,9 @@ export default function Visits() {
                 <div className="flex justify-between items-center">
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900">Ruta Planificada</h2>
-                    <p className="text-sm text-gray-600">{routeCustomers.length} paradas</p>
+                    <p className="text-sm text-gray-600">
+                      {routeCustomers.length} paradas{routeDistances.totalDistanceKm != null && routeDistances.totalDistanceKm > 0 && <> — <span className="text-blue-600 font-medium">{formatDistanceKm(routeDistances.totalDistanceKm)}</span></>}
+                    </p>
                   </div>
                   {routeCustomers.length > 0 && (
                     <button
@@ -2808,14 +3061,30 @@ export default function Visits() {
                           <div className="mt-0.5 text-xs text-gray-500 line-clamp-1">
                             <span className="font-medium">Notas:</span> {customer.notes || '—'}
                           </div>
-                          {customer.distance && customer.duration && (
-                            <div className="flex items-center mt-1 space-x-2 text-xs text-gray-500">
-                              <Car className="w-3 h-3" />
-                              <span>{customer.distance.toFixed(1)} km</span>
-                              <Clock className="w-3 h-3" />
-                              <span>{Math.round(customer.duration)} min</span>
-                            </div>
-                          )}
+                          {(() => {
+                            const stopDist = routeDistances.stops.find(s => s.id === customer.id)
+                            if (!stopDist) return null
+                            return (
+                              <div className="mt-1.5 space-y-0.5 text-xs">
+                                {index === 0 ? (
+                                  <div className="text-purple-600">
+                                    <Navigation className="w-3 h-3 inline mr-1" />
+                                    Desde mi ubicación: {formatDistanceKm(stopDist.distanceFromUserKm)}
+                                  </div>
+                                ) : (
+                                  <div className="text-blue-600">
+                                    <Car className="w-3 h-3 inline mr-1" />
+                                    Desde parada anterior: {formatDistanceKm(stopDist.distanceFromPreviousStopKm)}
+                                  </div>
+                                )}
+                                {stopDist.cumulativeDistanceKm != null && (
+                                  <div className="text-gray-400">
+                                    Acumulado: {formatDistanceKm(stopDist.cumulativeDistanceKm)}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </div>
                         <button
                           onClick={(e) => {
@@ -2842,12 +3111,10 @@ export default function Visits() {
                     <span className="text-gray-600">Total paradas:</span>
                     <span className="font-medium">{routeCustomers.length}</span>
                   </div>
-                  {(mapProvider !== 'leaflet' || totalDistance > 0) && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Distancia total:</span>
-                      <span className="font-medium text-blue-600">{totalDistance.toFixed(1)} km</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Distancia total:</span>
+                    <span className="font-medium text-blue-600">{routeDistances.totalDistanceKm != null ? formatDistanceKm(routeDistances.totalDistanceKm) : (totalDistance > 0 ? formatKm(totalDistance) : '—')}</span>
+                  </div>
                   {mapProvider !== 'leaflet' && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">Tiempo estimado:</span>
@@ -2858,21 +3125,18 @@ export default function Visits() {
                   <div className="pt-2 border-t border-gray-300">
                     <h4 className="text-xs font-medium text-gray-700 mb-2">Detalles por parada:</h4>
                     <div className="space-y-1">
-                      {routeCustomers.map((customer, index) => (
+                      {routeCustomers.map((customer, index) => {
+                        const sd = routeDistances.stops.find(s => s.id === customer.id)
+                        return (
                         <div key={customer.id} className="flex justify-between text-xs">
                           <span className="text-gray-600">{index + 1}. {customer.name}</span>
                           <span className="text-gray-500">
-                            {mapProvider === 'leaflet'
-                              ? (index === 0
-                                  ? 'Origen'
-                                  : (typeof customer.distance === 'number' ? `${customer.distance.toFixed(1)}km` : '—'))
-                              : (customer.distance && typeof customer.duration === 'number'
-                                  ? `${customer.distance.toFixed(1)}km, ${Math.round(customer.duration)}min`
-                                  : (index === 0 ? 'Origen' : 'Calculando...'))
-                            }
+                            {index === 0
+                              ? (sd?.distanceFromUserKm != null ? formatDistanceKm(sd.distanceFromUserKm) : 'Origen')
+                              : formatDistanceKm(sd?.distanceFromPreviousStopKm)}
                           </span>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
                 </div>
@@ -2970,7 +3234,7 @@ export default function Visits() {
                     </span>
                     {(mapProvider !== 'leaflet' || totalDistance > 0) && (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700">
-                        Distancia: <span className="ml-1 font-medium">{totalDistance.toFixed(1)} km</span>
+                        Distancia: <span className="ml-1 font-medium">{formatKm(totalDistance)}</span>
                       </span>
                     )}
                     {mapProvider !== 'leaflet' && (
@@ -3147,7 +3411,7 @@ export default function Visits() {
                   {(mapProvider !== 'leaflet' || totalDistance > 0) && (
                     <div className="bg-blue-50 rounded-lg p-2">
                       <div className="text-xs text-blue-700">Distancia</div>
-                      <div className="font-semibold text-blue-700">{totalDistance.toFixed(1)} km</div>
+                      <div className="font-semibold text-blue-700">{formatKm(totalDistance)}</div>
                     </div>
                   )}
                   {mapProvider !== 'leaflet' && (
@@ -3195,7 +3459,7 @@ export default function Visits() {
                   <li>{routeCustomers.length} paradas</li>
                   <li>Fecha: {routeDate || 'No especificada'}</li>
                   <li>Hora: {routeTime || 'No especificada'}</li>
-                  <li>Distancia: {totalDistance.toFixed(1)} km</li>
+                  <li>Distancia: {formatKm(totalDistance)}</li>
                 </ul>
               </div>
               {!!existingRouteSameName && (!editingRouteId || editingRouteId !== existingRouteSameName.id) && (
@@ -3390,7 +3654,7 @@ export default function Visits() {
                           </div>
                           <div>
                             <span className="font-medium">
-                              {savedRoute.customers.length} paradas • {savedRoute.totalDistance.toFixed(1)} km
+                              {savedRoute.customers.length} paradas • {formatKm(savedRoute.totalDistance)}
                               {mapProvider !== 'leaflet' && (
                                 <> • {Math.floor(savedRoute.totalDuration / 60)}h {Math.round(savedRoute.totalDuration % 60)}min</>
                               )}
