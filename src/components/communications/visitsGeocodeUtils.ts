@@ -1,4 +1,5 @@
 import type { Customer } from '../../lib/supabase'
+import { getProvinceCenter } from '../../utils/mapCentroids'
 
 export type MapCoordinates = {
   lat: number
@@ -54,9 +55,9 @@ type ValidateAndFixOptions = {
   geocodeFetcher: (address: string) => Promise<GeocodeCandidate[]>
 }
 
-type GeocodeQueryPlan = {
+export type GeocodeQueryPlan = {
   query: string
-  tier: 1 | 2 | 3 | 4
+  tier: 1 | 2 | 3 | 4 | 5 | 6 | 7
   approximate: boolean
   precisionRisk: boolean
 }
@@ -207,17 +208,20 @@ const deriveCity = (customer?: Customer) => {
 
 const CITY_CENTERS: Record<string, MapCoordinates> = {
   [createCityKey('Jerez de la Frontera', 'Cádiz')]: { lat: 36.6867, lng: -6.1371 },
-  [createCityKey('Cádiz', 'Cádiz')]: { lat: 36.5297, lng: -6.2925 },
-  [createCityKey('Cadiz', 'Cádiz')]: { lat: 36.5297, lng: -6.2925 },
+  // Coastal cities - adjusted to land (old town center, not harbor/sea)
+  // Cádiz city uses same coordinates as province fallback for consistency
+  [createCityKey('Cádiz', 'Cádiz')]: { lat: 36.5297, lng: -6.2920 }, // Fixed land coordinates
+  [createCityKey('Cadiz', 'Cádiz')]: { lat: 36.5297, lng: -6.2920 },
   [createCityKey('El Puerto de Santa María', 'Cádiz')]: { lat: 36.5997, lng: -6.2331 },
-  [createCityKey('Sanlúcar de Barrameda', 'Cádiz')]: { lat: 36.7781, lng: -6.3531 },
-  [createCityKey('Chipiona', 'Cádiz')]: { lat: 36.7367, lng: -6.4378 },
+  [createCityKey('Sanlúcar de Barrameda', 'Cádiz')]: { lat: 36.7778, lng: -6.3520 }, // Town center, not river mouth
+  [createCityKey('Chipiona', 'Cádiz')]: { lat: 36.7395, lng: -6.4390 }, // Town plaza, not lighthouse
   [createCityKey('Chiclana de la Frontera', 'Cádiz')]: { lat: 36.4197, lng: -6.1497 },
   [createCityKey('San Fernando', 'Cádiz')]: { lat: 36.4614, lng: -6.1997 },
-  [createCityKey('Algeciras', 'Cádiz')]: { lat: 36.1322, lng: -5.4553 },
-  [createCityKey('Huelva', 'Huelva')]: { lat: 37.2614, lng: -6.9447 },
-  [createCityKey('Punta Umbría', 'Huelva')]: { lat: 37.1848, lng: -7.0103 },
-  [createCityKey('Ayamonte', 'Huelva')]: { lat: 37.2144, lng: -7.4057 },
+  [createCityKey('Algeciras', 'Cádiz')]: { lat: 36.1330, lng: -5.4530 }, // City center, not port
+  // Huelva coastal cities - adjusted to land
+  [createCityKey('Huelva', 'Huelva')]: { lat: 37.2575, lng: -6.9500 }, // City center, not harbor
+  [createCityKey('Punta Umbría', 'Huelva')]: { lat: 37.1875, lng: -7.0050 }, // Town center, not beach
+  [createCityKey('Ayamonte', 'Huelva')]: { lat: 37.2095, lng: -7.4020 }, // Town plaza, not river border
   [createCityKey('Moguer', 'Huelva')]: { lat: 37.273, lng: -6.8387 },
   [createCityKey('Almonte', 'Huelva')]: { lat: 37.2578, lng: -6.5214 },
   [createCityKey('Palos de la Frontera', 'Huelva')]: { lat: 37.233, lng: -6.8939 },
@@ -228,7 +232,7 @@ const CITY_CENTERS: Record<string, MapCoordinates> = {
   [createCityKey('Lucena del Puerto', 'Huelva')]: { lat: 37.3116, lng: -6.8999 },
   [createCityKey('Trigueros', 'Huelva')]: { lat: 37.3824, lng: -6.8334 },
   [createCityKey('Valverde del Camino', 'Huelva')]: { lat: 37.5673, lng: -6.7499 },
-  [createCityKey('Ceuta', 'Ceuta')]: { lat: 35.8894, lng: -5.3213 },
+  [createCityKey('Ceuta', 'Ceuta')]: { lat: 35.8893, lng: -5.3198 }, // City center, not harbor
 }
 
 const LARGE_CITY_KEYS = new Set([
@@ -247,7 +251,7 @@ const createMarkerOffset = (seed: string) => {
 
   const normalized = Math.abs(hash)
   const angle = (normalized % 360) * (Math.PI / 180)
-  const radius = 0.006 + ((normalized % 9) * 0.0014)
+  const radius = 0.002 + ((normalized % 9) * 0.0004)
 
   return {
     lat: Math.sin(angle) * radius,
@@ -272,13 +276,51 @@ export const calculateDistanceKm = (lat1: number, lng1: number, lat2: number, ln
 
 const getCityCenter = (customerOrCity: Customer | string, provinceArg?: string) => {
   if (typeof customerOrCity === 'string') {
-    return CITY_CENTERS[createCityKey(customerOrCity, provinceArg || '')] || null
+    const center = CITY_CENTERS[createCityKey(customerOrCity, provinceArg || '')] || null
+    if (center && isLikelyInSea(center.lat, center.lng)) {
+      const [lat, lng] = getProvinceCenter(toCanonicalProvince(provinceArg) || provinceArg || '')
+      return { lat, lng }
+    }
+    return center
   }
 
   const city = deriveCity(customerOrCity)
   const province = deriveProvince(customerOrCity)
   if (!city || !province) return null
-  return CITY_CENTERS[createCityKey(city, province)] || null
+  const center = CITY_CENTERS[createCityKey(city, province)] || null
+  if (center && isLikelyInSea(center.lat, center.lng)) {
+    const [lat, lng] = getProvinceCenter(province)
+    return { lat, lng }
+  }
+  return center
+}
+
+const sameCoords = (left: MapCoordinates, right: MapCoordinates, epsilon = 0.00005) =>
+  Math.abs(left.lat - right.lat) <= epsilon && Math.abs(left.lng - right.lng) <= epsilon
+
+export const getSafeFallbackCoordinates = (province: string, city?: string): MapCoordinates | null => {
+  const canonicalProvince = toCanonicalProvince(province)
+  if (!canonicalProvince) return null
+
+  if (city) {
+    const cityCenter = CITY_CENTERS[createCityKey(city, canonicalProvince)]
+    if (cityCenter && !isLikelyInSea(cityCenter.lat, cityCenter.lng)) return cityCenter
+  }
+
+  const [lat, lng] = getProvinceCenter(canonicalProvince)
+  return { lat, lng }
+}
+
+const isStoredFallbackCoordinate = (client: Customer, coords: MapCoordinates) => {
+  const province = deriveProvince(client)
+  const city = deriveCity(client)
+  const provinceFallback = getSafeFallbackCoordinates(province)
+  const cityFallback = city ? getSafeFallbackCoordinates(province, city) : null
+
+  return Boolean(
+    (provinceFallback && sameCoords(coords, provinceFallback)) ||
+    (cityFallback && sameCoords(coords, cityFallback))
+  )
 }
 
 const getAddressCompleteness = (customer: Customer, normalizedAddress: string) => {
@@ -363,36 +405,106 @@ export const normalizeAddressForGeocoding = (client: Customer) => {
   const city = deriveCity(client)
   const province = deriveProvince(client)
   const address = stripCountryFromAddress(normalizeStreetSegment(client.address))
+  const postalCode = String(client.postal_code || client.cp || '').trim()
 
-  const parts = uniqueSegments([address, city, province, 'Spain'])
+  // Include postal_code for precision, matching prospectGeocodeService.ts format
+  const parts = uniqueSegments([address, postalCode, city, province, 'Spain'])
   return parts.join(', ')
 }
 
-const buildGeocodeQueries = (client: Customer): GeocodeQueryPlan[] => {
+export const buildGeocodeQueries = (client: Customer): GeocodeQueryPlan[] => {
   const city = deriveCity(client)
   const province = deriveProvince(client)
+  const postalCode = String(client.postal_code || client.cp || '').trim()
   const normalizedAddress = normalizeAddressForGeocoding(client)
   const streetOnly = stripCountryFromAddress(normalizeStreetSegment(client.address))
   const streetFragment = buildStreetFragment(streetOnly)
+  const businessName = String(client.company || client.name || '').trim()
   const precisionRisk = !/\d/.test(streetOnly) || streetOnly.length < 8
 
-  return uniqueSegments([
-    normalizedAddress,
-    [streetOnly, city, 'Spain'].filter(Boolean).join(', '),
-    [streetFragment, city, province, 'Spain'].filter(Boolean).join(', '),
-    [city, province, 'Spain'].filter(Boolean).join(', '),
-  ]).map(query => {
-    if (query === normalizedAddress) {
-      return { query, tier: 1, approximate: false, precisionRisk }
-    }
-    if (query === [streetOnly, city, 'Spain'].filter(Boolean).join(', ')) {
-      return { query, tier: 2, approximate: false, precisionRisk }
-    }
-    if (query === [streetFragment, city, province, 'Spain'].filter(Boolean).join(', ')) {
-      return { query, tier: 3, approximate: false, precisionRisk: true }
-    }
-    return { query, tier: 4, approximate: true, precisionRisk: true }
-  })
+  // Priority 1: Full address with postal code (most precise)
+  const fullAddressWithPostal = postalCode
+    ? [streetOnly, postalCode, city, province, 'Spain'].filter(Boolean).join(', ')
+    : ''
+
+  // Priority 2: Customer name + address (for businesses with known locations)
+  const nameWithAddress = businessName && streetOnly
+    ? [businessName, streetOnly, city, province, 'Spain'].filter(Boolean).join(', ')
+    : ''
+
+  // Priority 3: Full address without postal code
+  const fullAddress = normalizedAddress
+
+  // Priority 4: Street + city (without province for broader search)
+  const streetAndCity = [streetOnly, city, 'Spain'].filter(Boolean).join(', ')
+
+  // Priority 5: Street fragment + postal code + city
+  const fragmentWithPostal = postalCode && streetFragment
+    ? [streetFragment, postalCode, city, 'Spain'].filter(Boolean).join(', ')
+    : ''
+
+  // Priority 6: Street fragment only
+  const fragmentQuery = [streetFragment, city, province, 'Spain'].filter(Boolean).join(', ')
+
+  // Priority 7: Postal code + city (when address is minimal)
+  const postalAndCity = postalCode && city
+    ? [postalCode, city, province, 'Spain'].filter(Boolean).join(', ')
+    : ''
+
+  // Priority 8: City only (fallback - approximate)
+  const cityOnly = [city, province, 'Spain'].filter(Boolean).join(', ')
+
+  // Build unique queries with tiers
+  const queries: GeocodeQueryPlan[] = []
+  const addedQueries = new Set<string>()
+
+  const addQuery = (query: string, tier: GeocodeQueryPlan['tier'], approximate: boolean, precisionRiskFlag: boolean) => {
+    if (!query || addedQueries.has(query)) return
+    addedQueries.add(query)
+    queries.push({ query, tier, approximate, precisionRisk: precisionRiskFlag })
+  }
+
+  // Tier 1: Most precise - full address with postal code
+  if (fullAddressWithPostal) {
+    addQuery(fullAddressWithPostal, 1, false, false)
+  }
+
+  // Tier 1b: Business name + address (helps locate specific businesses)
+  if (nameWithAddress) {
+    addQuery(nameWithAddress, 1, false, precisionRisk)
+  }
+
+  // Tier 2: Full address without postal
+  if (fullAddress && fullAddress !== fullAddressWithPostal) {
+    addQuery(fullAddress, 2, false, precisionRisk)
+  }
+
+  // Tier 3: Street + city
+  if (streetAndCity && streetAndCity !== fullAddress) {
+    addQuery(streetAndCity, 3, false, precisionRisk)
+  }
+
+  // Tier 4: Fragment with postal
+  if (fragmentWithPostal) {
+    addQuery(fragmentWithPostal, 4, false, true)
+  }
+
+  // Tier 5: Street fragment
+  if (fragmentQuery && fragmentQuery !== streetAndCity) {
+    addQuery(fragmentQuery, 5, false, true)
+  }
+
+  // Tier 6: Postal + city (useful when street address is unclear)
+  if (postalAndCity && postalAndCity !== fullAddressWithPostal) {
+    addQuery(postalAndCity, 6, true, true)
+  }
+
+  // Tier 7: City only (approximate fallback)
+  if (cityOnly) {
+    addQuery(cityOnly, 7, true, true)
+  }
+
+  return queries
 }
 
 const normalizeGeocodeEntry = (entry: any): GeocodeCandidate | null => {
@@ -496,6 +608,35 @@ const isAdministrativeOnlyResult = (result: GeocodeCandidate) =>
     `${result.category || ''} ${result.type || ''}`
   ) && !containsStreetHint(`${result.category || ''} ${result.type || ''} ${result.displayName || ''}`)
 
+const calculateStringSimilarity = (str1: string, str2: string): number => {
+  const s1 = normalizeForComparison(str1)
+  const s2 = normalizeForComparison(str2)
+
+  if (s1 === s2) return 1.0
+  if (!s1 || !s2) return 0
+
+  // Check if one contains the other
+  if (s1.includes(s2) || s2.includes(s1)) {
+    const ratio = Math.min(s1.length, s2.length) / Math.max(s1.length, s2.length)
+    return 0.7 + (ratio * 0.3)
+  }
+
+  // Word-level matching
+  const words1 = s1.split(/\s+/).filter(w => w.length > 2)
+  const words2 = s2.split(/\s+/).filter(w => w.length > 2)
+
+  if (words1.length === 0 || words2.length === 0) return 0
+
+  let matches = 0
+  for (const w1 of words1) {
+    if (words2.some(w2 => w2.includes(w1) || w1.includes(w2))) {
+      matches++
+    }
+  }
+
+  return matches / Math.max(words1.length, words2.length)
+}
+
 export const selectBestGeocodeResult = (
   results: GeocodeCandidate[],
   client: Customer
@@ -504,12 +645,14 @@ export const selectBestGeocodeResult = (
 
   const targetCity = normalizeLocationName(deriveCity(client))
   const targetProvince = normalizeLocationName(deriveProvince(client))
+  const targetPostalCode = normalizeForComparison(String(client.postal_code || client.cp || ''))
   const normalizedAddress = normalizeAddressForGeocoding(client)
   const streetOnly = normalizeLocationName(stripCountryFromAddress(normalizeStreetSegment(client.address)))
   const streetFragment = normalizeLocationName(buildStreetFragment(streetOnly))
   const houseNumber = (String(client.address || '').match(/\b\d+[a-z]?\b/i) || [])[0] || ''
+  const businessName = normalizeForComparison(String(client.company || client.name || ''))
 
-  let winner: { score: number; result: GeocodeCandidate } | null = null
+  let winner: { score: number; result: GeocodeCandidate; isPrecise: boolean } | null = null
 
   for (const result of results) {
     if (!isValidCoordinate(result.lat, result.lng)) continue
@@ -518,6 +661,7 @@ export const selectBestGeocodeResult = (
     if (isSuspiciousDistanceFromCityCenter(client, result.lat, result.lng)) continue
 
     let score = 0
+    let isPrecise = false
 
     const country = normalizeLocationName(result.country || result.displayName)
     const province = normalizeLocationName(result.province || result.displayName)
@@ -526,35 +670,77 @@ export const selectBestGeocodeResult = (
     const category = normalizeLocationName(result.category)
     const type = normalizeLocationName(result.type)
 
+    // Extract postal code from display name
+    const resultPostalCode = (displayName.match(/\b(\d{5})\b/) || [])[1] || ''
+
     if (!(country.includes('spain') || country.includes('espana'))) continue
 
+    // Country match (required)
+    score += 10
+
+    // Province match (critical)
     if (targetProvince && province.includes(targetProvince)) score += 35
+
+    // City match (critical)
     if (targetCity && (city.includes(targetCity) || displayName.includes(targetCity))) score += 30
+
+    // Postal code match (highly weighted for precision)
+    if (targetPostalCode && resultPostalCode === targetPostalCode) {
+      score += 40
+      isPrecise = true
+    } else if (targetPostalCode && resultPostalCode && resultPostalCode.slice(0, 2) === targetPostalCode.slice(0, 2)) {
+      // Same province prefix for postal code
+      score += 15
+    }
+
+    // Street address matching
     if (streetOnly && displayName.includes(streetOnly)) score += 28
     if (streetFragment && displayName.includes(streetFragment)) score += 18
     if (houseNumber && displayName.includes(normalizeLocationName(houseNumber))) score += 20
     if (normalizedAddress && displayName.length >= normalizedAddress.length * 0.5) score += 8
+
+    // Business name similarity (helps identify correct business location)
+    if (businessName) {
+      const nameSimilarity = calculateStringSimilarity(result.displayName, businessName)
+      if (nameSimilarity > 0.8) {
+        score += 25
+        isPrecise = true
+      } else if (nameSimilarity > 0.5) {
+        score += 12
+      }
+    }
+
+    // Street type hints
     if (containsStreetHint(`${category} ${type}`)) score += 12
     if (hasHouseNumberHint(result.displayName)) score += 6
 
+    // Penalties for problematic results
     if (
-      /(bay|sea|ocean|water|mar|coast|natural|harbour|port|beach|administrative)/.test(
+      /(bay|sea|ocean|water|mar|coast|natural|harbour|port|beach)/.test(
         `${category} ${type}`
       )
     ) {
-      score -= 45
+      score -= 50
     }
 
     if (isAdministrativeOnlyResult(result)) {
-      score -= 18
+      score -= 25
     }
 
-    if (!winner || score > winner.score) {
-      winner = { score, result }
+    // Consider this precise if it has good street-level matching
+    if ((streetOnly && displayName.includes(streetOnly)) ||
+        (houseNumber && displayName.includes(houseNumber)) ||
+        (targetPostalCode && resultPostalCode === targetPostalCode)) {
+      isPrecise = true
+    }
+
+    if (!winner || score > winner.score || (score === winner.score && isPrecise && !winner.isPrecise)) {
+      winner = { score, result, isPrecise }
     }
   }
 
-  return winner?.score && winner.score > 0 ? winner.result : null
+  // Require minimum score threshold for precision
+  return winner?.score && winner.score >= 30 ? winner.result : null
 }
 
 const buildAddressSignature = (client: Customer) =>
@@ -682,6 +868,10 @@ const validateOriginalCoordinates = (client: Customer) => {
 
   if (originalLat === null || originalLng === null) return null
 
+  if (isLikelyInSea(originalLat, originalLng)) {
+    return null
+  }
+
   const direct = validateCoordinateCandidate(client, originalLat, originalLng, 'original')
   if (direct.ok) return direct
 
@@ -690,7 +880,7 @@ const validateOriginalCoordinates = (client: Customer) => {
 }
 
 const buildApproximateFallback = (client: Customer, reason: string) => {
-  const center = getCityCenter(client)
+  const center = getSafeFallbackCoordinates(deriveProvince(client), deriveCity(client))
   if (!center) {
     return buildAudit(client, {
       geocodeStatus: 'invalid',
@@ -700,16 +890,25 @@ const buildApproximateFallback = (client: Customer, reason: string) => {
     })
   }
 
-  const offset = createMarkerOffset(client.id)
+  // Apply per-client offset so approximate markers spread around the center
+  // instead of stacking at the exact same pixel
+  const offset = createMarkerOffset(client.id || client.name || '')
+  const offsetCoords = {
+    lat: center.lat + offset.lat,
+    lng: center.lng + offset.lng,
+  }
+
+  // If offset pushes into sea, use center directly (spiderfy will handle overlap)
+  const markerCoords = isLikelyInSea(offsetCoords.lat, offsetCoords.lng)
+    ? center
+    : offsetCoords
+
   return buildAudit(client, {
     geocodeStatus: 'approximate',
     geocodeReason: `${reason}. Ubicación aproximada por centro urbano`,
     correctedLat: center.lat,
     correctedLng: center.lng,
-    markerCoords: {
-      lat: center.lat + offset.lat,
-      lng: center.lng + offset.lng,
-    },
+    markerCoords,
     hasExactCoords: false,
     usesApproximateMarker: true,
     source: 'city_fallback',
@@ -724,6 +923,13 @@ const auditFromStoredEntry = (
   if (!isRecord(entry)) return null
 
   if ('geocodeStatus' in entry) {
+    if (
+      entry.markerCoords &&
+      isLikelyInSea(entry.markerCoords.lat, entry.markerCoords.lng)
+    ) {
+      return null
+    }
+
     if (entry.addressSignature === buildAddressSignature(client)) {
       return entry
     }
@@ -731,6 +937,9 @@ const auditFromStoredEntry = (
   }
 
   if ('lat' in entry && 'lng' in entry) {
+    if (isLikelyInSea(entry.lat, entry.lng)) {
+      return null
+    }
     const candidate = validateCoordinateCandidate(client, entry.lat, entry.lng, 'geocoded')
     if (candidate.ok) {
       return buildAudit(client, {

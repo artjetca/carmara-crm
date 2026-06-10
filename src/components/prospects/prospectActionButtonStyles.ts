@@ -7,6 +7,7 @@ type ProspectButtonTone =
   | 'slate'
   | 'indigo'
   | 'red'
+  | 'amber'
 
 const TONE_CLASSES: Record<ProspectButtonTone, string> = {
   emerald: 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 focus-visible:ring-emerald-500',
@@ -15,6 +16,7 @@ const TONE_CLASSES: Record<ProspectButtonTone, string> = {
   slate: 'bg-slate-700 hover:bg-slate-800 active:bg-slate-900 focus-visible:ring-slate-500',
   indigo: 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 focus-visible:ring-indigo-500',
   red: 'bg-red-600 hover:bg-red-700 active:bg-red-800 focus-visible:ring-red-500',
+  amber: 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 focus-visible:ring-amber-500',
 }
 
 const SHARED_BUTTON_CLASSES =

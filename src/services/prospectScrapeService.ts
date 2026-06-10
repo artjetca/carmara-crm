@@ -16,8 +16,18 @@ export type ProspectAutoCapturePayload = {
   province: string
   city?: string
   keyword: string
+  keywords?: string[] // Batch mode: multiple keywords
   limit: number
   created_by?: string
+  mode?: 'single' | 'batch'
+}
+
+export type BatchKeywordProgress = {
+  currentKeywordIndex: number
+  totalKeywords: number
+  currentKeyword: string
+  processed: number
+  total: number
 }
 
 export type ProspectScrapeResponse = {

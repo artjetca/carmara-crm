@@ -46,7 +46,7 @@ import {
   updateProspect,
   deleteProspect,
 } from '../services/prospectService'
-import { geocodePendingProspects } from '../services/prospectGeocodeService'
+import { geocodePendingProspects, repairProspectCoordinates, type RepairResult } from '../services/prospectGeocodeService'
 import { parseProspectFile, generateImportTemplate } from '../services/prospectImportService'
 import { exportProspectsToExcel } from '../services/prospectExportService'
 import { batchCreateProspects } from '../services/prospectService'
@@ -57,6 +57,7 @@ import { fetchScrapeJobs, runProspectAutoCapture } from '../services/prospectScr
 import type { ScrapeJob } from '../lib/supabase'
 import {
   getAllProspectCities,
+  getAllProspectProvinces,
   getCitiesForProvince,
 } from '../components/prospects/prospectLocationOptions'
 import {
@@ -84,10 +85,10 @@ import {
   getProspectPopupButtonClass,
   getProspectToolbarButtonClass,
 } from '../components/prospects/prospectActionButtonStyles'
+import { PROVINCE_CENTERS, DEFAULT_MAP_CENTER } from '../utils/mapCentroids'
 
 // ─── Map helpers ──────────────────────────────────────────────────────────────
 
-const CADIZ_CENTER: [number, number] = [36.52, -6.28]
 const CUSTOMER_COORDS_STORAGE_KEY = 'prospect-map-customer-coords'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
@@ -154,6 +155,7 @@ function GeoBadge({ status }: { status: Prospect['geocode_status'] }) {
     approximate: { label: 'Aproximado',        icon: <AlertTriangle className="w-3 h-3" />, cls: 'bg-amber-100 text-amber-700' },
     invalid:     { label: 'Sin coordenadas',   icon: <XCircle className="w-3 h-3" />,       cls: 'bg-red-100 text-red-700' },
     pending:     { label: 'Pendiente geocod.', icon: <Clock className="w-3 h-3" />,         cls: 'bg-gray-100 text-gray-600' },
+    sea_suspect: { label: 'Mar/bahía (error)', icon: <AlertTriangle className="w-3 h-3" />, cls: 'bg-orange-100 text-orange-700' },
   }
   const s = map[status ?? 'pending'] ?? map.pending
   return (
@@ -175,11 +177,7 @@ function FlyToMarker({ coords }: { coords: [number, number] | null }) {
 
 // ─── Province / city centroids (fallback when no markers have coords) ────────
 
-const PROVINCE_CENTERS: Record<string, [number, number]> = {
-  'Cádiz': [36.53, -6.29],
-  'Huelva': [37.26, -6.95],
-  'Ceuta': [35.89, -5.32],
-}
+// Province centers now imported from shared utils/mapCentroids.ts
 
 // ─── Auto-fit map to filtered markers ────────────────────────────────────────
 
@@ -532,7 +530,7 @@ export default function ProspectMapPage() {
   const persistCustomerCoordinates = useCallback(
     async (customer: Customer, audit: ClientCoordinateAudit) => {
       const coords = audit.markerCoords
-      if (!coords || (audit.geocodeStatus !== 'valid' && audit.geocodeStatus !== 'approximate')) {
+      if (!coords || audit.geocodeStatus !== 'valid') {
         return
       }
 
@@ -603,7 +601,11 @@ export default function ProspectMapPage() {
     [coordsByCustomerId, fetchGeocodeCandidates, persistCustomerCoordinates]
   )
 
-  // ── Derived cities list ──────────────────────────────────────────────────────
+  // ── Derived provinces / cities list ──────────────────────────────────────────
+  const availableProvinces = useMemo<string[]>(() => {
+    return getAllProspectProvinces()
+  }, [])
+
   const availableCities = useMemo<string[]>(() => {
     return filterProvince ? getCitiesForProvince(filterProvince) : getAllProspectCities()
   }, [filterProvince])
@@ -869,6 +871,45 @@ export default function ProspectMapPage() {
     setGeocoding(false)
   }, [prospects])
 
+  const handleRepairCoordinates = useCallback(async () => {
+    setGeocoding(true)
+    setGeocodeMsg('Analizando coordenadas…')
+    try {
+      const result = await repairProspectCoordinates(
+        prospects,
+        (done, total, current) => {
+          setGeocodeMsg(`Reparando ${done}/${total}: ${current}…`)
+        }
+      )
+      
+      // Update prospects that were repaired
+      if (result.repaired.length > 0) {
+        setProspects(prev => {
+          const repairedMap = new Map(result.repaired.map(p => [p.id, p]))
+          return prev.map(p => repairedMap.get(p.id) || p)
+        })
+      }
+      
+      const { summary } = result
+      if (summary.repairedCount > 0) {
+        setGeocodeMsg(
+          `✓ Reparados: ${summary.repairedCount} · Fallidos: ${summary.failedCount} · Sin cambios: ${summary.skippedCount}`
+        )
+      } else if (summary.failedCount > 0) {
+        setGeocodeMsg(
+          `⚠ Sin reparaciones: ${summary.failedCount} no pudieron corregirse · ${summary.skippedCount} sin cambios`
+        )
+      } else {
+        setGeocodeMsg(`✓ Todas las coordenadas son válidas (${summary.skippedCount} prospectos)`)
+      }
+    } catch (err) {
+      console.error('Error repairing coordinates:', err)
+      setGeocodeMsg('Error al reparar coordenadas')
+    } finally {
+      setGeocoding(false)
+    }
+  }, [prospects])
+
   const handleImported = useCallback((newOnes: Prospect[]) => {
     setProspects((prev) => {
       const existing = new Set(prev.map((p) => p.id))
@@ -887,50 +928,114 @@ export default function ProspectMapPage() {
       province: string
       city?: string
       keyword: string
+      keywords?: string[]
       limit: number
+      mode?: 'single' | 'batch'
     }) => {
       setJobMessage('Captando prospectos…')
       try {
-        const result = await runProspectAutoCapture({
-          ...payload,
-          created_by: profile?.id,
-        })
+        // For batch mode with multiple keywords, we run sequentially
+        const keywords = payload.keywords && payload.keywords.length > 1
+          ? payload.keywords
+          : [payload.keyword]
+        
+        const isBatchMode = keywords.length > 1
+        let totalAdded = 0
+        let totalSkipped = 0
+        let totalErrors = 0
+        const allProspects: Prospect[] = []
+        const allJobs: ScrapeJob[] = []
 
-        // Immediately merge new prospects into state so list + map refresh without reload
-        if (result.prospects && result.prospects.length > 0) {
-          setProspects(prev => {
-            const merged = new Map(prev.map(item => [item.id, item]))
-            result.prospects.forEach(item => merged.set(item.id, item))
-            return Array.from(merged.values()).sort(
-              (left, right) => (right.lead_score || 0) - (left.lead_score || 0)
-            )
-          })
+        // Process keywords sequentially
+        for (let i = 0; i < keywords.length; i++) {
+          const keyword = keywords[i]
+          setJobMessage(`Procesando keyword ${i + 1}/${keywords.length}: ${keyword}…`)
+          
+          try {
+            const result = await runProspectAutoCapture({
+              province: payload.province,
+              city: payload.city,
+              keyword,
+              limit: payload.limit,
+              created_by: profile?.id,
+            })
+
+            // Merge prospects
+            if (result.prospects && result.prospects.length > 0) {
+              // Deduplicate against already collected prospects in this batch
+              const existingIds = new Set(allProspects.map(p => p.id))
+              const newProspects = result.prospects.filter(p => !existingIds.has(p.id))
+              allProspects.push(...newProspects)
+              
+              // Update UI immediately for each batch
+              setProspects(prev => {
+                const merged = new Map(prev.map(item => [item.id, item]))
+                newProspects.forEach(item => merged.set(item.id, item))
+                return Array.from(merged.values()).sort(
+                  (left, right) => (right.lead_score || 0) - (left.lead_score || 0)
+                )
+              })
+            }
+
+            if (result.job) {
+              allJobs.push(result.job)
+            }
+
+            // Accumulate stats
+            const summary = result.summary ?? {
+              nuevos_anadidos: result.job.total_imported,
+              omitidos_por_existente_en_clientes: 0,
+              duplicados_internos: Math.max(0, result.job.total_found - result.job.total_imported),
+              errores: result.job.total_failed,
+            }
+            totalAdded += summary.nuevos_anadidos
+            totalSkipped += summary.omitidos_por_existente_en_clientes + summary.duplicados_internos
+            totalErrors += summary.errores
+
+          } catch (keywordError) {
+            console.error(`Error processing keyword "${keyword}":`, keywordError)
+            totalErrors += 1
+          }
         }
 
-        setJobs(previous => [result.job, ...previous.filter(job => job.id !== result.job.id)])
+        // Update jobs list
+        if (allJobs.length > 0) {
+          setJobs(prev => [
+            ...allJobs,
+            ...prev.filter(job => !allJobs.find(j => j.id === job.id))
+          ])
+        }
+
         setShowAutoCaptureModal(false)
 
-        const { total_imported, total_found, status } = result.job
-        const summary = result.summary ?? {
-          nuevos_anadidos: total_imported,
-          omitidos_por_existente_en_clientes: 0,
-          duplicados_internos: Math.max(0, total_found - total_imported),
-          errores: result.job.total_failed,
-        }
-        if (total_imported > 0) {
-          setJobMessage(
-            `✅ Nuevos añadidos: ${summary.nuevos_anadidos} · Omitidos por existente en Gestión de Clientes: ${summary.omitidos_por_existente_en_clientes} · Duplicados internos: ${summary.duplicados_internos} · Errores: ${summary.errores}`
-          )
-        } else if (status === 'completed' && total_found === 0) {
-          setJobMessage(`⚠️ Búsqueda completada: 0 resultados de Google Places.`)
-        } else if (total_found > 0 && total_imported === 0) {
-          setJobMessage(
-            `ℹ️ Nuevos añadidos: ${summary.nuevos_anadidos} · Omitidos por existente en Gestión de Clientes: ${summary.omitidos_por_existente_en_clientes} · Duplicados internos: ${summary.duplicados_internos} · Errores: ${summary.errores}`
-          )
+        // Show final summary
+        if (isBatchMode) {
+          if (totalAdded > 0) {
+            setJobMessage(
+              `✅ Lote completado: ${totalAdded} añadidos · ${totalSkipped} omitidos/duplicados · ${totalErrors} errores · ${keywords.length} keywords procesados`
+            )
+          } else if (totalSkipped > 0) {
+            setJobMessage(
+              `ℹ️ Lote completado: ${totalAdded} añadidos · ${totalSkipped} omitidos/duplicados · ${totalErrors} errores (todos ya existían)`
+            )
+          } else {
+            setJobMessage(
+              `⚠️ Lote completado: 0 resultados de ${keywords.length} keywords · ${totalErrors} errores`
+            )
+          }
         } else {
-          setJobMessage(
-            `Job completado. Nuevos añadidos: ${summary.nuevos_anadidos} · Omitidos por existente en Gestión de Clientes: ${summary.omitidos_por_existente_en_clientes} · Duplicados internos: ${summary.duplicados_internos} · Errores: ${summary.errores}`
-          )
+          // Single keyword - use original message format
+          if (totalAdded > 0) {
+            setJobMessage(
+              `✅ Nuevos añadidos: ${totalAdded} · Omitidos: ${totalSkipped} · Errores: ${totalErrors}`
+            )
+          } else if (totalSkipped > 0) {
+            setJobMessage(
+              `ℹ️ Todos omitidos: ${totalSkipped} duplicados existentes · Errores: ${totalErrors}`
+            )
+          } else {
+            setJobMessage(`⚠️ Búsqueda completada: 0 resultados · Errores: ${totalErrors}`)
+          }
         }
       } catch (error) {
         const message = (error as Error).message || 'No se pudo completar la captación.'
@@ -950,7 +1055,7 @@ export default function ProspectMapPage() {
           <MapPin className="w-5 h-5 text-emerald-600" />
           <h1 className="text-lg font-bold text-gray-900">Mapa de Prospectos</h1>
           <span className="ml-2 text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
-            Cádiz · Huelva
+            Cádiz · Huelva · Ceuta
           </span>
           <span className="text-xs text-gray-400 ml-1">{filtered.length} prospectos</span>
         </div>
@@ -973,6 +1078,15 @@ export default function ProspectMapPage() {
         >
           <RefreshCw className={`w-3.5 h-3.5 ${geocoding ? 'animate-spin' : ''}`} />
           Geocodificar
+        </button>
+        <button
+          onClick={handleRepairCoordinates}
+          disabled={geocoding}
+          title="Reparar coordenadas en mar/bahía"
+          className={getProspectToolbarButtonClass('amber')}
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Reparar
         </button>
         <button
           onClick={() => setShowJobsModal(true)}
@@ -1036,8 +1150,9 @@ export default function ProspectMapPage() {
             className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 outline-none"
           >
             <option value="">Todas las provincias</option>
-            <option value="Cádiz">Cádiz</option>
-            <option value="Huelva">Huelva</option>
+            {availableProvinces.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
           </select>
         </div>
 
@@ -1121,7 +1236,7 @@ export default function ProspectMapPage() {
         {/* ── Map ── */}
         <div className="flex-1 relative min-h-[50vh] order-1 md:order-2">
           <MapContainer
-            center={CADIZ_CENTER}
+            center={DEFAULT_MAP_CENTER}
             zoom={9}
             style={{ height: '100%', width: '100%' }}
             zoomControl={true}

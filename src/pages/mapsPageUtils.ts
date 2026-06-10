@@ -5,6 +5,10 @@ import type {
   MapCoordinates,
 } from '../components/communications/visitsGeocodeUtils'
 import {
+  getSafeFallbackCoordinates,
+  isLikelyInSea,
+} from '../components/communications/visitsGeocodeUtils'
+import {
   calculateDistanceKm,
   formatDistanceKm,
   getClientDistanceFromUser,
@@ -84,7 +88,16 @@ export const hasRenderableCoordinates = (
 
 export const getClientRenderableCoordinates = (client: unknown): MapCoordinates | null => {
   if (!hasRenderableCoordinates(client)) return null
-  return { lat: client.finalLat, lng: client.finalLng }
+
+  const coords = { lat: client.finalLat, lng: client.finalLng }
+
+  // Water guard: if final coordinates land in the sea, force safe fallback
+  if (isLikelyInSea(coords.lat, coords.lng)) {
+    const fallback = getSafeFallbackCoordinates(client.province)
+    return fallback ?? null
+  }
+
+  return coords
 }
 
 export const getNearestClientInCity = (client: unknown, cityClients: unknown) => {

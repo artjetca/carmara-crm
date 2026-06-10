@@ -3,19 +3,19 @@
   "configurations": [
     {
       "name": "vite-client",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "client:dev"],
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/Users/macbookpro/Desktop/carmara/node_modules/.bin/vite", "--port", "5173"],
       "port": 5173
     },
     {
       "name": "express-api",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "/usr/local/bin/npm",
       "runtimeArgs": ["run", "server:dev"],
       "port": 3035
     },
     {
       "name": "dev-all",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "/usr/local/bin/npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
     }

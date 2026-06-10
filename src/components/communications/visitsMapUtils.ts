@@ -26,6 +26,7 @@ export type DistanceAwareClient = {
   lng: number | null
   distanceFromUser: number | null
   distanceFromUserKm: number | null
+  distanceUnavailableReason: string | null
   nearestNeighborDistanceInCity: number | null
   nearestNeighborClientId: string | null
   travelTimeMinutes: number | null
@@ -176,7 +177,12 @@ export const calculateDistanceKm = (
 export const formatDistanceKm = (
   value: number | null,
   unavailableLabel = 'Distancia no disponible'
-) => (value === null ? unavailableLabel : `${value.toFixed(1)} km`)
+) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return unavailableLabel
+  }
+  return `${value.toFixed(1)} km`
+}
 
 export const formatDistanceAndTime = (
   distanceKm: number | null,
@@ -184,13 +190,22 @@ export const formatDistanceAndTime = (
   status: 'pending' | 'ready' | 'unavailable' = 'unavailable',
   unavailableLabel = 'Distancia no disponible'
 ) => {
-  if (distanceKm === null) return unavailableLabel
-  if (status === 'ready' && travelTimeMinutes !== null) {
+  // 防呆：檢查距離是否有效
+  if (distanceKm === null || distanceKm === undefined || !Number.isFinite(distanceKm)) {
+    return unavailableLabel
+  }
+  
+  // 如果有路線時間（來自 OSRM API）
+  if (status === 'ready' && travelTimeMinutes !== null && Number.isFinite(travelTimeMinutes)) {
     return `${distanceKm.toFixed(1)} km · ${Math.round(travelTimeMinutes)} min`
   }
+  
+  // 正在計算路線時間
   if (status === 'pending') {
     return `${distanceKm.toFixed(1)} km · calculando...`
   }
+  
+  // 只有直線距離（Haversine），無法取得路線時間
   return `${distanceKm.toFixed(1)} km`
 }
 
@@ -224,7 +239,23 @@ export const getClientDistanceFromUser = (
   client: Pick<DistanceAwareClient, 'hasExactCoords' | 'lat' | 'lng'>,
   userLocation: MapCoordinates | null
 ) => {
-  if (!userLocation || !client.hasExactCoords || client.lat === null || client.lng === null) {
+  // 防呆：檢查使用者位置是否有效
+  if (!userLocation) {
+    return null
+  }
+  
+  // 防呆：檢查使用者座標是否為有效數字
+  if (!Number.isFinite(userLocation.lat) || !Number.isFinite(userLocation.lng)) {
+    return null
+  }
+  
+  // 防呆：檢查客戶座標是否存在且有效
+  if (!client.hasExactCoords || client.lat === null || client.lng === null) {
+    return null
+  }
+  
+  // 防呆：檢查客戶座標是否為有效數字（防止 NaN、Infinity）
+  if (!Number.isFinite(client.lat) || !Number.isFinite(client.lng)) {
     return null
   }
 
@@ -237,7 +268,7 @@ export const getClientDistanceFromUser = (
   const distanceKm = withOneDecimal(
     calculateDistanceKm(userLocation.lat, userLocation.lng, client.lat, client.lng)
   )
-  if (distanceKm !== null) {
+  if (distanceKm !== null && Number.isFinite(distanceKm)) {
     distanceMemo.set(cacheKey, distanceKm)
   }
   return distanceKm
@@ -262,22 +293,52 @@ const buildDistanceAwareClient = (
   }
 
   const audit = getCoordinateAuditForClient(customer, coordsById[customer.id])
+  
+  // 防呆：驗證 correctedLat/Lng 是有效數字
   const exactCoords =
     audit.hasExactCoords &&
     audit.correctedLat !== null &&
-    audit.correctedLng !== null
+    audit.correctedLng !== null &&
+    Number.isFinite(audit.correctedLat) &&
+    Number.isFinite(audit.correctedLng)
       ? { lat: audit.correctedLat, lng: audit.correctedLng }
       : null
 
+  // Use exact coords when available, fall back to markerCoords (approximate markers with offset)
+  const distanceCoords = exactCoords ?? audit.markerCoords
+  
+  // 防呆：確保 distanceCoords 的座標是有效數字
+  const validDistanceCoords = distanceCoords && 
+    Number.isFinite(distanceCoords.lat) && 
+    Number.isFinite(distanceCoords.lng)
+    ? distanceCoords
+    : null
+  
   const distanceFromUser = getClientDistanceFromUser(
     {
-      hasExactCoords: Boolean(exactCoords),
-      lat: exactCoords?.lat ?? null,
-      lng: exactCoords?.lng ?? null,
+      hasExactCoords: Boolean(validDistanceCoords),
+      lat: validDistanceCoords?.lat ?? null,
+      lng: validDistanceCoords?.lng ?? null,
     },
     activeOrigin.coords
   )
   const travelTime = routeTimeByClientId?.[customer.id]
+  
+  // 判斷距離不可用的原因
+  let distanceUnavailableReason: string | null = null
+  if (distanceFromUser === null) {
+    if (audit.geocodeStatus === 'invalid') {
+      distanceUnavailableReason = 'Sin coordenadas válidas'
+    } else if (audit.geocodeStatus === 'sea_suspect') {
+      distanceUnavailableReason = 'Ubicación en zona de mar'
+    } else if (!validDistanceCoords) {
+      distanceUnavailableReason = 'Coordenadas no disponibles'
+    } else if (!Number.isFinite(validDistanceCoords.lat) || !Number.isFinite(validDistanceCoords.lng)) {
+      distanceUnavailableReason = 'Coordenadas inválidas'
+    } else {
+      distanceUnavailableReason = 'Error al calcular distancia'
+    }
+  }
 
   return {
     id: customer.id,
@@ -290,6 +351,7 @@ const buildDistanceAwareClient = (
     lng: exactCoords?.lng ?? null,
     distanceFromUser,
     distanceFromUserKm: distanceFromUser,
+    distanceUnavailableReason,
     nearestNeighborDistanceInCity: null,
     nearestNeighborClientId: null,
     travelTimeMinutes: travelTime?.minutes ?? null,
@@ -314,24 +376,24 @@ export const getNearestClientInCity = (
   client: DistanceAwareClient,
   cityClients: DistanceAwareClient[]
 ): NearestClientMatch | null => {
-  if (!client.hasExactCoords || client.lat === null || client.lng === null) {
-    return null
-  }
+  // Use exact coords, fall back to markerCoords for approximate markers
+  const clientCoords = client.lat !== null && client.lng !== null
+    ? { lat: client.lat, lng: client.lng }
+    : client.markerCoords
+  if (!clientCoords) return null
 
   let nearest: NearestClientMatch | null = null
 
   for (const candidate of cityClients) {
-    if (
-      candidate.id === client.id ||
-      !candidate.hasExactCoords ||
-      candidate.lat === null ||
-      candidate.lng === null
-    ) {
-      continue
-    }
+    if (candidate.id === client.id) continue
+
+    const candidateCoords = candidate.lat !== null && candidate.lng !== null
+      ? { lat: candidate.lat, lng: candidate.lng }
+      : candidate.markerCoords
+    if (!candidateCoords) continue
 
     const distanceKm = withOneDecimal(
-      calculateDistanceKm(client.lat, client.lng, candidate.lat, candidate.lng)
+      calculateDistanceKm(clientCoords.lat, clientCoords.lng, candidateCoords.lat, candidateCoords.lng)
     )
 
     if (!nearest || (distanceKm !== null && distanceKm < (nearest.distanceKm ?? Infinity))) {
@@ -372,16 +434,15 @@ export const buildCityDistanceSummary = ({
     .filter(client => client.hasExactCoords && client.lat !== null && client.lng !== null)
     .map(client => ({ lat: client.lat as number, lng: client.lng as number }))
 
-  const fallbackMarkers = clients
-    .filter(client => client.markerCoords)
-    .map(client => client.markerCoords as MapCoordinates)
+  // Use city centroid as primary source to ensure city marker aligns with approximate clients
+  const cityCentroid = getFallbackCityCoordinates(city, province)
 
   const coords =
-    exactMarkerCoords.length > 0
-      ? averageCoordinates(exactMarkerCoords)
-      : fallbackMarkers.length > 0
-        ? averageCoordinates(fallbackMarkers)
-        : getFallbackCityCoordinates(city, province)
+    cityCentroid
+      ? cityCentroid
+      : exactMarkerCoords.length > 0
+        ? averageCoordinates(exactMarkerCoords)
+        : null
 
   const nearestClient =
     sortClientsByDistance(clients).find(client => client.distanceFromUser !== null) ?? null
@@ -407,25 +468,26 @@ export const buildClientPopupHtml = (
     DistanceAwareClient,
     | 'name'
     | 'address'
-      | 'distanceFromUser'
-      | 'travelTimeMinutes'
-      | 'travelTimeStatus'
-      | 'nearestNeighborDistanceInCity'
-      | 'phone'
-      | 'geocodeStatus'
+    | 'distanceFromUser'
+    | 'distanceUnavailableReason'
+    | 'travelTimeMinutes'
+    | 'travelTimeStatus'
+    | 'nearestNeighborDistanceInCity'
+    | 'phone'
+    | 'geocodeStatus'
   >,
   userLocation: MapCoordinates | null
 ) => {
-  const userDistanceLine = userLocation
+  const userDistanceLine = userLocation && client.distanceFromUser !== null
     ? `<div>Distancia desde mi ubicación: ${formatDistanceAndTime(client.distanceFromUser, client.travelTimeMinutes, client.travelTimeStatus)}</div>`
-    : '<div>Distancia desde mi ubicación: Distancia no disponible</div>'
+    : `<div>Distancia desde mi ubicación: <span style="color:#d97706">${client.distanceUnavailableReason || 'Distancia no disponible'}</span></div>`
   const neighborLine =
     client.nearestNeighborDistanceInCity === null
       ? '<div>Cliente más cercano: Distancia no disponible</div>'
       : `<div>Cliente más cercano: ${formatDistanceKm(client.nearestNeighborDistanceInCity)}</div>`
   const approximateLine =
     client.geocodeStatus === 'approximate'
-      ? '<div>Ubicación aproximada</div><div>Dirección pendiente de validación</div>'
+      ? '<div style="color:#d97706">Ubicación aproximada</div><div style="color:#d97706">Dirección pendiente de validación</div>'
       : ''
 
   return `

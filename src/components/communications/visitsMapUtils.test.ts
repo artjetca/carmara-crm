@@ -38,6 +38,7 @@ const makeDistanceAwareClient = (
   lng: overrides.lng ?? null,
   distanceFromUser: overrides.distanceFromUser ?? null,
   distanceFromUserKm: overrides.distanceFromUserKm ?? overrides.distanceFromUser ?? null,
+  distanceUnavailableReason: overrides.distanceUnavailableReason ?? null,
   nearestNeighborDistanceInCity: overrides.nearestNeighborDistanceInCity ?? null,
   nearestNeighborClientId: overrides.nearestNeighborClientId ?? null,
   travelTimeMinutes: overrides.travelTimeMinutes ?? null,

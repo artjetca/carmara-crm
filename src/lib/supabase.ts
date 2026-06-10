@@ -81,7 +81,7 @@ export interface Prospect {
   notes?: string
   lat?: number | null
   lng?: number | null
-  geocode_status?: 'valid' | 'approximate' | 'invalid' | 'pending'
+  geocode_status?: 'valid' | 'approximate' | 'invalid' | 'pending' | 'sea_suspect'
   rating?: number | null
   reviews_count?: number | null
   status?: string | null

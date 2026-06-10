@@ -2,7 +2,26 @@ export type ProspectAutoCaptureInput = {
   province: string
   city?: string
   keyword: string
+  keywords?: string[] // Batch mode: multiple keywords to search
   limit: number
+  mode?: 'single' | 'batch' // Execution mode
+}
+
+export type BatchCaptureResult = {
+  keyword: string
+  added: number
+  skipped: number
+  errors: number
+  prospects: string[] // IDs of added prospects
+}
+
+export type BatchCaptureSummary = {
+  totalKeywords: number
+  completedKeywords: number
+  totalAdded: number
+  totalSkipped: number
+  totalErrors: number
+  results: BatchCaptureResult[]
 }
 
 export type LeadScoreInput = {

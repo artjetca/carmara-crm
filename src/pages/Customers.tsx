@@ -540,9 +540,9 @@ export default function Customers() {
       if (city) {
         // 如果city是省份名称，且有对应的province字段，则显示城市名称
         if (isProvinceName(city)) {
-          const province = (customer as any).province || ''
+          const province = String((customer as any).province || '').trim()
           // 如果province和city相同（如Huelva/Huelva），显示城市名称
-          if (province === city) {
+          if (province.toLowerCase() === city.toLowerCase()) {
             return city
           }
           // 否则不显示（避免重复）
@@ -628,12 +628,8 @@ export default function Customers() {
       
       // 城市篩選 - 嚴格只匹配實際城市名稱
       const customerCity = displayCity(customer)
-      const customerCityRaw = String(customer.city || '').trim()
-      
-      // 只匹配實際的城市，不管是否與省份同名
-      const matchesCity = !selectedCity || 
-                         customerCity.toLowerCase() === selectedCity.toLowerCase() ||
-                         customerCityRaw.toLowerCase() === selectedCity.toLowerCase()
+      const matchesCity = !selectedCity ||
+                         (!!customerCity && customerCity.toLowerCase() === selectedCity.toLowerCase())
       
       
       return matchesSearch && matchesProvince && matchesCity

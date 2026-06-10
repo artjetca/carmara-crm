@@ -1,4 +1,6 @@
-export const PROSPECT_PROVINCES = ['Cádiz', 'Huelva'] as const
+export const PROSPECT_PROVINCES = ['Cádiz', 'Huelva', 'Ceuta'] as const
+
+export type ProspectProvince = (typeof PROSPECT_PROVINCES)[number]
 
 export const MUNICIPIOS_BY_PROVINCE: Record<string, string[]> = {
   Cádiz: [
@@ -29,6 +31,9 @@ export const MUNICIPIOS_BY_PROVINCE: Record<string, string[]> = {
     'Villablanca','Villalba del Alcor','Villanueva de las Cruces','Villanueva de los Castillejos',
     'Villarrasa','Zalamea la Real','Zufre',
   ],
+  Ceuta: [
+    'Ceuta', // Ceuta is a single autonomous city with no municipalities
+  ],
 }
 
 export function getCitiesForProvince(province?: string) {
@@ -45,6 +50,10 @@ export function getAllProspectCities() {
   ).sort((left, right) => left.localeCompare(right, 'es'))
 }
 
+export function getAllProspectProvinces() {
+  return [...PROSPECT_PROVINCES]
+}
+
 export function buildProspectAutoCaptureQuery(input: {
   keyword: string
   province: string
@@ -56,3 +65,82 @@ export function buildProspectAutoCaptureQuery(input: {
     .replace(/\s+/g, ' ')
     .trim()
 }
+
+// ─── Keyword Presets for Auto Captar ─────────────────────────────────────────
+
+export const KEYWORD_PRESETS = [
+  'estética',
+  'centro de estética',
+  'estética avanzada',
+  'medicina estética',
+  'clínica estética',
+  'centro médico estético',
+  'depilación láser',
+  'micropigmentación',
+  'salón de belleza',
+  'belleza',
+  'uñas',
+  'manicura',
+  'pedicura',
+  'nail salon',
+  'maquillaje',
+  'spa',
+  'masajes',
+  'quiromasaje',
+  'tratamiento facial',
+  'cosmética',
+  'cejas',
+  'pestañas',
+  'maderoterapia',
+  'presoterapia',
+  'cavitación',
+  'radiofrecuencia estética',
+] as const
+
+export type KeywordPreset = (typeof KEYWORD_PRESETS)[number]
+
+export interface KeywordPresetGroup {
+  id: string
+  name: string
+  description: string
+  keywords: KeywordPreset[]
+}
+
+export const KEYWORD_PRESET_GROUPS: KeywordPresetGroup[] = [
+  {
+    id: 'estetica-general',
+    name: 'Estética general',
+    description: 'Búsqueda amplia de centros de estética',
+    keywords: ['estética', 'centro de estética', 'estética avanzada', 'salón de belleza'],
+  },
+  {
+    id: 'medicina-estetica',
+    name: 'Medicina estética',
+    description: 'Clínicas y centros médicos estéticos',
+    keywords: ['medicina estética', 'clínica estética', 'centro médico estético'],
+  },
+  {
+    id: 'unas-manicura',
+    name: 'Uñas y manicura',
+    description: 'Salones de uñas y servicios de manicura/pedicura',
+    keywords: ['uñas', 'manicura', 'pedicura', 'nail salon'],
+  },
+  {
+    id: 'spa-bienestar',
+    name: 'Spa y bienestar',
+    description: 'Spas, masajes y tratamientos de relajación',
+    keywords: ['spa', 'masajes', 'quiromasaje', 'tratamiento facial'],
+  },
+  {
+    id: 'tratamientos-especificos',
+    name: 'Tratamientos específicos',
+    description: 'Tratamientos corporales y faciales específicos',
+    keywords: ['depilación láser', 'micropigmentación', 'maderoterapia', 'presoterapia', 'cavitación', 'radiofrecuencia estética'],
+  },
+  {
+    id: 'belleza-completa',
+    name: 'Belleza completa',
+    description: 'Maquillaje, cejas, pestañas y cosmética',
+    keywords: ['maquillaje', 'cejas', 'pestañas', 'cosmética', 'belleza'],
+  },
+]
