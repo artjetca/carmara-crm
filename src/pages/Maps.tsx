@@ -3,6 +3,8 @@ import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
 import type { Customer } from '../lib/supabase'
 import {
+  ChevronDown,
+  Expand,
   ExternalLink,
   LocateFixed,
   Mail,
@@ -10,6 +12,7 @@ import {
   Navigation,
   Phone,
   Search,
+  X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
@@ -241,6 +244,9 @@ export default function Maps() {
     failed: number
     skipped: number
   } | null>(null)
+  // ── Mobile app-like map UI ──
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [areaClients, setAreaClients] = useState<ResolvedMapClient[] | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
@@ -866,6 +872,19 @@ export default function Maps() {
     )
   }, [])
 
+  // Filtra los clientes visibles dentro del encuadre actual del mapa (móvil)
+  const searchThisArea = useCallback(() => {
+    const map = mapRef.current
+    if (!map) return
+    const bounds = map.getBounds()
+    const inArea = resolvedCustomers.filter(client => {
+      const coords = getClientRenderableCoordinates(client)
+      return coords ? bounds.contains([coords.lat, coords.lng] as [number, number]) : false
+    })
+    setAreaClients(inArea)
+    setSheetOpen(true)
+  }, [resolvedCustomers])
+
   const flyToCustomer = useCallback(
     async (customer: ResolvedMapClient) => {
       setSelectedCustomerId(customer.id)
@@ -1015,7 +1034,8 @@ export default function Maps() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Cabecera y filtros: solo escritorio/tablet — en móvil el mapa es pantalla completa */}
+      <div className="hidden gap-4 md:flex md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t.maps.title}</h1>
           <p className="text-gray-600">{t.maps.subtitle}</p>
@@ -1066,7 +1086,7 @@ export default function Maps() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="hidden rounded-xl border border-gray-200 bg-white p-6 shadow-sm md:block">
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="flex-1">
             <div className="relative">
@@ -1173,7 +1193,7 @@ export default function Maps() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <div className="space-y-6 lg:col-span-1">
+        <div className="hidden space-y-6 md:block lg:col-span-1">
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 p-4">
               <h2 className="text-lg font-semibold text-gray-900">{t.maps.customerList}</h2>
@@ -1396,9 +1416,10 @@ export default function Maps() {
         </div>
 
         <div className="lg:col-span-3">
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="relative h-[800px]">
-              <div className="absolute right-3 top-3 z-[1000] flex flex-col gap-2 sm:flex-row">
+          {/* En móvil el mapa ocupa toda la pantalla (debajo de la barra de pestañas) */}
+          <div className="max-md:fixed max-md:inset-0 max-md:z-40 overflow-hidden md:rounded-xl md:border md:border-gray-200 bg-white md:shadow-sm">
+            <div className="relative h-[800px] max-md:h-full">
+              <div className="absolute right-3 top-3 z-[1000] hidden gap-2 md:flex">
                 <button
                   onClick={fitToAll}
                   title="Ver todos"
@@ -1561,8 +1582,8 @@ export default function Maps() {
                 <MapBridge mapRef={mapRef} />
               </MapContainer>
 
-              {/* Map legend + stats */}
-              <div className="absolute bottom-4 right-3 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px]">
+              {/* Map legend + stats (solo escritorio — en móvil lo sustituye la hoja inferior) */}
+              <div className="absolute bottom-4 right-3 hidden bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px] md:block">
                 <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
                 <div className="flex items-center gap-2">
                   <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Cliente preciso
@@ -1590,6 +1611,173 @@ export default function Maps() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Superposiciones móviles (estilo app, solo <md) ── */}
+
+              {/* Barra de búsqueda flotante */}
+              <div
+                className="absolute inset-x-3 z-[1010] md:hidden"
+                style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+              >
+                <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
+                  <Search className="h-5 w-5 flex-shrink-0 text-gray-500" />
+                  <input
+                    type="text"
+                    placeholder={t.maps.searchPlaceholder}
+                    value={searchTerm}
+                    onChange={event => setSearchTerm(event.target.value)}
+                    onFocus={() => setSheetOpen(true)}
+                    className="h-12 w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Botón "Buscar en esta zona" */}
+              <div
+                className="absolute inset-x-0 z-[1009] flex justify-center md:hidden"
+                style={{ top: 'calc(env(safe-area-inset-top) + 72px)' }}
+              >
+                <button
+                  onClick={searchThisArea}
+                  className="rounded-full border border-white/60 bg-white/85 px-4 py-2 text-sm font-medium text-blue-600 shadow-lg backdrop-blur-md transition active:scale-95"
+                >
+                  Buscar en esta zona
+                </button>
+              </div>
+
+              {/* Botones circulares flotantes (lado derecho) */}
+              <div
+                className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
+                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
+              >
+                <button
+                  onClick={locateMe}
+                  title="Mi ubicación"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
+                >
+                  <LocateFixed className="h-6 w-6 text-blue-600" />
+                </button>
+                <button
+                  onClick={fitToAll}
+                  disabled={fittingAll}
+                  title="Ver todos"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95 disabled:opacity-50"
+                >
+                  <Expand className="h-6 w-6 text-gray-700" />
+                </button>
+                {selectedCustomer && (
+                  <button
+                    onClick={() => window.open(
+                      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedCustomer.address)}`,
+                      '_blank'
+                    )}
+                    title="Navegar"
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 shadow-lg transition active:scale-95"
+                  >
+                    <Navigation className="h-6 w-6 text-white" />
+                  </button>
+                )}
+              </div>
+
+              {/* Píldora resumen / hoja inferior */}
+              {!sheetOpen ? (
+                <div
+                  className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
+                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
+                >
+                  <button
+                    onClick={() => setSheetOpen(true)}
+                    className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-5 py-3 text-sm font-medium text-gray-800 shadow-xl backdrop-blur-md transition active:scale-95"
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                    <span>{markerClients.length} en mapa · {resolvedCustomers.length} clientes</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="absolute inset-x-0 bottom-0 z-[1011] flex max-h-[60%] flex-col rounded-t-2xl bg-white shadow-2xl md:hidden">
+                  <button
+                    className="flex w-full flex-col items-center pb-1 pt-2"
+                    onClick={() => setSheetOpen(false)}
+                  >
+                    <span className="h-1 w-10 rounded-full bg-gray-300" />
+                  </button>
+                  <div className="flex items-center justify-between px-4 pb-2">
+                    <div className="text-sm font-semibold text-gray-900">
+                      {areaClients
+                        ? `${areaClients.length} en esta zona`
+                        : `${resolvedCustomers.length} clientes`}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {areaClients && (
+                        <button
+                          onClick={() => setAreaClients(null)}
+                          className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 active:bg-blue-100"
+                        >
+                          Quitar filtro
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setSheetOpen(false)}
+                        className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 active:bg-gray-200"
+                      >
+                        <ChevronDown className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    className="overflow-y-auto overscroll-contain"
+                    style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 84px)' }}
+                  >
+                    {(areaClients ?? resolvedCustomers).length === 0 ? (
+                      <div className="py-10 text-center">
+                        <MapPin className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+                        <p className="text-sm text-gray-500">{t.maps.noCustomersFound}</p>
+                      </div>
+                    ) : (
+                      (areaClients ?? resolvedCustomers).map(client => (
+                        <button
+                          key={client.id}
+                          onClick={() => {
+                            setSheetOpen(false)
+                            flyToCustomer(client)
+                          }}
+                          className="flex w-full items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors active:bg-blue-50"
+                        >
+                          <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+                            {client.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[15px] font-medium text-gray-900">{client.name}</div>
+                            <div className="truncate text-xs text-gray-500">
+                              {[client.city, client.province].filter(Boolean).join(', ')}
+                            </div>
+                          </div>
+                          <div className="mt-1 flex flex-shrink-0 flex-col items-end gap-1">
+                            {client.distanceFromUser !== null && (
+                              <span className="text-xs font-medium text-blue-600">
+                                {formatDistanceKm(client.distanceFromUser, '')}
+                              </span>
+                            )}
+                            {!hasRenderableCoordinates(client) && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
+                                sin mapa
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

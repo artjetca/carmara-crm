@@ -239,10 +239,10 @@ export default function Layout({ children }: LayoutProps) {
         </main>
       </div>
 
-      {/* Barra de pestañas inferior (solo móvil) */}
+      {/* Barra de pestañas inferior (solo móvil) — cápsula flotante estilo app */}
       <nav
-        className="fixed bottom-0 inset-x-0 z-[1100] bg-white border-t border-gray-200 md:hidden"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        className="fixed bottom-2 inset-x-3 z-[1100] rounded-full border border-gray-200/70 bg-white/90 shadow-xl backdrop-blur-md md:hidden"
+        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="grid grid-cols-5">
           {mobileTabs.map((tab) => {
