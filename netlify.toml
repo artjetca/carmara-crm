@@ -34,3 +34,9 @@
 
 # Environment variables for production
 # Set these in Netlify dashboard (no values here for security):
+# Local dev: vite + functions together (netlify dev)
+[dev]
+  command = "/usr/local/bin/node node_modules/vite/bin/vite.js --port 5173 --host 0.0.0.0"
+  targetPort = 5173
+  port = 8888
+  autoLaunch = false
