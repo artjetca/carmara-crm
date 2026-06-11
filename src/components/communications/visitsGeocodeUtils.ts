@@ -90,8 +90,13 @@ const SERVICE_AREA: Bounds = {
 }
 
 const OPEN_WATER_ZONES: Bounds[] = [
-  { minLat: 36.46, maxLat: 36.57, minLng: -6.43, maxLng: -6.305 },
+  // Atlántico al oeste de Cádiz capital (incl. La Caleta)
+  { minLat: 36.46, maxLat: 36.57, minLng: -6.43, maxLng: -6.302 },
+  // Aguas al suroeste del casco antiguo y oeste del istmo (Playa Victoria)
+  { minLat: 36.45, maxLat: 36.526, minLng: -6.32, maxLng: -6.289 },
+  // Desembocadura / costa de Huelva
   { minLat: 37.02, maxLat: 37.2, minLng: -7.42, maxLng: -7.18 },
+  // Bahía de Algeciras
   { minLat: 35.98, maxLat: 36.11, minLng: -5.56, maxLng: -5.38 },
 ]
 
@@ -242,22 +247,6 @@ const LARGE_CITY_KEYS = new Set([
   createCityKey('Huelva', 'Huelva'),
   createCityKey('Algeciras', 'Cádiz'),
 ])
-
-const createMarkerOffset = (seed: string) => {
-  let hash = 0
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) | 0
-  }
-
-  const normalized = Math.abs(hash)
-  const angle = (normalized % 360) * (Math.PI / 180)
-  const radius = 0.002 + ((normalized % 9) * 0.0004)
-
-  return {
-    lat: Math.sin(angle) * radius,
-    lng: Math.cos(angle) * radius,
-  }
-}
 
 export const calculateDistanceKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
   if (lat1 === lat2 && lng1 === lng2) return 0
@@ -890,18 +879,10 @@ const buildApproximateFallback = (client: Customer, reason: string) => {
     })
   }
 
-  // Apply per-client offset so approximate markers spread around the center
-  // instead of stacking at the exact same pixel
-  const offset = createMarkerOffset(client.id || client.name || '')
-  const offsetCoords = {
-    lat: center.lat + offset.lat,
-    lng: center.lng + offset.lng,
-  }
-
-  // If offset pushes into sea, use center directly (spiderfy will handle overlap)
-  const markerCoords = isLikelyInSea(offsetCoords.lat, offsetCoords.lng)
-    ? center
-    : offsetCoords
+  // Sin offset decorativo: en ciudades costeras (Cádiz es una península)
+  // cualquier desplazamiento puede caer al mar. Los marcadores apilados
+  // los separa el cluster con spiderfy.
+  const markerCoords = center
 
   return buildAudit(client, {
     geocodeStatus: 'approximate',
