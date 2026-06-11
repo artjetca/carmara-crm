@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
@@ -13,7 +13,7 @@ import {
   CheckSquare,
   Settings,
   LogOut,
-  Menu,
+  MoreHorizontal,
   X,
   UserSearch,
 } from 'lucide-react'
@@ -73,10 +73,25 @@ const navigationItems = [
   }
 ]
 
+// Pestañas inferiores para móvil (las demás páginas van en el cajón "Más")
+const mobileTabs = [
+  { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
+  { id: 'customers', label: 'Clientes', icon: Users },
+  { id: 'visits', label: 'Visitas', icon: Calendar },
+  { id: 'map', label: 'Mapa', icon: Map },
+]
+
 export default function Layout({ children }: LayoutProps) {
   const { currentPage, sidebarOpen, setCurrentPage, setSidebarOpen } = useStore()
   const { user, signOut } = useAuth()
   const t = translations
+
+  // En móvil el cajón no debe quedar abierto al cargar (lo sustituye la barra inferior)
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false)
+    }
+  }, [setSidebarOpen])
 
   const handleNavigation = (pageId: string) => {
     setCurrentPage(pageId)
@@ -107,9 +122,9 @@ export default function Layout({ children }: LayoutProps) {
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-blue-900 transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-[60] w-64 bg-blue-900 transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:relative md:translate-x-0
+        md:relative md:translate-x-0 md:z-auto
       `}>
         <div className="flex flex-col h-full">
           {/* Header del sidebar */}
@@ -161,9 +176,9 @@ export default function Layout({ children }: LayoutProps) {
                   key={item.id}
                   onClick={() => handleNavigation(item.id)}
                   className={`
-                    w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors
-                    ${isActive 
-                      ? 'bg-blue-800 text-white' 
+                    w-full flex items-center space-x-3 px-3 py-3 md:py-2 rounded-lg text-left transition-colors
+                    ${isActive
+                      ? 'bg-blue-800 text-white'
                       : 'text-blue-100 hover:bg-blue-800 hover:text-white'
                     }
                   `}
@@ -176,7 +191,10 @@ export default function Layout({ children }: LayoutProps) {
           </nav>
 
           {/* Botón de cerrar sesión */}
-          <div className="p-4 border-t border-blue-800">
+          <div
+            className="p-4 border-t border-blue-800"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+          >
             <button
               onClick={handleSignOut}
               className="w-full flex items-center space-x-3 px-3 py-2 text-blue-100 hover:bg-blue-800 hover:text-white rounded-lg transition-colors"
@@ -190,8 +208,8 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Overlay para móvil */}
       {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-[55] md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -200,36 +218,60 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200">
-          <div className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="text-gray-600 hover:text-gray-900 md:hidden"
-              >
-                <Menu className="w-6 h-6" />
-              </button>
-              <h2 className="text-xl font-semibold text-gray-900">
-                {getNestedTranslation(navigationItems.find(item => item.id === currentPage)?.label || 'dashboard.title')}
-              </h2>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {new Date().toLocaleDateString('es-ES', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
-              </span>
-            </div>
+          <div className="flex items-center justify-between px-4 py-2 md:py-3">
+            <h2 className="text-lg md:text-xl font-semibold text-gray-900">
+              {getNestedTranslation(navigationItems.find(item => item.id === currentPage)?.label || 'dashboard.title')}
+            </h2>
+            <span className="hidden md:block text-sm text-gray-600">
+              {new Date().toLocaleDateString('es-ES', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </span>
           </div>
         </header>
 
         {/* Contenido */}
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-3 pb-24 md:p-6 md:pb-6">
           {children}
         </main>
       </div>
+
+      {/* Barra de pestañas inferior (solo móvil) */}
+      <nav
+        className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-gray-200 md:hidden"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="grid grid-cols-5">
+          {mobileTabs.map((tab) => {
+            const Icon = tab.icon
+            const isActive = currentPage === tab.id && !sidebarOpen
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleNavigation(tab.id)}
+                className={`flex flex-col items-center justify-center gap-0.5 min-h-[56px] ${
+                  isActive ? 'text-blue-700' : 'text-gray-500'
+                }`}
+              >
+                <Icon className="w-6 h-6" />
+                <span className="text-[11px] font-medium leading-none">{tab.label}</span>
+              </button>
+            )
+          })}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[56px] ${
+              sidebarOpen ? 'text-blue-700' : 'text-gray-500'
+            }`}
+          >
+            <MoreHorizontal className="w-6 h-6" />
+            <span className="text-[11px] font-medium leading-none">Más</span>
+          </button>
+        </div>
+      </nav>
     </div>
   )
 }
