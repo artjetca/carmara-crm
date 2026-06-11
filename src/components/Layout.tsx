@@ -122,7 +122,7 @@ export default function Layout({ children }: LayoutProps) {
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-[60] w-64 bg-blue-900 transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-[1200] w-64 bg-blue-900 transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         md:relative md:translate-x-0 md:z-auto
       `}>
@@ -209,7 +209,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Overlay para móvil */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-[55] md:hidden"
+          className="fixed inset-0 bg-black bg-opacity-50 z-[1150] md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -241,7 +241,7 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Barra de pestañas inferior (solo móvil) */}
       <nav
-        className="fixed bottom-0 inset-x-0 z-50 bg-white border-t border-gray-200 md:hidden"
+        className="fixed bottom-0 inset-x-0 z-[1100] bg-white border-t border-gray-200 md:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="grid grid-cols-5">
