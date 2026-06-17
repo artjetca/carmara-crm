@@ -835,7 +835,65 @@ export default function Customers() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile card list — hidden on md+ */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {filteredAndSortedCustomers.map((customer) => {
+              const municipio = displayCity(customer)
+              const phone = customer.phone || customer.mobile_phone || ''
+              return (
+                <div
+                  key={customer.id}
+                  className="flex items-start justify-between gap-3 px-4 py-4 active:bg-blue-50 transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 text-[15px] leading-snug truncate">
+                      {customer.name}
+                    </p>
+                    {customer.company && (
+                      <p className="text-sm text-gray-500 truncate mt-0.5">{customer.company}</p>
+                    )}
+                    {municipio && (
+                      <p className="text-xs text-gray-400 mt-1">{municipio}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    {phone ? (
+                      <a
+                        href={`tel:${phone}`}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm active:scale-95 transition-transform"
+                        style={{ minHeight: '44px' }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 shrink-0">
+                          <path fillRule="evenodd" d="M1.5 4.5a3 3 0 0 1 3-3h1.372c.86 0 1.61.586 1.819 1.42l1.105 4.423a1.875 1.875 0 0 1-.694 1.955l-1.293.97c-.135.101-.164.249-.126.352a11.285 11.285 0 0 0 6.697 6.697c.103.038.25.009.352-.126l.97-1.293a1.875 1.875 0 0 1 1.955-.694l4.423 1.105c.834.209 1.42.959 1.42 1.82V19.5a3 3 0 0 1-3 3h-2.25C8.552 22.5 1.5 15.448 1.5 6.75V4.5Z" clipRule="evenodd" />
+                        </svg>
+                        <span>{phone}</span>
+                      </a>
+                    ) : (
+                      <span className="text-xs text-gray-400">Sin teléfono</span>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleEditOpen(customer)}
+                        className="p-2 rounded-full text-blue-600 hover:bg-blue-50 active:scale-95 transition-transform"
+                        style={{ minHeight: '44px', minWidth: '44px' }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button
+                        onClick={() => deleteCustomer(customer.id)}
+                        className="p-2 rounded-full text-red-500 hover:bg-red-50 active:scale-95 transition-transform"
+                        style={{ minHeight: '44px', minWidth: '44px' }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
               <tr className="bg-gray-50">
@@ -957,6 +1015,7 @@ export default function Customers() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
