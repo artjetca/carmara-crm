@@ -183,6 +183,7 @@ export default function Visits() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
+  const [mobileSheetTab, setMobileSheetTab] = useState<'route' | 'clients'>('route')
   const [loadingSavedRoutes, setLoadingSavedRoutes] = useState(false)
   // Filtering states for saved routes modal
   const [savedRoutesProvince, setSavedRoutesProvince] = useState('')
@@ -2736,9 +2737,9 @@ export default function Visits() {
   }
 
   return (
-    <div ref={fullContainerRef}>
+    <div ref={fullContainerRef} className="max-md:min-h-screen">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 print-hide">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 print-hide max-md:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
           <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
@@ -2811,7 +2812,7 @@ export default function Visits() {
       </div>
 
       {/* Configuración de fecha y hora */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6 max-md:hidden">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Programación de la Ruta</h2>
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
@@ -2857,7 +2858,7 @@ export default function Visits() {
       </div>
 
       {/* Filtros */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6">
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-6 max-md:hidden">
         <div className="flex flex-col lg:flex-row gap-4 mb-4">
           <div className="flex-1">
             <div className="relative">
@@ -2919,7 +2920,7 @@ export default function Visits() {
       {/* Layout matching Maps.tsx: 1/4 left panel, 3/4 right panel */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 print-grid">
         {/* Panel izquierdo - Lista de clientes y ruta */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="hidden md:block lg:col-span-1 space-y-6">
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 print-hide">
               <div className="p-4 border-b border-gray-200">
@@ -3221,13 +3222,13 @@ export default function Visits() {
         {/* Map panel - Right side */}
         <div className="lg:col-span-3">
           {/* Mapa de la ruta */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print-card">
-              <div className="p-4 border-b border-gray-200">
+          <div className="max-md:fixed max-md:inset-0 max-md:z-40 bg-white md:rounded-xl md:shadow-sm md:border md:border-gray-200 overflow-hidden print-card">
+              <div className="p-4 border-b border-gray-200 max-md:hidden">
                 <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
                 <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
               </div>
               {routeCustomers.length > 0 && (
-                <div className="px-4 py-3 border-b border-gray-100 bg-white/60">
+                <div className="px-4 py-3 border-b border-gray-100 bg-white/60 max-md:hidden">
                   <div className="flex items-center gap-2 overflow-x-auto">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
                       Paradas: <span className="ml-1 font-medium">{routeCustomers.length}</span>
@@ -3261,7 +3262,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className="h-[800px] relative bg-white">
+              <div className="h-[800px] relative bg-white max-md:h-full">
               {routeCustomers.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -3274,7 +3275,7 @@ export default function Visits() {
                 mapProvider === 'leaflet' ? (
                   <div className="h-full relative">
                     {/* Leaflet overlay controls */}
-                    <div className="absolute z-[1000] right-3 top-3 flex flex-col sm:flex-row gap-2 print-hide">
+                    <div className="absolute z-[1000] right-3 top-3 hidden md:flex flex-col sm:flex-row gap-2 print-hide">
                       <button
                         onClick={fitLeafletToAllStops}
                         title="Ver todos"
@@ -3322,7 +3323,7 @@ export default function Visits() {
                         <span className="text-xs text-gray-700 hidden sm:inline">PDF</span>
                       </button>
                     </div>
-                    <div ref={mapRef} className="w-full h-full rounded-lg border print-map" />
+                    <div ref={mapRef} className="w-full h-full rounded-lg border print-map max-md:rounded-none max-md:border-0" />
                   </div>
                 ) : (!mapsApiKey ? (
                   <div className="flex items-center justify-center h-full">
@@ -3334,11 +3335,11 @@ export default function Visits() {
                   </div>
                 ) : (
                   <div className="h-full relative">
-                    <div ref={mapRef} className="w-full h-full rounded-lg border" />
+                    <div ref={mapRef} className="w-full h-full rounded-lg border max-md:rounded-none max-md:border-0" />
                     {/* My Location button on map (Google only) */}
                     <button
                       onClick={getCurrentLocation}
-                      className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                      className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50 max-md:hidden"
                       title="Mi Ubicación"
                     >
                       <MapPin className="w-5 h-5 text-blue-600" />
@@ -3377,7 +3378,7 @@ export default function Visits() {
                           console.error('[MapRefresh] Manual refresh failed:', error)
                         }
                       }}
-                      className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50"
+                      className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50 max-md:hidden"
                       title="Refrescar Mapa"
                     >
                       <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3387,22 +3388,131 @@ export default function Visits() {
                   </div>
                 ))
               )}
+              <div
+                className="absolute inset-x-3 z-[1010] md:hidden"
+                style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+              >
+                <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
+                  <Search className="h-5 w-5 flex-shrink-0 text-gray-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar clientes..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value)
+                      setMobileSheetTab('clients')
+                      setShowDetails(true)
+                    }}
+                    onFocus={() => {
+                      setMobileSheetTab('clients')
+                      setShowDetails(true)
+                    }}
+                    className="h-12 w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
+                      aria-label="Limpiar busqueda"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div
+                className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
+                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
+              >
+                <button
+                  onClick={mapProvider === 'leaflet' ? getCurrentLocationLeaflet : getCurrentLocation}
+                  title="Mi ubicacion"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
+                >
+                  <LocateFixed className="h-6 w-6 text-blue-600" />
+                </button>
+                <button
+                  onClick={mapProvider === 'leaflet' ? fitLeafletToAllStops : getCurrentLocation}
+                  title="Ver ruta"
+                  disabled={routeCustomers.length === 0}
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95 disabled:opacity-50"
+                >
+                  <Maximize2 className="h-6 w-6 text-gray-700" />
+                </button>
+                {routeCustomers.length > 0 && (
+                  <button
+                    onClick={startNavigation}
+                    title="Navegar"
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 shadow-lg transition active:scale-95"
+                  >
+                    <Navigation className="h-6 w-6 text-white" />
+                  </button>
+                )}
+              </div>
+
+              {!showDetails && (
+                <div
+                  className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
+                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
+                >
+                  <button
+                    onClick={() => {
+                      setMobileSheetTab(routeCustomers.length > 0 ? 'route' : 'clients')
+                      setShowDetails(true)
+                    }}
+                    className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-5 py-3 text-sm font-medium text-gray-800 shadow-xl backdrop-blur-md transition active:scale-95"
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                    <span>{routeCustomers.length} paradas · {filteredCustomers.length} clientes</span>
+                    <ChevronUp className="h-4 w-4 text-gray-500" />
+                  </button>
+                </div>
+              )}
           </div>
         </div>
       </div>
 
       {/* Bottom sheet with route details and actions (mobile-first) */}
       {showDetails && (
-        <div className="fixed inset-x-0 bottom-0 z-40">
-          <div className="mx-auto max-w-6xl px-4 pb-[env(safe-area-inset-bottom)]">
-            <div ref={bottomSheetRef} className="bg-white rounded-t-2xl shadow-xl border border-gray-200">
-              <div className="px-4 py-2 border-b flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-900">Ruta Actual</span>
-                <button onClick={() => setShowDetails(false)} className="p-1 rounded hover:bg-gray-100" aria-label="Cerrar">
-                  <X className="w-5 h-5 text-gray-600" />
-                </button>
+        <div className="fixed inset-x-0 bottom-0 z-[1050] md:hidden">
+          <div className="pb-[env(safe-area-inset-bottom)]">
+            <div ref={bottomSheetRef} className="flex max-h-[68vh] flex-col rounded-t-2xl border border-gray-200 bg-white shadow-2xl">
+              <button
+                className="flex w-full flex-col items-center pb-1 pt-2"
+                onClick={() => setShowDetails(false)}
+                aria-label="Cerrar panel"
+              >
+                <span className="h-1 w-10 rounded-full bg-gray-300" />
+              </button>
+              <div className="px-4 pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Planificacion de ruta</div>
+                    <div className="text-xs text-gray-500">
+                      {routeCustomers.length} paradas · {filteredCustomers.length} clientes disponibles
+                    </div>
+                  </div>
+                  <button onClick={() => setShowDetails(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 active:bg-gray-200" aria-label="Cerrar">
+                    <ChevronDown className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 rounded-full bg-gray-100 p-1 text-sm font-medium">
+                  <button
+                    onClick={() => setMobileSheetTab('route')}
+                    className={`rounded-full px-3 py-2 transition ${mobileSheetTab === 'route' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
+                  >
+                    Ruta
+                  </button>
+                  <button
+                    onClick={() => setMobileSheetTab('clients')}
+                    className={`rounded-full px-3 py-2 transition ${mobileSheetTab === 'clients' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
+                  >
+                    Clientes
+                  </button>
+                </div>
               </div>
-              <div className="p-4">
+              <div className="overflow-y-auto overscroll-contain px-4 pb-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 84px)' }}>
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <div className="bg-gray-50 rounded-lg p-2">
                     <div className="text-xs text-gray-500">Paradas</div>
@@ -3421,16 +3531,127 @@ export default function Visits() {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button onClick={reorderRouteByCurrentLocation} className="inline-flex items-center justify-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                    <Route className="w-4 h-4 mr-1" />
-                    <span>Optimizar por mi ubicación</span>
-                  </button>
-                  <button onClick={startNavigation} className="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                    <ExternalLink className="w-4 h-4 mr-1" />
-                    <span>Navegar</span>
-                  </button>
-                </div>
+                {mobileSheetTab === 'route' ? (
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button onClick={reorderRouteByCurrentLocation} disabled={routeCustomers.length < 2} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-purple-600 px-3 py-2 text-sm text-white disabled:opacity-50">
+                        <Route className="w-4 h-4 mr-1" />
+                        <span>Optimizar</span>
+                      </button>
+                      <button onClick={startNavigation} disabled={routeCustomers.length === 0} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50">
+                        <ExternalLink className="w-4 h-4 mr-1" />
+                        <span>Navegar</span>
+                      </button>
+                      <button onClick={() => setShowSaveModal(true)} disabled={routeCustomers.length === 0} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 disabled:opacity-50">
+                        <Plus className="w-4 h-4 mr-1" />
+                        <span>Guardar</span>
+                      </button>
+                      <button onClick={() => setShowLoadModal(true)} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700">
+                        <Download className="w-4 h-4 mr-1" />
+                        <span>Cargar</span>
+                      </button>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {routeCustomers.length === 0 ? (
+                        <div className="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                          Agrega clientes para crear una ruta.
+                        </div>
+                      ) : (
+                        routeCustomers.map((customer, index) => {
+                          const stopDist = routeDistances.stops.find(s => s.id === customer.id)
+                          return (
+                            <div key={customer.id} className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
+                              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+                                {index + 1}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-sm font-medium text-gray-900">{customer.name}</div>
+                                <div className="truncate text-xs text-gray-500">{customer.company}</div>
+                                <div className="mt-1 text-xs text-blue-600">
+                                  {index === 0
+                                    ? (stopDist?.distanceFromUserKm != null ? `Desde mi ubicacion: ${formatDistanceKm(stopDist.distanceFromUserKm)}` : 'Primera parada')
+                                    : `Desde anterior: ${formatDistanceKm(stopDist?.distanceFromPreviousStopKm)}`}
+                                </div>
+                              </div>
+                              <div className="flex flex-shrink-0 items-center gap-1">
+                                <button onClick={() => moveUp(index)} disabled={index === 0} className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30" aria-label="Subir">
+                                  <ArrowUp className="h-4 w-4" />
+                                </button>
+                                <button onClick={() => removeFromRoute(customer.id)} className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600" aria-label="Quitar">
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-4 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={selectedProvince}
+                        onChange={(e) => {
+                          setSelectedProvince(e.target.value)
+                          setSelectedCity('')
+                        }}
+                        className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Provincias</option>
+                        {provinces.map(province => (
+                          <option key={province} value={province}>{province}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={selectedCity}
+                        onChange={(e) => setSelectedCity(e.target.value)}
+                        className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Ciudades</option>
+                        {getFilteredCities().map(city => (
+                          <option key={city} value={city}>{city}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {filteredCustomers.length === 0 ? (
+                      <div className="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                        No hay clientes disponibles.
+                      </div>
+                    ) : (
+                      filteredCustomers.slice(0, 80).map((customer) => (
+                        <div key={customer.id} className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-gray-900">{customer.name}</div>
+                            <div className="truncate text-xs text-gray-500">{customer.company}</div>
+                            <div className="mt-1 truncate text-xs text-gray-500">
+                              {[displayCity(customer), displayProvince(customer)].filter(Boolean).join(', ')}
+                            </div>
+                          </div>
+                          {(customer.phone || (customer as any).mobile_phone) && (
+                            <a
+                              href={telHref(customer.phone || (customer as any).mobile_phone)}
+                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600"
+                              aria-label="Llamar"
+                            >
+                              <Phone className="h-4 w-4" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => {
+                              addCustomerToRoute(customer)
+                              setMobileSheetTab('route')
+                            }}
+                            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
+                            aria-label="Agregar a ruta"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
