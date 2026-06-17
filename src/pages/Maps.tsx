@@ -810,13 +810,12 @@ export default function Maps() {
   }, [selectedProvince, markerClients, coordsById])
 
   const defaultCenter: LatLngExpression = useMemo(() => {
-    if (myLocation) return [myLocation.lat, myLocation.lng]
     const firstCoords = getClientRenderableCoordinates(markerClients[0] ?? null)
     if (firstCoords) {
       return [firstCoords.lat, firstCoords.lng]
     }
     return [36.6867, -6.1371]
-  }, [markerClients, myLocation])
+  }, [markerClients])
 
   const mapBounds = useMemo<LatLngBoundsExpression | null>(() => {
     const points: [number, number][] = [
@@ -826,12 +825,8 @@ export default function Maps() {
         .map(coords => [coords.lat, coords.lng] as [number, number]),
     ]
 
-    if (myLocation) {
-      points.push([myLocation.lat, myLocation.lng])
-    }
-
     return points.length > 0 ? points : null
-  }, [markerClients, myLocation])
+  }, [markerClients])
 
   const fitToAll = useCallback(() => {
     if (!mapRef.current || fittingAll) return
