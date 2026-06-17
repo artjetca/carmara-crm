@@ -809,13 +809,25 @@ export default function Maps() {
     console.table(cadizRows.filter(row => row.inSea))
   }, [selectedProvince, markerClients, coordsById])
 
+  const markerBoundsKey = useMemo(() => {
+    return markerClients
+      .map(client => getClientRenderableCoordinates(client))
+      .filter((coords): coords is MapCoordinates => Boolean(coords))
+      .map(coords => `${coords.lat.toFixed(6)},${coords.lng.toFixed(6)}`)
+      .sort()
+      .join('|')
+  }, [markerClients])
+
   const defaultCenter: LatLngExpression = useMemo(() => {
-    const firstCoords = getClientRenderableCoordinates(markerClients[0] ?? null)
-    if (firstCoords) {
-      return [firstCoords.lat, firstCoords.lng]
+    const firstCoordKey = markerBoundsKey.split('|')[0]
+    if (firstCoordKey) {
+      const [lat, lng] = firstCoordKey.split(',').map(Number)
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return [lat, lng]
+      }
     }
     return [36.6867, -6.1371]
-  }, [markerClients])
+  }, [markerBoundsKey])
 
   const mapBounds = useMemo<LatLngBoundsExpression | null>(() => {
     const points: [number, number][] = [
@@ -826,7 +838,7 @@ export default function Maps() {
     ]
 
     return points.length > 0 ? points : null
-  }, [markerClients])
+  }, [markerBoundsKey])
 
   const fitToAll = useCallback(() => {
     if (!mapRef.current || fittingAll) return
