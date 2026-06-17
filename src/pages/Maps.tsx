@@ -867,6 +867,15 @@ export default function Maps() {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         }
+        if (
+          !isValidCoordinate(coords.lat, coords.lng) ||
+          !isWithinServiceArea(coords.lat, coords.lng) ||
+          isLikelyInSea(coords.lat, coords.lng)
+        ) {
+          setLocationMessage('Tu ubicación está fuera de la zona de trabajo. Se mantiene el mapa actual.')
+          return
+        }
+
         setMyLocation(coords)
         setLocationMessage('Distancias actualizadas desde tu ubicación.')
         mapRef.current?.flyTo([coords.lat, coords.lng], 13, { duration: 0.8 })
@@ -875,7 +884,7 @@ export default function Maps() {
         console.debug('Geolocation error:', error.message)
         setLocationMessage('No se pudo obtener tu ubicación. Se mantiene la base actual.')
       },
-      { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
   }, [])
 
