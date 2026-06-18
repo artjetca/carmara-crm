@@ -621,6 +621,22 @@ export default function Maps() {
     invalidateMapSoon()
   }, [invalidateMapSoon, sheetOpen, selectedCustomerId])
 
+  const createClusterIcon = useCallback((cluster: { getChildCount: () => number }) => {
+    const count = cluster.getChildCount()
+    return L.divIcon({
+      html: `<div style="background:${MARKER_BLUE};color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+      className: 'marker-cluster marker-cluster-casmara',
+      iconSize: L.point(36, 36),
+      iconAnchor: L.point(18, 18),
+    })
+  }, [])
+
+  const handleClusterClick = useCallback(() => {
+    window.setTimeout(() => {
+      mapRef.current?.invalidateSize()
+    }, 300)
+  }, [])
+
   useEffect(() => {
     console.table(
       resolvedCustomers.map(client => ({
@@ -1422,21 +1438,16 @@ export default function Maps() {
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
                 <MarkerClusterGroup
-                  iconCreateFunction={(cluster: { getChildCount: () => number }) => {
-                    const count = cluster.getChildCount()
-                    return L.divIcon({
-                      html: `<div style="background:${MARKER_BLUE};color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
-                      className: '',
-                      iconSize: L.point(36, 36),
-                    })
-                  }}
+                  iconCreateFunction={createClusterIcon}
                   maxClusterRadius={35}
                   spiderfyOnMaxZoom
                   spiderfyOnEveryZoom
                   spiderfyDistanceMultiplier={3}
                   disableClusteringAtZoom={15}
                   showCoverageOnHover={false}
+                  removeOutsideVisibleBounds={false}
                   zoomToBoundsOnClick
+                  onClusterClick={handleClusterClick}
                   animate
                 >
                   {markerClients.map(client => {
