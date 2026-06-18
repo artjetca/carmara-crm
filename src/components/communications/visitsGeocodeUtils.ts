@@ -908,6 +908,10 @@ const auditFromStoredEntry = (
       return null
     }
 
+    if (entry.geocodeStatus === 'approximate' && entry.source === 'city_fallback') {
+      return null
+    }
+
     if (entry.addressSignature === buildAddressSignature(client)) {
       return entry
     }
