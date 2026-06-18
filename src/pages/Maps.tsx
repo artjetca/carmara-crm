@@ -27,7 +27,6 @@ import L, {
 } from 'leaflet'
 
 import {
-  buildGeocodeQueries,
   getCoordinateAuditForClient,
   isLikelyInSea,
   isSuspiciousDistanceFromCityCenter,
@@ -36,10 +35,8 @@ import {
   normalizeAddressForGeocoding,
   normalizeGeocodeResults,
   sanitizeCoordinateCache,
-  selectBestGeocodeResult,
   validateAndFixClientCoordinates,
   type ClientCoordinateAudit,
-  type GeocodeQueryPlan,
   type MapCoordinates,
 } from '../components/communications/visitsGeocodeUtils'
 import {
@@ -122,7 +119,7 @@ const createCustomerIcon = (
   geocodeStatus: 'valid' | 'approximate' | 'invalid' | 'sea_suspect',
   selected: boolean
 ) => {
-  const size = selected ? 20 : 18
+  const size = selected ? 22 : 18
 
   // All markers use blue base color for consistency
   const color = MARKER_BLUE
@@ -139,25 +136,20 @@ const createCustomerIcon = (
   return L.divIcon({
     className: 'client-marker-icon',
     html: `
-      <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-        <div style="
-          width:${size}px;
-          height:${size}px;
-          border-radius:999px;
-          background:${color};
-          border:2px ${borderStyle} ${borderColor};
-          box-shadow:0 4px 12px rgba(15,23,42,.22);
-          outline:${selected ? `3px solid ${ringColor}` : 'none'};
-        "></div>
-        <div style="
-          width:2px;height:${size * 0.45}px;background:${color};
-          margin-top:-2px;opacity:.7;
-        "></div>
+      <div style="
+        width:${size}px;
+        height:${size}px;
+        border-radius:999px;
+        background:${color};
+        border:2px ${borderStyle} ${borderColor};
+        box-shadow:0 4px 12px rgba(15,23,42,.24);
+        outline:${selected ? `3px solid ${ringColor}` : 'none'};
+      ">
       </div>
     `,
-    iconSize: [size, size + size * 0.45],
-    iconAnchor: [size / 2, size + size * 0.45],
-    popupAnchor: [0, -(size + 4)],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 8)],
   })
 }
 
@@ -189,6 +181,7 @@ function MapViewport({
 
   useEffect(() => {
     map.invalidateSize()
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 300)
 
     const filterChanged = filterKey !== prevFilterRef.current
     prevFilterRef.current = filterKey
@@ -199,16 +192,17 @@ function MapViewport({
         maxZoom: 14,
         animate: filterChanged,
       })
-      return
+      return () => window.clearTimeout(resizeTimer)
     }
 
     // No markers — fall back to province center or default
     if (filterProvince && PROVINCE_CENTERS[filterProvince]) {
       map.flyTo(PROVINCE_CENTERS[filterProvince], 10, { duration: 0.6 })
-      return
+      return () => window.clearTimeout(resizeTimer)
     }
 
     map.setView(defaultCenter, 8)
+    return () => window.clearTimeout(resizeTimer)
   }, [bounds, defaultCenter, filterKey, filterProvince, map])
 
   return null
@@ -425,94 +419,19 @@ export default function Maps() {
     async (customer: Customer, force = false) => {
       console.log(`[GEOCODE_PRECISE] Customer: ${customer.name}`)
 
-      // Build multiple query plans with priority tiers
-      const queryPlans = buildGeocodeQueries(customer)
-      console.log(`[GEOCODE_PRECISE] Built ${queryPlans.length} query plans:`, queryPlans.map(p => ({ tier: p.tier, query: p.query })))
-
-      if (queryPlans.length === 0) {
-        console.warn('[GEOCODE_PRECISE] No valid query plans, skipping')
+      try {
+        const audit = await validateAndFixClientCoordinates(customer, {
+          cachedAudit: force ? null : coordsById[customer.id],
+          geocodeFetcher: fetchGeocodeCandidates,
+        })
+        console.log('[GEOCODE_PRECISE] audit:', audit)
+        return audit
+      } catch (error) {
+        console.error('[GEOCODE_PRECISE] exception:', error)
         return null
       }
-
-      // Try each query plan in priority order
-      for (const queryPlan of queryPlans) {
-        console.log(`[GEOCODE_PRECISE] Trying tier ${queryPlan.tier}: "${queryPlan.query}"`)
-
-        try {
-          const response = await fetch('/api/geocode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: queryPlan.query }),
-          })
-
-          if (!response.ok) {
-            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} API error: ${response.status}`)
-            continue
-          }
-
-          const apiResult = await response.json()
-          const normalizedResults = normalizeGeocodeResults(apiResult)
-
-          console.log(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} got ${normalizedResults.length} results`)
-
-          if (normalizedResults.length === 0) {
-            continue
-          }
-
-          // Use selectBestGeocodeResult to find the best match (same scoring as prospects)
-          const bestResult = selectBestGeocodeResult(normalizedResults, customer)
-
-          if (!bestResult) {
-            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} no valid result after scoring`)
-            continue
-          }
-
-          console.log(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} selected result:`, {
-            lat: bestResult.lat,
-            lng: bestResult.lng,
-            displayName: bestResult.displayName
-          })
-
-          // Validate the result (matching prospectGeocodeService validation)
-          if (!isValidCoordinate(bestResult.lat, bestResult.lng)) {
-            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} invalid coordinates`)
-            continue
-          }
-
-          if (!isWithinServiceArea(bestResult.lat, bestResult.lng)) {
-            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} outside service area`)
-            continue
-          }
-
-          if (isLikelyInSea(bestResult.lat, bestResult.lng)) {
-            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} in sea, trying next query`)
-            continue
-          }
-
-          if (isSuspiciousDistanceFromCityCenter(customer, bestResult.lat, bestResult.lng)) {
-            console.warn(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} suspicious distance from city center`)
-            // Still accept but mark as approximate
-          }
-
-          // Build audit from the successful result
-          const audit = await validateAndFixClientCoordinates(customer, {
-            cachedAudit: force ? null : coordsById[customer.id],
-            geocodeFetcher: async () => [bestResult],
-          })
-
-          console.log(`[GEOCODE_PRECISE] Success with tier ${queryPlan.tier}:`, audit)
-          return audit
-
-        } catch (error) {
-          console.error(`[GEOCODE_PRECISE] Tier ${queryPlan.tier} exception:`, error)
-          continue
-        }
-      }
-
-      console.warn('[GEOCODE_PRECISE] All query tiers exhausted, no valid result')
-      return null
     },
-    [coordsById]
+    [coordsById, fetchGeocodeCandidates]
   )
 
   const ensureCustomerCoordinates = useCallback(
@@ -677,6 +596,30 @@ export default function Maps() {
   useEffect(() => {
     clearMarkers()
   }, [clearMarkers, markerClients.length])
+
+  const buildMapsSearchUrl = useCallback((client: ResolvedMapClient) => {
+    const coords = getClientRenderableCoordinates(client)
+    if (coords) {
+      return `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`
+    }
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`
+  }, [])
+
+  const buildMapsDirectionsUrl = useCallback((client: ResolvedMapClient) => {
+    const coords = getClientRenderableCoordinates(client)
+    const destination = coords ? `${coords.lat},${coords.lng}` : client.address
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+  }, [])
+
+  const invalidateMapSoon = useCallback(() => {
+    window.setTimeout(() => {
+      mapRef.current?.invalidateSize()
+    }, 300)
+  }, [])
+
+  useEffect(() => {
+    invalidateMapSoon()
+  }, [invalidateMapSoon, sheetOpen, selectedCustomerId])
 
   useEffect(() => {
     console.table(
@@ -924,8 +867,9 @@ export default function Maps() {
 
       mapRef.current?.flyTo([coords.lat, coords.lng], 14, { duration: 0.8 })
       window.setTimeout(() => {
+        mapRef.current?.invalidateSize()
         markerRegistryRef.current.get(target.id)?.openPopup()
-      }, 250)
+      }, 300)
     },
     [ensureCustomerCoordinates, persistCoordinateCache]
   )
@@ -1315,7 +1259,7 @@ export default function Maps() {
                                       )}
                                       {customer.geocodeStatus === 'approximate' && (
                                         <div className="text-amber-600">
-                                          Ubicación aproximada. Dirección pendiente de validación.
+                                          Cliente aproximado. Dirección pendiente de validación.
                                         </div>
                                       )}
                                       {(customer.geocodeStatus === 'invalid' ||
@@ -1395,7 +1339,7 @@ export default function Maps() {
                     )}
                     {selectedCustomer.geocodeStatus === 'approximate' && (
                       <div className="text-amber-600">
-                        Ubicación aproximada. Dirección pendiente de validación.
+                        Cliente aproximado. Dirección pendiente de validación.
                       </div>
                     )}
                     {selectedCustomer.geocodeStatus !== 'valid' && (
@@ -1405,20 +1349,14 @@ export default function Maps() {
 
                   <div className="space-y-2 border-t border-gray-200 pt-3">
                     <button
-                      onClick={() => window.open(
-                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedCustomer.address)}`,
-                        '_blank'
-                      )}
+                      onClick={() => window.open(buildMapsSearchUrl(selectedCustomer), '_blank')}
                       className="inline-flex w-full items-center justify-center space-x-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white transition-colors hover:bg-blue-700"
                     >
                       <ExternalLink className="h-4 w-4" />
                       <span>Abrir en Mapas</span>
                     </button>
                     <button
-                      onClick={() => window.open(
-                        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedCustomer.address)}`,
-                        '_blank'
-                      )}
+                      onClick={() => window.open(buildMapsDirectionsUrl(selectedCustomer), '_blank')}
                       className="inline-flex w-full items-center justify-center space-x-2 rounded-lg bg-green-600 px-3 py-2 text-sm text-white transition-colors hover:bg-green-700"
                     >
                       <Navigation className="h-4 w-4" />
@@ -1549,7 +1487,7 @@ export default function Maps() {
 
                               {client.geocodeStatus === 'approximate' && (
                                 <div className="text-sm text-amber-600">
-                                  Ubicación aproximada. Dirección pendiente de validación.
+                                  Cliente aproximado. Dirección pendiente de validación.
                                 </div>
                               )}
                             </div>
@@ -1564,19 +1502,13 @@ export default function Maps() {
                                 </a>
                               )}
                               <button
-                                onClick={() => window.open(
-                                  `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(client.address)}`,
-                                  '_blank'
-                                )}
+                                onClick={() => window.open(buildMapsDirectionsUrl(client), '_blank')}
                                 className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs text-green-600 transition-colors hover:bg-green-100"
                               >
                                 <Navigation className="mr-1 h-3 w-3" /> Direcciones
                               </button>
                               <button
-                                onClick={() => window.open(
-                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`,
-                                  '_blank'
-                                )}
+                                onClick={() => window.open(buildMapsSearchUrl(client), '_blank')}
                                 className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs text-indigo-600 transition-colors hover:bg-indigo-100"
                               >
                                 <ExternalLink className="mr-1 h-3 w-3" /> Google Maps
@@ -1702,10 +1634,7 @@ export default function Maps() {
                 </button>
                 {selectedCustomer && (
                   <button
-                    onClick={() => window.open(
-                      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selectedCustomer.address)}`,
-                      '_blank'
-                    )}
+                    onClick={() => window.open(buildMapsDirectionsUrl(selectedCustomer), '_blank')}
                     title="Navegar"
                     className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 shadow-lg transition active:scale-95"
                   >
@@ -1818,6 +1747,8 @@ function MapBridge({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | nul
 
   useEffect(() => {
     mapRef.current = map
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 300)
+    return () => window.clearTimeout(resizeTimer)
   }, [map, mapRef])
 
   return null

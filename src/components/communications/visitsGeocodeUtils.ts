@@ -424,8 +424,8 @@ export const buildGeocodeQueries = (client: Customer): GeocodeQueryPlan[] => {
   // Priority 3: Full address without postal code
   const fullAddress = normalizedAddress
 
-  // Priority 4: Street + city (without province for broader search)
-  const streetAndCity = [streetOnly, city, 'Spain'].filter(Boolean).join(', ')
+  // Priority 4: Street + city + province, keeping the query inside the service area
+  const streetAndCity = [streetOnly, city, province, 'Spain'].filter(Boolean).join(', ')
 
   // Priority 5: Street fragment + postal code + city
   const fragmentWithPostal = postalCode && streetFragment
@@ -779,22 +779,24 @@ const buildGeocodeAuditFromCandidate = (
   queryPlan: GeocodeQueryPlan,
   addressCompleteness: 'full' | 'partial' | 'minimal'
 ) => {
+  const administrativeOnly = isAdministrativeOnlyResult(selected)
   const approximate =
     queryPlan.approximate ||
     queryPlan.precisionRisk ||
     addressCompleteness !== 'full' ||
-    isAdministrativeOnlyResult(selected)
+    administrativeOnly
+  const markerCoords = queryPlan.approximate || administrativeOnly ? null : checked.coords
 
   return buildAudit(client, {
     geocodeStatus: approximate ? 'approximate' : 'valid',
     geocodeReason: approximate
-      ? 'Ubicación aproximada. Dirección pendiente de validación.'
+      ? 'Cliente aproximado. Dirección pendiente de validación.'
       : checked.reason,
     correctedLat: checked.coords.lat,
     correctedLng: checked.coords.lng,
-    markerCoords: checked.coords,
+    markerCoords,
     hasExactCoords: !approximate,
-    usesApproximateMarker: approximate,
+    usesApproximateMarker: approximate && Boolean(markerCoords),
     source: queryPlan.approximate ? 'city_fallback' : 'geocoded',
     addressCompleteness,
   })
@@ -879,19 +881,14 @@ const buildApproximateFallback = (client: Customer, reason: string) => {
     })
   }
 
-  // Sin offset decorativo: en ciudades costeras (Cádiz es una península)
-  // cualquier desplazamiento puede caer al mar. Los marcadores apilados
-  // los separa el cluster con spiderfy.
-  const markerCoords = center
-
   return buildAudit(client, {
     geocodeStatus: 'approximate',
-    geocodeReason: `${reason}. Ubicación aproximada por centro urbano`,
+    geocodeReason: `${reason}. Cliente aproximado sin coordenadas de dirección fiables`,
     correctedLat: center.lat,
     correctedLng: center.lng,
-    markerCoords,
+    markerCoords: null,
     hasExactCoords: false,
-    usesApproximateMarker: true,
+    usesApproximateMarker: false,
     source: 'city_fallback',
   })
 }

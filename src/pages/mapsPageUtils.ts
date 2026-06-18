@@ -256,7 +256,7 @@ export const buildClientPopupHtml = (
     locationLine,
     neighborLine,
     client.geocodeStatus === 'approximate'
-      ? 'Ubicación aproximada. Dirección pendiente de validación.'
+      ? 'Cliente aproximado. Dirección pendiente de validación.'
       : '',
     client.phone || '',
   ]
@@ -272,12 +272,8 @@ export const buildResolvedMapClient = (
   province: string,
   phone: string
 ): ResolvedMapClient => {
-  // Prefer markerCoords (includes offset for approximate markers) over correctedLat/Lng
-  // (which is the raw city center without offset, causing all approximate markers to overlap)
-  const finalLat = audit.markerCoords?.lat
-    ?? (typeof audit.correctedLat === 'number' ? audit.correctedLat : null)
-  const finalLng = audit.markerCoords?.lng
-    ?? (typeof audit.correctedLng === 'number' ? audit.correctedLng : null)
+  const finalLat = audit.markerCoords?.lat ?? null
+  const finalLng = audit.markerCoords?.lng ?? null
 
   return {
     id: customer.id,
