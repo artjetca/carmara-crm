@@ -1494,7 +1494,7 @@ export default function Maps() {
                 <MarkerClusterGroup
                   ref={clusterGroupRef}
                   iconCreateFunction={createClusterIcon}
-                  maxClusterRadius={35}
+                  maxClusterRadius={28}
                   spiderfyOnMaxZoom
                   spiderfyOnEveryZoom
                   spiderfyDistanceMultiplier={4}
