@@ -4,6 +4,7 @@ import { translations } from '../lib/translations'
 import type { Customer } from '../lib/supabase'
 import {
   ChevronDown,
+  ChevronLeft,
   Expand,
   ExternalLink,
   LocateFixed,
@@ -61,7 +62,6 @@ import {
   buildResolvedMapClient,
   getClientRenderableCoordinates,
   hasRenderableCoordinates,
-  isValidClient,
   refreshMapAndSidebarDistances as refreshMapBasic,
   sanitizeClients,
   type ResolvedMapClient,
@@ -72,6 +72,13 @@ import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../s
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 
 const STORAGE_KEY = 'carmara-customer-coords'
+
+const normalizeCityName = (value: string | null | undefined) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('es-ES')
+  .replace(/\s+/g, ' ')
+  .trim()
 
 const provinces = ['Cádiz', 'Huelva', 'Ceuta']
 
@@ -225,6 +232,7 @@ export default function Maps() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
+  const [cityDetailMode, setCityDetailMode] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
   const [distanceMode, setDistanceMode] = useState(false)
   const [distanceOrigin, setDistanceOrigin] = useState<DistanceOrigin>(JEREZ_ORIGIN)
@@ -258,7 +266,6 @@ export default function Maps() {
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
-  const [expandedCities, setExpandedCities] = useState<Set<string>>(new Set())
   const searchAbortRef = useRef<AbortController | null>(null)
   const cityDistanceCacheRef = useRef(new Map<string, import('./mapsPageUtils').CityDistanceSummary>())
   const t = translations
@@ -441,16 +448,22 @@ export default function Maps() {
     }
   }, [searchTerm, selectedCity, selectedProvince])
 
-  const filteredCustomers = useMemo(() => {
+  const allMatchedCustomers = useMemo(() => {
     const source = searchResults ?? customers
     return source.filter(customer => {
-      const city = deriveCity(customer)
       const province = deriveProvince(customer)
       const matchesProvince = !selectedProvince || province === selectedProvince
-      const matchesCity = !selectedCity || city.toLowerCase() === selectedCity.toLowerCase()
-      return matchesProvince && matchesCity
+      return matchesProvince
     })
-  }, [customers, searchResults, selectedProvince, selectedCity])
+  }, [customers, searchResults, selectedProvince])
+
+  const cityCustomers = useMemo(() => {
+    if (!selectedCity) return allMatchedCustomers
+    const normalizedSelectedCity = normalizeCityName(selectedCity)
+    return allMatchedCustomers.filter(customer => normalizeCityName(deriveCity(customer)) === normalizedSelectedCity)
+  }, [allMatchedCustomers, selectedCity])
+
+  const filteredCustomers = cityCustomers
 
   const fetchGeocodeCandidates = useCallback(async (address: string) => {
     const response = await fetch('/api/geocode', {
@@ -550,12 +563,17 @@ export default function Maps() {
     () => sanitizeClients(distanceViewModel.clients),
     [distanceViewModel.clients]
   )
-  const renderableClients = useMemo(
+  const cityMappedCustomers = useMemo(
     () => resolvedCustomers.filter(client => hasRenderableCoordinates(client)),
     [resolvedCustomers]
   )
+  const cityUnmappedCustomers = useMemo(
+    () => resolvedCustomers.filter(client => !hasRenderableCoordinates(client)),
+    [resolvedCustomers]
+  )
+  const renderableClients = cityMappedCustomers
   const searchActive = searchTerm.trim().length >= 2
-  const mobileSheetClients = searchActive ? resolvedCustomers : (areaClients ?? resolvedCustomers)
+  const mobileSheetClients = (cityDetailMode || searchActive) ? resolvedCustomers : (areaClients ?? resolvedCustomers)
   const searchSuggestions = searchActive ? resolvedCustomers.slice(0, 8) : []
 
   // Clear city distance cache when location or province changes
@@ -567,22 +585,6 @@ export default function Maps() {
   const cityGroups = useMemo(() => {
     return distanceViewModel.cities
   }, [distanceViewModel.cities])
-
-  // Auto-expand city groups when filtered results are small enough to scan
-  useEffect(() => {
-    if (!selectedCity && !selectedProvince && !searchTerm) {
-      // No filter → collapse all
-      setExpandedCities(new Set())
-      return
-    }
-    // Only auto-expand when the filtered result is manageable (≤ 5 city groups)
-    // or when a specific city is selected (always exactly 1 group)
-    if (selectedCity || cityGroups.length <= 5) {
-      setExpandedCities(new Set(cityGroups.map(g => `${g.province}|${g.city}`)))
-    } else {
-      setExpandedCities(new Set())
-    }
-  }, [selectedProvince, selectedCity, searchTerm, cityGroups])
 
   const selectedCustomer = useMemo(
     () => resolvedCustomers.find(customer => customer.id === selectedCustomerId) ?? null,
@@ -606,8 +608,8 @@ export default function Maps() {
     return sanitizeClients(clients).filter(client => hasRenderableCoordinates(client))
   }, [])
 
-  const markerClients = useMemo(() => renderAllMarkers(resolvedCustomers), [renderAllMarkers, resolvedCustomers])
-  const unmappedClientsCount = resolvedCustomers.length - markerClients.length
+  const markerClients = useMemo(() => renderAllMarkers(cityMappedCustomers), [renderAllMarkers, cityMappedCustomers])
+  const unmappedClientsCount = cityUnmappedCustomers.length
   const searchCityLabel = useMemo(() => {
     if (!searchActive || resolvedCustomers.length === 0) return null
     const cities = Array.from(new Set(resolvedCustomers.map(customer => customer.city).filter(Boolean)))
@@ -639,6 +641,28 @@ export default function Maps() {
       mapRef.current?.invalidateSize()
     }, 300)
   }, [])
+
+  const openCityDetails = useCallback((city: string, province: string) => {
+    hideSearchAreaButton()
+    setAreaClients(null)
+    setSelectedProvince(province)
+    setSelectedCity(city)
+    setSearchTerm('')
+    setSearchResults(null)
+    setSelectedCustomerId(null)
+    setCityDetailMode(true)
+    setSheetOpen(true)
+    invalidateMapSoon()
+  }, [hideSearchAreaButton, invalidateMapSoon])
+
+  const closeCityDetails = useCallback(() => {
+    hideSearchAreaButton()
+    setAreaClients(null)
+    setSelectedCity('')
+    setSelectedCustomerId(null)
+    setCityDetailMode(false)
+    invalidateMapSoon()
+  }, [hideSearchAreaButton, invalidateMapSoon])
 
   useEffect(() => {
     invalidateMapSoon()
@@ -1122,6 +1146,7 @@ export default function Maps() {
                 hideSearchAreaButton()
                 setSelectedProvince(event.target.value)
                 setSelectedCity('')
+                setCityDetailMode(false)
               }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
             >
@@ -1139,6 +1164,7 @@ export default function Maps() {
               onChange={event => {
                 hideSearchAreaButton()
                 setSelectedCity(event.target.value)
+                setCityDetailMode(Boolean(event.target.value))
               }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
             >
@@ -1157,6 +1183,7 @@ export default function Maps() {
                 setSearchTerm('')
                 setSelectedProvince('')
                 setSelectedCity('')
+                setCityDetailMode(false)
               }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-700 hover:bg-gray-50"
             >
@@ -1189,106 +1216,86 @@ export default function Maps() {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200">
-                  {cityGroups.map(cityGroup => {
-                    const cityKey = `${cityGroup.province}|${cityGroup.city}`
-                    const isExpanded = expandedCities.has(cityKey)
-
-                    return (
-                      <div key={cityKey}>
+                  {cityDetailMode ? (
+                    <>
+                      <div className="bg-blue-50 px-4 py-3">
                         <button
-                          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50"
-                          onClick={() => {
-                            setExpandedCities(prev => {
-                              const next = new Set(prev)
-                              if (next.has(cityKey)) next.delete(cityKey)
-                              else next.add(cityKey)
-                              return next
-                            })
-                          }}
+                          onClick={closeCityDetails}
+                          className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800"
                         >
-                          <div className="min-w-0">
-                            <span className="text-sm font-semibold text-gray-900">{cityGroup.city}</span>
-                            <span className="ml-2 text-xs text-gray-500">
-                              {cityGroup.clientCount} {cityGroup.clientCount === 1 ? 'cliente' : 'clientes'}
-                              {(() => {
-                                const onMap = cityGroup.clients.filter(c => hasRenderableCoordinates(c)).length
-                                return onMap < cityGroup.clientCount ? (
-                                  <span className="text-amber-500 ml-1">({onMap} en mapa)</span>
-                                ) : null
-                              })()}
-                            </span>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            {cityGroup.nearestDistanceFromUser !== null && (
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                                {formatDistanceKm(cityGroup.nearestDistanceFromUser, '')}
-                              </span>
-                            )}
-                            <span className="text-xs text-gray-400">{isExpanded ? '▾' : '▸'}</span>
+                          <ChevronLeft className="h-4 w-4" /> Volver a ciudades
+                        </button>
+                        <div className="text-sm font-semibold text-gray-900">{selectedCity}</div>
+                        <div className="mt-1 text-xs text-gray-600">
+                          {cityCustomers.length} clientes · {cityMappedCustomers.length} en el mapa · {cityUnmappedCustomers.length} sin coordenadas
+                        </div>
+                      </div>
+                      {resolvedCustomers.map(customer => (
+                        <button
+                          key={customer.id}
+                          onClick={() => flyToCustomer(customer)}
+                          className={`w-full p-4 text-left transition-colors hover:bg-gray-50 ${
+                            selectedCustomerId === customer.id ? 'border-r-2 border-blue-500 bg-blue-50' : ''
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-medium text-blue-600">
+                              {customer.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <h3 className="truncate text-sm font-medium text-gray-900">{customer.name}</h3>
+                                  {customer.company && <p className="truncate text-xs text-gray-600">{customer.company}</p>}
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                  hasRenderableCoordinates(customer) ? 'bg-blue-50 text-blue-700' : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {hasRenderableCoordinates(customer) ? 'en mapa' : 'sin coordenadas'}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex items-start text-xs text-gray-600">
+                                <MapPin className="mr-1 mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
+                                <span>{customer.address}</span>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
+                                {customer.phone && <span>{customer.phone}</span>}
+                                <span>Estado: activo</span>
+                                <span>Última visita: sin registrar</span>
+                                <span>Próxima visita: sin programar</span>
+                              </div>
+                              {customer.geocodeStatus === 'approximate' && (
+                                <div className="mt-1 text-[11px] text-amber-600">Cliente aproximado. Dirección pendiente de validación.</div>
+                              )}
+                            </div>
                           </div>
                         </button>
-
-                        {isExpanded && (
-                          <div className="divide-y divide-gray-100 bg-gray-50/50">
-                            {cityGroup.clients.map(customer => (
-                              <div
-                                key={customer.id}
-                                className={`cursor-pointer p-4 pl-6 transition-colors hover:bg-gray-100 ${
-                                  selectedCustomerId === customer.id ? 'border-r-2 border-blue-500 bg-blue-50' : ''
-                                }`}
-                                onClick={() => flyToCustomer(customer)}
-                              >
-                                <div className="flex items-start space-x-3">
-                                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100">
-                                    <span className="text-sm font-medium text-blue-600">
-                                      {customer.name.charAt(0).toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <h3 className="truncate text-sm font-medium text-gray-900">
-                                      {isValidClient(customer) ? customer.name : 'Cliente no disponible'}
-                                    </h3>
-                                    {customer.company && (
-                                      <p className="truncate text-xs text-gray-600">{customer.company}</p>
-                                    )}
-
-                                    <div className="mt-1 flex items-start">
-                                      <MapPin className="mr-1 mt-0.5 h-3 w-3 flex-shrink-0 text-gray-400" />
-                                      <span className="break-words text-xs text-gray-600">{customer.address}</span>
-                                    </div>
-
-                                    <div className="mt-2 space-y-1 text-[11px] text-gray-500">
-                                      <div>
-                                        Distancia desde mi ubicación:{' '}
-                                        {formatDistanceKm(customer.distanceFromUser, 'Distancia no disponible')}
-                                      </div>
-                                      {customer.nearestNeighborDistanceInCity !== null &&
-                                        customer.nearestNeighborDistanceInCity !== customer.distanceFromUser && (
-                                        <div>
-                                          Cliente más cercano:{' '}
-                                          {formatDistanceKm(
-                                            customer.nearestNeighborDistanceInCity,
-                                            'Distancia no disponible'
-                                          )}
-                                        </div>
-                                      )}
-                                      {customer.geocodeStatus === 'approximate' && (
-                                        <div className="text-amber-600">
-                                          Cliente aproximado. Dirección pendiente de validación.
-                                        </div>
-                                      )}
-                                      {(customer.geocodeStatus === 'invalid' ||
-                                        customer.geocodeStatus === 'sea_suspect') && (
-                                        <div className="font-medium text-rose-600">Revisar: {customer.geocodeReason}</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      ))}
+                    </>
+                  ) : cityGroups.map(cityGroup => {
+                    const onMap = cityGroup.clients.filter(client => hasRenderableCoordinates(client)).length
+                    return (
+                      <button
+                        key={`${cityGroup.province}|${cityGroup.city}`}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50"
+                        onClick={() => openCityDetails(cityGroup.city, cityGroup.province)}
+                      >
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-gray-900">{cityGroup.city}</span>
+                          <span className="ml-2 text-xs text-gray-500">
+                            {cityGroup.clientCount} {cityGroup.clientCount === 1 ? 'cliente' : 'clientes'}
+                            {onMap < cityGroup.clientCount && <span className="ml-1 text-amber-500">({onMap} en mapa)</span>}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {cityGroup.nearestDistanceFromUser !== null && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                              {formatDistanceKm(cityGroup.nearestDistanceFromUser, '')}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400">▸</span>
+                        </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -1562,6 +1569,9 @@ export default function Maps() {
                     <span className="font-bold text-gray-800">{resolvedCustomers.length}</span>
                   </div>
                 </div>
+                <div data-app-build={__APP_BUILD_VERSION__} className="border-t border-gray-100 pt-1 text-[10px] text-gray-400">
+                  Build {__APP_BUILD_VERSION__}
+                </div>
               </div>
 
               {/* ── Superposiciones móviles (estilo app, solo <md) ── */}
@@ -1701,16 +1711,33 @@ export default function Maps() {
                     <span className="h-1 w-10 rounded-full bg-gray-300" />
                   </button>
                   <div className="flex items-center justify-between px-4 pb-2">
-                    <div className="text-sm font-semibold text-gray-900">
-                      {searchActive
-                        ? searchCityLabel
-                          ? `${resolvedCustomers.length} clientes en ${searchCityLabel}`
-                          : 'Resultados de búsqueda'
-                        : areaClients
-                          ? `${areaClients.length} en esta zona`
-                          : `${resolvedCustomers.length} clientes`}
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {cityDetailMode
+                          ? `${selectedCity} · ${cityCustomers.length} clientes`
+                          : searchActive
+                            ? searchCityLabel
+                              ? `${resolvedCustomers.length} clientes encontrados en ${searchCityLabel}`
+                              : 'Resultados de búsqueda'
+                            : areaClients
+                              ? `${areaClients.length} en esta zona`
+                              : `${resolvedCustomers.length} clientes`}
+                      </div>
+                      {(cityDetailMode || searchActive) && (
+                        <div className="mt-0.5 text-xs text-gray-500">
+                          {markerClients.length} en el mapa · {unmappedClientsCount} sin localizar
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
+                      {cityDetailMode && (
+                        <button
+                          onClick={closeCityDetails}
+                          className="inline-flex h-9 items-center gap-1 rounded-full bg-blue-50 px-3 text-xs font-medium text-blue-700 active:bg-blue-100"
+                        >
+                          <ChevronLeft className="h-4 w-4" /> Volver
+                        </button>
+                      )}
                       {areaClients && (
                         <button
                           onClick={() => {
