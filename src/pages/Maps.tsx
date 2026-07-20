@@ -9,6 +9,7 @@ import {
   LocateFixed,
   Mail,
   MapPin,
+  Mic,
   Navigation,
   Phone,
   Search,
@@ -214,6 +215,9 @@ export default function Maps() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [searchResults, setSearchResults] = useState<Customer[] | null>(null)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
@@ -247,6 +251,7 @@ export default function Maps() {
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
   const [expandedCities, setExpandedCities] = useState<Set<string>>(new Set())
+  const searchAbortRef = useRef<AbortController | null>(null)
   const cityDistanceCacheRef = useRef(new Map<string, import('./mapsPageUtils').CityDistanceSummary>())
   const t = translations
 
@@ -372,24 +377,53 @@ export default function Maps() {
     return Array.from(allCities).sort()
   }, [selectedProvince])
 
-  const filteredCustomers = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase()
+  useEffect(() => {
+    const query = searchTerm.trim()
+    searchAbortRef.current?.abort()
+    if (query.length < 2) {
+      setSearchResults(null)
+      setSearchLoading(false)
+      setSearchError(null)
+      return
+    }
 
-    return customers.filter(customer => {
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+    setSearchLoading(true)
+    setSearchError(null)
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ q: query, limit: '30' })
+        if (selectedProvince) params.set('province', selectedProvince)
+        if (selectedCity) params.set('city', selectedCity)
+        const response = await fetch(`/api/customers/search?${params}`, { signal: controller.signal })
+        const result = await response.json()
+        if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo buscar clientes.')
+        setSearchResults(result.data || [])
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          setSearchError((error as Error).message || 'No se pudo buscar clientes.')
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearchLoading(false)
+      }
+    }, 300)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [searchTerm, selectedCity, selectedProvince])
+
+  const filteredCustomers = useMemo(() => {
+    const source = searchResults ?? customers
+    return source.filter(customer => {
       const city = deriveCity(customer)
       const province = deriveProvince(customer)
-      const matchesSearch =
-        !query ||
-        customer.name?.toLowerCase().includes(query) ||
-        customer.company?.toLowerCase().includes(query) ||
-        customer.email?.toLowerCase().includes(query)
-
       const matchesProvince = !selectedProvince || province === selectedProvince
       const matchesCity = !selectedCity || city.toLowerCase() === selectedCity.toLowerCase()
-
-      return matchesSearch && matchesProvince && matchesCity
+      return matchesProvince && matchesCity
     })
-  }, [customers, searchTerm, selectedProvince, selectedCity])
+  }, [customers, searchResults, selectedProvince, selectedCity])
 
   const fetchGeocodeCandidates = useCallback(async (address: string) => {
     const response = await fetch('/api/geocode', {
@@ -493,6 +527,9 @@ export default function Maps() {
     () => resolvedCustomers.filter(client => hasRenderableCoordinates(client)),
     [resolvedCustomers]
   )
+  const searchActive = searchTerm.trim().length >= 2
+  const mobileSheetClients = searchActive ? resolvedCustomers : (areaClients ?? resolvedCustomers)
+  const searchSuggestions = searchActive ? resolvedCustomers.slice(0, 8) : []
 
   // Clear city distance cache when location or province changes
   useEffect(() => {
@@ -842,6 +879,16 @@ export default function Maps() {
     },
     [ensureCustomerCoordinates, persistCoordinateCache]
   )
+
+  const autoFocusedSearchRef = useRef('')
+  useEffect(() => {
+    if (!searchActive || resolvedCustomers.length !== 1) return
+    const onlyClient = resolvedCustomers[0]
+    if (!onlyClient || !hasRenderableCoordinates(onlyClient) || autoFocusedSearchRef.current === searchTerm) return
+    autoFocusedSearchRef.current = searchTerm
+    setSheetOpen(true)
+    flyToCustomer(onlyClient).catch(console.error)
+  }, [flyToCustomer, resolvedCustomers, searchActive, searchTerm])
 
   const preciseLocate = useCallback(async () => {
     if (locatingAllPrecise) return
@@ -1475,15 +1522,15 @@ export default function Maps() {
                 className="absolute inset-x-3 z-[1010] md:hidden"
                 style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
               >
-                <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
+                <div className="flex min-h-[52px] items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
                   <Search className="h-5 w-5 flex-shrink-0 text-gray-500" />
                   <input
                     type="text"
-                    placeholder={t.maps.searchPlaceholder}
+                    placeholder="Buscar por nombre, teléfono, ciudad…"
                     value={searchTerm}
                     onChange={event => setSearchTerm(event.target.value)}
                     onFocus={() => setSheetOpen(true)}
-                    className="h-12 w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
+                    className="h-[52px] w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
                   />
                   {searchTerm && (
                     <button
@@ -1493,7 +1540,34 @@ export default function Maps() {
                       <X className="h-4 w-4" />
                     </button>
                   )}
+                  {'webkitSpeechRecognition' in window && (
+                    <button
+                      onClick={() => {
+                        const Recognition = (window as any).webkitSpeechRecognition
+                        const recognition = new Recognition()
+                        recognition.lang = 'es-ES'
+                        recognition.onresult = (event: any) => setSearchTerm(event.results[0][0].transcript)
+                        recognition.start()
+                      }}
+                      title="Búsqueda por voz"
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
+                    >
+                      <Mic className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
+                {(searchLoading || searchError || searchSuggestions.length > 0) && (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-white/60 bg-white/95 shadow-xl backdrop-blur-md">
+                    {searchLoading && <p className="px-4 py-3 text-sm text-gray-500">Buscando clientes…</p>}
+                    {searchError && <p className="px-4 py-3 text-sm text-red-600">{searchError}</p>}
+                    {!searchLoading && !searchError && searchSuggestions.map(client => (
+                      <button key={client.id} onClick={() => { setSheetOpen(true); flyToCustomer(client) }} className="flex w-full items-center justify-between border-b border-gray-100 px-4 py-3 text-left last:border-0 active:bg-blue-50">
+                        <span className="min-w-0"><span className="block truncate text-sm font-medium text-gray-900">{client.name}</span><span className="block truncate text-xs text-gray-500">{[client.city, client.province].filter(Boolean).join(', ')}</span></span>
+                        <span className="ml-3 text-xs text-gray-500">{client.phone ? String(client.phone).slice(-4) : hasRenderableCoordinates(client) ? 'en mapa' : 'sin mapa'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Botón "Buscar en esta zona" */}
@@ -1562,7 +1636,7 @@ export default function Maps() {
                     className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-5 py-3 text-sm font-medium text-gray-800 shadow-xl backdrop-blur-md transition active:scale-95"
                   >
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
-                    <span>{markerClients.length} en mapa · {resolvedCustomers.length} clientes</span>
+                    <span>{searchActive ? `${resolvedCustomers.length} encontrados · ${markerClients.length} en el mapa` : `${markerClients.length} en mapa · ${resolvedCustomers.length} clientes`}</span>
                   </button>
                 </div>
               ) : (
@@ -1575,9 +1649,11 @@ export default function Maps() {
                   </button>
                   <div className="flex items-center justify-between px-4 pb-2">
                     <div className="text-sm font-semibold text-gray-900">
-                      {areaClients
-                        ? `${areaClients.length} en esta zona`
-                        : `${resolvedCustomers.length} clientes`}
+                      {searchActive
+                        ? 'Resultados de búsqueda'
+                        : areaClients
+                          ? `${areaClients.length} en esta zona`
+                          : `${resolvedCustomers.length} clientes`}
                     </div>
                     <div className="flex items-center gap-2">
                       {areaClients && (
@@ -1600,13 +1676,14 @@ export default function Maps() {
                     className="overflow-y-auto overscroll-contain"
                     style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 84px)' }}
                   >
-                    {(areaClients ?? resolvedCustomers).length === 0 ? (
+                    {mobileSheetClients.length === 0 ? (
                       <div className="py-10 text-center">
                         <MapPin className="mx-auto mb-2 h-8 w-8 text-gray-300" />
-                        <p className="text-sm text-gray-500">{t.maps.noCustomersFound}</p>
+                        <p className="text-sm text-gray-500">No encontramos clientes que coincidan con tu búsqueda.</p>
+                        <button onClick={() => setSearchTerm('')} className="mt-3 text-sm font-medium text-blue-600">Limpiar búsqueda</button>
                       </div>
                     ) : (
-                      (areaClients ?? resolvedCustomers).map(client => (
+                      mobileSheetClients.map(client => (
                         <button
                           key={client.id}
                           onClick={() => {
