@@ -17,10 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
-import 'leaflet.markercluster/dist/MarkerCluster.css'
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
-import MarkerClusterGroup from '@changey/react-leaflet-markercluster'
 import L, {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -72,7 +69,7 @@ import { createCasmaraMarkerIcon } from '../components/map/CasmaraMarkerIcon'
 import '../styles/casmara-marker.css'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
-type MobileListMode = 'all' | 'mapped' | 'unmapped' | 'cluster'
+type MobileListMode = 'all' | 'mapped' | 'unmapped'
 type MobileSheetSize = 'half' | 'full'
 type VisitMarkerState = { scheduled: boolean; overdue: boolean }
 
@@ -233,12 +230,7 @@ export default function Maps() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetSize, setSheetSize] = useState<MobileSheetSize>('half')
   const [mobileListMode, setMobileListMode] = useState<MobileListMode>('all')
-  const [clusterClients, setClusterClients] = useState<ResolvedMapClient[] | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
-  const clusterGroupRef = useRef<{
-    getLayers?: () => LeafletMarker[]
-    _featureGroup?: { getLayers?: () => Array<{ getChildCount?: () => number }> }
-  } | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
@@ -559,9 +551,8 @@ export default function Maps() {
   const mobileSheetClients = useMemo(() => {
     if (mobileListMode === 'mapped') return mobileSummaryMappedClients
     if (mobileListMode === 'unmapped') return mobileSummaryUnmappedClients
-    if (mobileListMode === 'cluster') return clusterClients ?? []
     return mobileSummaryClients
-  }, [clusterClients, mobileListMode, mobileSummaryClients, mobileSummaryMappedClients, mobileSummaryUnmappedClients])
+  }, [mobileListMode, mobileSummaryClients, mobileSummaryMappedClients, mobileSummaryUnmappedClients])
   const searchSuggestions = searchActive ? resolvedCustomers.slice(0, 8) : []
 
   // Clear city distance cache when location or province changes
@@ -654,7 +645,6 @@ export default function Maps() {
   }, [])
 
   const openCityDetails = useCallback((city: string, province: string) => {
-    setClusterClients(null)
     setSelectedProvince(province)
     setSelectedCity(city)
     setSearchTerm('')
@@ -685,42 +675,6 @@ export default function Maps() {
   useEffect(() => {
     invalidateMapSoon()
   }, [invalidateMapSoon, sheetOpen, selectedCustomerId])
-
-  const createClusterIcon = useCallback((cluster: { getChildCount: () => number }) => {
-    const count = cluster.getChildCount()
-    const size = count >= 50 ? 56 : count >= 10 ? 48 : 40
-    return L.divIcon({
-      html: `<div class="casmara-cluster" title="${count} clientes en esta zona" aria-label="${count} clientes en esta zona" style="width:${size}px;height:${size}px;">${count}</div>`,
-      className: 'marker-cluster marker-cluster-casmara',
-      iconSize: L.point(size, size),
-      iconAnchor: L.point(size / 2, size / 2),
-    })
-  }, [])
-
-  const handleClusterClick = useCallback((event: {
-    layer?: {
-      getAllChildMarkers?: () => LeafletMarker[]
-      spiderfy?: () => void
-    }
-  }) => {
-    const clusterMarkers = event.layer?.getAllChildMarkers?.() ?? []
-    const markerIds = new Set(
-      Array.from(markerRegistryRef.current.entries())
-        .filter(([, marker]) => clusterMarkers.includes(marker))
-        .map(([id]) => id)
-    )
-    const clients = markerClients.filter(client => markerIds.has(client.id))
-    setClusterClients(clients)
-    setMobileListMode('cluster')
-    setSheetSize('half')
-    setSheetOpen(true)
-    if (mapRef.current?.getZoom() >= 16) {
-      event.layer?.spiderfy?.()
-    }
-    window.setTimeout(() => {
-      mapRef.current?.invalidateSize()
-    }, 300)
-  }, [markerClients])
 
   useEffect(() => {
     if (!import.meta.env.DEV) return
@@ -811,7 +765,7 @@ export default function Maps() {
 
     const stats = {
       totalRenderableClients: markerClients.length,
-      totalMarkersRendered: clusterGroupRef.current?.getLayers?.().length ?? markerRegistryRef.current.size,
+      totalMarkersRendered: markerRegistryRef.current.size,
       uniqueCoords: uniqueCoords.size,
       validMarkersCount: markerClients.filter(client => client.geocodeStatus === 'valid').length,
       approximateMarkersCount: markerClients.filter(client => client.geocodeStatus === 'approximate').length,
@@ -831,27 +785,6 @@ export default function Maps() {
       console.warn('[MAP_MARKERS] Marker registry exceeds renderable clients', stats)
     }
   }, [markerClients, resolvedCustomers, selectedCity])
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return
-
-    const timer = window.setTimeout(() => {
-      const visibleLayers = clusterGroupRef.current?._featureGroup?.getLayers?.() ?? []
-      const visibleClusterCustomerCount = visibleLayers.reduce(
-        (sum, layer) => sum + (layer.getChildCount?.() ?? 1),
-        0
-      )
-
-      if (visibleClusterCustomerCount !== markerClients.length) {
-        console.warn('[MAP_CLUSTERS] visible cluster count does not match filtered markers', {
-          visibleClusterCustomerCount,
-          filteredMappedCustomers: markerClients.length,
-        })
-      }
-    }, 0)
-
-    return () => window.clearTimeout(timer)
-  }, [markerClients])
 
   useEffect(() => {
     if (selectedProvince !== 'Cádiz') return
@@ -1502,22 +1435,7 @@ export default function Maps() {
                   maxZoom={mapTileProvider.maxZoom}
                 />
 
-                <MarkerClusterGroup
-                  ref={clusterGroupRef}
-                  iconCreateFunction={createClusterIcon}
-                  maxClusterRadius={45}
-                  spiderfyOnMaxZoom
-                  spiderfyDistanceMultiplier={1.6}
-                  disableClusteringAtZoom={17}
-                  showCoverageOnHover={false}
-                  removeOutsideVisibleBounds
-                  zoomToBoundsOnClick
-                  onClusterClick={handleClusterClick}
-                  animate
-                  animateAddingMarkers={false}
-                  chunkedLoading
-                >
-                  {markerClients.map(client => {
+                {markerClients.map(client => {
                     const coords = getClientRenderableCoordinates(client)
                     if (!coords) return null
 
@@ -1605,8 +1523,7 @@ export default function Maps() {
                         </Popup>
                       </Marker>
                     )
-                  })}
-                </MarkerClusterGroup>
+                })}
 
                 {myLocation && (
                   <Marker position={[myLocation.lat, myLocation.lng]} icon={myLocationIcon}>
@@ -1616,40 +1533,6 @@ export default function Maps() {
 
                 <MapBridge mapRef={mapRef} />
               </MapContainer>
-
-              {clusterClients && clusterClients.length > 0 && (
-                <aside className="absolute right-3 top-16 z-[1000] hidden w-[320px] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-lg backdrop-blur md:block">
-                  <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{clusterClients.length} clientes en esta zona</div>
-                      <div className="text-xs text-gray-500">Selecciona un cliente para verlo en el mapa</div>
-                    </div>
-                    <button onClick={() => setClusterClients(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"><X className="h-4 w-4" /></button>
-                  </div>
-                  <div className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto">
-                    {clusterClients.map(client => (
-                      <button
-                        key={client.id}
-                        onClick={() => {
-                          setClusterClients(null)
-                          flyToCustomer(client)
-                        }}
-                        className="w-full px-3 py-3 text-left hover:bg-blue-50"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-gray-900">{client.name}</div>
-                            {client.company && <div className="truncate text-xs text-gray-600">{client.company}</div>}
-                            <div className="mt-1 max-h-8 overflow-hidden text-xs text-gray-500">{client.address}</div>
-                            {client.phone && <div className="mt-1 text-xs text-gray-500">{client.phone}</div>}
-                          </div>
-                          <span className="shrink-0 text-xs font-medium text-blue-700">Ver cliente</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </aside>
-              )}
 
               {/* Map legend + stats (solo escritorio — en móvil lo sustituye la hoja inferior) */}
               <div className="absolute bottom-4 right-3 hidden bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px] md:block">
@@ -1845,9 +1728,7 @@ export default function Maps() {
                           ? 'Clientes en el mapa'
                           : mobileListMode === 'unmapped'
                             ? 'Clientes sin coordenadas'
-                            : mobileListMode === 'cluster'
-                              ? `${mobileSheetClients.length} clientes en esta zona`
-                              : cityDetailMode
+                            : cityDetailMode
                           ? `${selectedCity} · ${cityCustomers.length} clientes`
                           : searchActive
                             ? searchCityLabel
@@ -1857,9 +1738,7 @@ export default function Maps() {
                       </div>
                       {(cityDetailMode || searchActive || mobileListMode !== 'all') && (
                         <div className="mt-0.5 text-xs text-gray-500">
-                          {mobileListMode === 'cluster'
-                            ? `${mobileSheetClients.filter(client => hasRenderableCoordinates(client)).length} en el mapa`
-                            : `${mobileSummaryMappedClients.length} en el mapa · ${mobileSummaryUnmappedClients.length} sin localizar`}
+                          {`${mobileSummaryMappedClients.length} en el mapa · ${mobileSummaryUnmappedClients.length} sin localizar`}
                         </div>
                       )}
                     </div>

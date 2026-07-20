@@ -75,23 +75,6 @@
   transform-origin: center bottom;
 }
 
-.marker-cluster.marker-cluster-casmara {
-  background: transparent;
-}
-
-.casmara-cluster {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 3px solid #bfdbfe;
-  border-radius: 9999px;
-  background: #123f6d;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.3);
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-}
-
 @media (max-width: 767px) {
   .leaflet-container .leaflet-marker-icon.casmara-marker-icon,
   .leaflet-container .leaflet-div-icon.casmara-marker-icon {
