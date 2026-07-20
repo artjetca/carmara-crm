@@ -697,7 +697,12 @@ export default function Maps() {
     })
   }, [])
 
-  const handleClusterClick = useCallback((event: { layer?: { getAllChildMarkers?: () => LeafletMarker[] } }) => {
+  const handleClusterClick = useCallback((event: {
+    layer?: {
+      getAllChildMarkers?: () => LeafletMarker[]
+      spiderfy?: () => void
+    }
+  }) => {
     const clusterMarkers = event.layer?.getAllChildMarkers?.() ?? []
     const markerIds = new Set(
       Array.from(markerRegistryRef.current.entries())
@@ -709,6 +714,9 @@ export default function Maps() {
     setMobileListMode('cluster')
     setSheetSize('half')
     setSheetOpen(true)
+    if (mapRef.current?.getZoom() >= 16) {
+      event.layer?.spiderfy?.()
+    }
     window.setTimeout(() => {
       mapRef.current?.invalidateSize()
     }, 300)
@@ -1497,16 +1505,17 @@ export default function Maps() {
                 <MarkerClusterGroup
                   ref={clusterGroupRef}
                   iconCreateFunction={createClusterIcon}
-                  maxClusterRadius={28}
+                  maxClusterRadius={45}
                   spiderfyOnMaxZoom
-                  spiderfyOnEveryZoom
-                  spiderfyDistanceMultiplier={4}
-                  disableClusteringAtZoom={16}
+                  spiderfyDistanceMultiplier={1.6}
+                  disableClusteringAtZoom={17}
                   showCoverageOnHover={false}
-                  removeOutsideVisibleBounds={false}
+                  removeOutsideVisibleBounds
                   zoomToBoundsOnClick
                   onClusterClick={handleClusterClick}
                   animate
+                  animateAddingMarkers={false}
+                  chunkedLoading
                 >
                   {markerClients.map(client => {
                     const coords = getClientRenderableCoordinates(client)
