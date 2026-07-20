@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
-import L, {
+import {
   LatLngBoundsExpression,
   LatLngExpression,
   Map as LeafletMap,
@@ -66,12 +66,22 @@ import {
 import { PROVINCE_CENTERS } from '../utils/mapCentroids'
 import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../services/mapProviders'
 import { createCasmaraMarkerIcon } from '../components/map/CasmaraMarkerIcon'
+import {
+  createVehicleLocationIcon,
+  getLocationAccuracyLabel,
+} from '../components/map/VehicleLocationIcon'
 import '../styles/casmara-marker.css'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 type MobileListMode = 'all' | 'mapped' | 'unmapped'
 type MobileSheetSize = 'half' | 'full'
 type VisitMarkerState = { scheduled: boolean; overdue: boolean }
+type LocationDetails = {
+  accuracy: number | null
+  heading: number | null
+  speed: number | null
+  updatedAt: Date
+}
 
 const STORAGE_KEY = 'carmara-customer-coords'
 
@@ -132,18 +142,6 @@ const municipiosByProvince: Record<string, string[]> = {
   ],
   Ceuta: ['Ceuta'],
 }
-
-const MARKER_RED = '#dc2626'
-const MARKER_RED_RING = 'rgba(220,38,38,.28)'
-
-const myLocationIcon = L.divIcon({
-  className: '',
-  html: `
-    <div style="width:18px;height:18px;border-radius:999px;background:${MARKER_RED};border:3px solid #ffffff;box-shadow:0 0 0 6px ${MARKER_RED_RING},0 4px 12px ${MARKER_RED_RING}"></div>
-  `,
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
-})
 
 // Province centers now imported from shared utils/mapCentroids.ts
 
@@ -216,6 +214,7 @@ export default function Maps() {
     }
   })
   const [myLocation, setMyLocation] = useState<MapCoordinates | null>(null)
+  const [locationDetails, setLocationDetails] = useState<LocationDetails | null>(null)
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [fittingAll, setFittingAll] = useState(false)
   const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
@@ -239,6 +238,7 @@ export default function Maps() {
   const t = translations
 
   const persistedDbCoordSignaturesRef = useRef(new Map<string, string>())
+  const smoothedHeadingRef = useRef<number | null>(null)
 
   // Write validated coordinates back to the customers table so they
   // survive localStorage eviction and sync across devices.
@@ -569,6 +569,12 @@ export default function Maps() {
     () => resolvedCustomers.find(customer => customer.id === selectedCustomerId) ?? null,
     [resolvedCustomers, selectedCustomerId]
   )
+  const nearestCustomer = useMemo(() => {
+    if (!myLocation) return null
+    return resolvedCustomers
+      .filter(client => Number.isFinite(client.distanceFromUser))
+      .sort((left, right) => (left.distanceFromUser ?? Infinity) - (right.distanceFromUser ?? Infinity))[0] ?? null
+  }, [myLocation, resolvedCustomers])
 
   const clearMarkers = useCallback(() => {
     markerRegistryRef.current.clear()
@@ -882,7 +888,25 @@ export default function Maps() {
           return
         }
 
+        const rawHeading = position.coords.heading
+        const heading = Number.isFinite(rawHeading)
+          ? (() => {
+              const current = smoothedHeadingRef.current
+              const next = Number(rawHeading)
+              if (current === null) return next
+              const shortestTurn = ((next - current + 540) % 360) - 180
+              return (current + shortestTurn * 0.35 + 360) % 360
+            })()
+          : null
+
+        smoothedHeadingRef.current = heading
         setMyLocation(coords)
+        setLocationDetails({
+          accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+          heading,
+          speed: Number.isFinite(position.coords.speed) ? position.coords.speed : null,
+          updatedAt: new Date(position.timestamp),
+        })
         setLocationMessage('Distancias actualizadas desde tu ubicación.')
         mapRef.current?.flyTo([coords.lat, coords.lng], 13, { duration: 0.8 })
       },
@@ -893,6 +917,11 @@ export default function Maps() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
   }, [])
+
+  const centerOnMyLocation = useCallback(() => {
+    if (!myLocation) return
+    mapRef.current?.flyTo([myLocation.lat, myLocation.lng], 13, { duration: 0.5 })
+  }, [myLocation])
 
   const flyToCustomer = useCallback(
     async (customer: ResolvedMapClient) => {
@@ -1526,8 +1555,68 @@ export default function Maps() {
                 })}
 
                 {myLocation && (
-                  <Marker position={[myLocation.lat, myLocation.lng]} icon={myLocationIcon}>
-                    <Popup>Mi ubicación</Popup>
+                  <Marker
+                    position={[myLocation.lat, myLocation.lng]}
+                    icon={createVehicleLocationIcon({
+                      heading: locationDetails?.heading,
+                      accuracy: locationDetails?.accuracy,
+                      isMoving: (locationDetails?.speed ?? 0) > 1,
+                    })}
+                  >
+                    <Tooltip direction="top">{getLocationAccuracyLabel(locationDetails?.accuracy)}</Tooltip>
+                    <Popup minWidth={260}>
+                      <div className="space-y-3">
+                        <div className="border-b border-gray-200 pb-2">
+                          <div className="text-base font-semibold text-gray-900">Mi ubicación</div>
+                          <div className="mt-1 text-sm text-gray-600">
+                            {locationDetails?.updatedAt
+                              ? `Última actualización: ${locationDetails.updatedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+                              : 'Última actualización no disponible'}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5 text-sm text-gray-700">
+                          <div>{getLocationAccuracyLabel(locationDetails?.accuracy)}{locationDetails?.accuracy !== null && locationDetails?.accuracy !== undefined ? ` (${Math.round(locationDetails.accuracy)} m)` : ''}</div>
+                          {locationDetails?.speed !== null && locationDetails?.speed !== undefined && (
+                            <div>Velocidad: {Math.round(locationDetails.speed * 3.6)} km/h</div>
+                          )}
+                          {locationDetails?.heading !== null && locationDetails?.heading !== undefined && (
+                            <div>Dirección: {Math.round(locationDetails.heading)}°</div>
+                          )}
+                          <div>
+                            Cliente más cercano: {nearestCustomer
+                              ? `${nearestCustomer.name} (${formatDistanceKm(nearestCustomer.distanceFromUser, 'Distancia no disponible')})`
+                              : 'No disponible'}
+                          </div>
+                          {selectedCustomer && (
+                            <div>
+                              Distancia al cliente seleccionado: {formatDistanceKm(selectedCustomer.distanceFromUser, 'Distancia no disponible')}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
+                          <button
+                            onClick={centerOnMyLocation}
+                            className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
+                          >
+                            Centrar mapa
+                          </button>
+                          {nearestCustomer && (
+                            <button
+                              onClick={() => window.open(buildMapsDirectionsUrl(nearestCustomer), '_blank')}
+                              className="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs text-green-700 transition-colors hover:bg-green-100"
+                            >
+                              Navegar al siguiente cliente
+                            </button>
+                          )}
+                          <button
+                            onClick={locateMe}
+                            className="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-200"
+                          >
+                            Actualizar ubicación
+                          </button>
+                        </div>
+                      </div>
+                    </Popup>
                   </Marker>
                 )}
 
@@ -1544,7 +1633,7 @@ export default function Maps() {
                   <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-dashed border-amber-500 shadow"></span> Cliente aproximado
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-red-600 border-[3px] border-white shadow" style={{ boxShadow: '0 0 0 4px rgba(220,38,38,.18), 0 4px 12px rgba(220,38,38,.18)' }}></span> Mi ubicación
+                  <span className="vehicle-location-legend-icon" aria-hidden="true"><img src="/assets/mini-countryman-location.png" alt="" /></span> Mi ubicación
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
                   <div className="flex items-center justify-between gap-3">

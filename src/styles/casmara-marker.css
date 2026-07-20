@@ -75,6 +75,104 @@
   transform-origin: center bottom;
 }
 
+.leaflet-container .leaflet-marker-icon.vehicle-location-marker-icon,
+.leaflet-container .leaflet-div-icon.vehicle-location-marker-icon {
+  width: 48px !important;
+  min-width: 48px !important;
+  max-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.leaflet-container .vehicle-location-marker {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  overflow: visible;
+}
+
+.leaflet-container .vehicle-location-marker__accuracy,
+.leaflet-container .vehicle-location-marker__pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 32px;
+  height: 22px;
+  border-radius: 50%;
+  transform: translate(-50%, 20%);
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.leaflet-container .vehicle-location-marker__pulse {
+  animation: vehicle-location-pulse 2s ease-out infinite;
+}
+
+.leaflet-container .vehicle-location-marker--approximate .vehicle-location-marker__accuracy,
+.leaflet-container .vehicle-location-marker--approximate .vehicle-location-marker__pulse {
+  background: rgba(217, 119, 6, 0.24);
+}
+
+.leaflet-container .vehicle-location-marker--weak .vehicle-location-marker__accuracy,
+.leaflet-container .vehicle-location-marker--weak .vehicle-location-marker__pulse,
+.leaflet-container .vehicle-location-marker--unknown .vehicle-location-marker__accuracy,
+.leaflet-container .vehicle-location-marker--unknown .vehicle-location-marker__pulse {
+  background: rgba(100, 116, 139, 0.24);
+}
+
+.leaflet-container .vehicle-location-marker__car {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  display: block;
+  width: 48px !important;
+  height: 44px !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: contain;
+  transform: rotate(var(--vehicle-heading, 0deg));
+  transform-origin: center;
+  transition: transform 400ms ease-out;
+  filter: drop-shadow(0 3px 3px rgba(15, 23, 42, 0.34));
+}
+
+.vehicle-location-legend-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.vehicle-location-legend-icon img {
+  display: block;
+  width: 22px;
+  height: 20px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.28));
+}
+
+@keyframes vehicle-location-pulse {
+  0% { opacity: 0.65; transform: translate(-50%, 20%) scale(0.85); }
+  70% { opacity: 0; transform: translate(-50%, 20%) scale(1.8); }
+  100% { opacity: 0; transform: translate(-50%, 20%) scale(1.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaflet-container .vehicle-location-marker__pulse {
+    animation: none;
+    opacity: 0;
+  }
+
+  .leaflet-container .vehicle-location-marker__car {
+    transition: none;
+  }
+}
+
 @media (max-width: 767px) {
   .leaflet-container .leaflet-marker-icon.casmara-marker-icon,
   .leaflet-container .leaflet-div-icon.casmara-marker-icon {
@@ -107,5 +205,21 @@
     height: 46px !important;
     min-height: 46px;
     max-height: 46px;
+  }
+
+  .leaflet-container .leaflet-marker-icon.vehicle-location-marker-icon,
+  .leaflet-container .leaflet-div-icon.vehicle-location-marker-icon,
+  .leaflet-container .vehicle-location-marker {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+  }
+
+  .leaflet-container .vehicle-location-marker__car {
+    width: 44px !important;
+    height: 40px !important;
   }
 }
