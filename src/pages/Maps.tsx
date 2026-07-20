@@ -80,6 +80,12 @@ const normalizeCityName = (value: string | null | undefined) => String(value || 
   .replace(/\s+/g, ' ')
   .trim()
 
+const isCitySearch = (query: string, city: string) => {
+  const queryTokens = normalizeCityName(query).split(' ').filter(token => token.length >= 3)
+  const cityTokens = normalizeCityName(city).split(' ')
+  return queryTokens.length > 0 && queryTokens.every(token => cityTokens.some(cityToken => cityToken.includes(token)))
+}
+
 const provinces = ['Cádiz', 'Huelva', 'Ceuta']
 
 const municipiosByProvince: Record<string, string[]> = {
@@ -617,6 +623,13 @@ export default function Maps() {
   }, [resolvedCustomers, searchActive])
 
   useEffect(() => {
+    if (!searchActive || !searchCityLabel || !isCitySearch(searchTerm, searchCityLabel)) return
+    if (selectedCity !== searchCityLabel) setSelectedCity(searchCityLabel)
+    if (!cityDetailMode) setCityDetailMode(true)
+    setSheetOpen(true)
+  }, [cityDetailMode, searchActive, searchCityLabel, searchTerm, selectedCity])
+
+  useEffect(() => {
     clearMarkers()
   }, [clearMarkers, markerClients.length])
 
@@ -1134,7 +1147,13 @@ export default function Maps() {
                 type="text"
                 placeholder={t.maps.searchPlaceholder}
                 value={searchTerm}
-                onChange={event => setSearchTerm(event.target.value)}
+                onChange={event => {
+                  if (cityDetailMode) {
+                    setCityDetailMode(false)
+                    setSelectedCity('')
+                  }
+                  setSearchTerm(event.target.value)
+                }}
                 className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -1587,7 +1606,13 @@ export default function Maps() {
                     type="text"
                     placeholder="Buscar por nombre, teléfono, ciudad…"
                     value={searchTerm}
-                    onChange={event => setSearchTerm(event.target.value)}
+                    onChange={event => {
+                      if (cityDetailMode) {
+                        setCityDetailMode(false)
+                        setSelectedCity('')
+                      }
+                      setSearchTerm(event.target.value)
+                    }}
                     onFocus={() => setSheetOpen(true)}
                     className="h-[52px] w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
                   />
