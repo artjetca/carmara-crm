@@ -31,7 +31,7 @@ export const createCasmaraMarkerIcon = ({
 
   return L.divIcon({
     className: 'casmara-marker-icon',
-    html: `<div class="casmara-marker ${stateClasses}" aria-hidden="true"><div class="casmara-marker__pin"><img src="/assets/casmara-marker-symbol.png" alt="" class="casmara-marker__symbol" /></div></div>`,
+    html: `<div class="casmara-marker ${stateClasses}" aria-hidden="true"><div class="casmara-marker__pin"><img src="/assets/casmara-map-pin.png" alt="" class="casmara-marker__image" /></div></div>`,
     iconSize: [width, height],
     iconAnchor: [width / 2, height],
     popupAnchor: [0, -height],
