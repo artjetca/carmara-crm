@@ -129,7 +129,7 @@ test('validateAndFixClientCoordinates auto-corrects swapped latitude and longitu
   assert.match(audit.geocodeReason, /invertid/i)
 })
 
-test('validateAndFixClientCoordinates falls back to approximate city center for incomplete addresses', async () => {
+test('validateAndFixClientCoordinates sends incomplete addresses to manual review without a city marker', async () => {
   const customer = makeCustomer({
     address: 'Huelva',
     city: 'Huelva',
@@ -142,8 +142,8 @@ test('validateAndFixClientCoordinates falls back to approximate city center for 
 
   assert.equal(audit.geocodeStatus, 'approximate')
   assert.equal(audit.hasExactCoords, false)
-  assert.ok(audit.markerCoords)
-  assert.match(audit.geocodeReason, /aproximada/i)
+  assert.equal(audit.markerCoords, null)
+  assert.match(audit.geocodeReason, /aproximad/i)
 })
 
 test('validateAndFixClientCoordinates rejects sea-suspect geocoding results instead of plotting them', async () => {

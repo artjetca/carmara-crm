@@ -3,12 +3,11 @@ import assert from 'node:assert/strict'
 
 import { mapProspectScrapeErrorMessage } from './prospectScrapeService'
 
-test('mapProspectScrapeErrorMessage expands missing key guidance', () => {
-  const message = mapProspectScrapeErrorMessage('Google Maps API key not configured')
+test('mapProspectScrapeErrorMessage explains unavailable OSM provider', () => {
+  const message = mapProspectScrapeErrorMessage('El proveedor de prospectos OSM no está habilitado.')
 
-  assert.match(message, /API key no configurada/i)
-  assert.match(message, /GOOGLE_PLACES_API_KEY/)
-  assert.match(message, /Netlify/i)
+  assert.match(message, /OpenStreetMap/i)
+  assert.match(message, /deshabilitada/i)
 })
 
 test('mapProspectScrapeErrorMessage passes through unrelated errors', () => {
@@ -26,20 +25,11 @@ test('mapProspectScrapeErrorMessage explains missing scrape_jobs table', () => {
   assert.match(message, /migration/i)
 })
 
-test('mapProspectScrapeErrorMessage explains Google request failures', () => {
-  const message = mapProspectScrapeErrorMessage('Google Places request failed: REQUEST_DENIED')
+test('mapProspectScrapeErrorMessage explains Overpass request failures', () => {
+  const message = mapProspectScrapeErrorMessage('Overpass HTTP 429')
 
-  assert.match(message, /Google Places/i)
-  assert.match(message, /REQUEST_DENIED/i)
-})
-
-test('mapProspectScrapeErrorMessage explains referer-restricted Google key failures', () => {
-  const message = mapProspectScrapeErrorMessage(
-    'Google Places request failed. API keys with referer restrictions cannot be used with this API.'
-  )
-
-  assert.match(message, /server/i)
-  assert.match(message, /GOOGLE_PLACES_API_KEY/i)
+  assert.match(message, /OpenStreetMap/i)
+  assert.match(message, /429/i)
 })
 
 test('mapProspectScrapeErrorMessage explains scrape_jobs insert failures', () => {

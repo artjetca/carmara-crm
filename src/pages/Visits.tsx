@@ -44,6 +44,7 @@ import {
 // Note: remember to `npm i leaflet @types/leaflet` in the project
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { mapTileProvider } from '../services/mapProviders'
 
 interface RouteCustomer extends Customer {
   order: number
@@ -315,10 +316,9 @@ export default function Visits() {
     }
   }
   const t = translations
-  // Google Maps Embed API key for frontend map visualization
-  const mapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-  // Map provider switch: 'google' or 'leaflet' (default to 'leaflet')
-  const mapProvider: 'google' | 'leaflet' = (import.meta as any).env?.VITE_MAP_PROVIDER === 'google' ? 'google' : 'leaflet'
+  // Phase 1 intentionally keeps the route renderer on Leaflet only.
+  const mapsApiKey = ''
+  const mapProvider = 'leaflet' as 'google' | 'leaflet'
   // Per-user draft key for autosave of route planning
   const draftKey = useMemo(() => (user?.id ? `routeDraft:${user.id}` : 'routeDraft'), [user?.id])
   if (mapProvider === 'google') {
@@ -705,10 +705,9 @@ export default function Visits() {
           })
           leafletMapInstanceRef.current = map
 
-          // Basic OSM tile layer (note: for production consider a tile provider with SLA)
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19,
+          L.tileLayer(mapTileProvider.url, {
+            attribution: mapTileProvider.attribution,
+            maxZoom: mapTileProvider.maxZoom,
           }).addTo(map)
           // Fix occasional blank tiles by invalidating size after mount
           try { setTimeout(() => map.invalidateSize(), 0) } catch {}

@@ -31,7 +31,11 @@ const makeAudit = (overrides: Partial<ClientCoordinateAudit>): ClientCoordinateA
   originalLng: overrides.originalLng ?? null,
   correctedLat: overrides.correctedLat ?? null,
   correctedLng: overrides.correctedLng ?? null,
-  markerCoords: overrides.markerCoords ?? null,
+  markerCoords:
+    overrides.markerCoords ??
+    (Number.isFinite(overrides.correctedLat) && Number.isFinite(overrides.correctedLng)
+      ? { lat: overrides.correctedLat as number, lng: overrides.correctedLng as number }
+      : null),
   hasExactCoords: overrides.hasExactCoords ?? true,
   usesApproximateMarker: overrides.usesApproximateMarker ?? false,
   normalizedAddress: overrides.normalizedAddress ?? 'Calle Larga 1, Jerez de la Frontera, Cádiz, Spain',

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { translations } from '../lib/translations'
@@ -44,6 +44,24 @@ interface CustomerData {
   notes?: string
 }
 
+interface GeocodingStatus {
+  providers: {
+    map: string
+    geocoding: string
+    routing: string
+    prospect: string
+    ai: string
+  }
+  geocoding: Record<string, number>
+  usage: {
+    today: number
+    month: number
+    errorRate: number
+    lastSuccessAt: string | null
+    lastFailureAt: string | null
+  }
+}
+
 export default function DataImport() {
   const { user } = useAuth()
   const { setCurrentPage, setImportHighlightSince } = useStore()
@@ -56,8 +74,47 @@ export default function DataImport() {
   const [deleting, setDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingClo, setDeletingClo] = useState(false)
+  const [geocodingStatus, setGeocodingStatus] = useState<GeocodingStatus | null>(null)
+  const [geocodingBusy, setGeocodingBusy] = useState(false)
+  const [geocodingMessage, setGeocodingMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const t = translations
+
+  const loadGeocodingStatus = async () => {
+    try {
+      const response = await fetch('/api/geocode')
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo cargar el estado')
+      setGeocodingStatus(result.data)
+    } catch (error) {
+      setGeocodingMessage((error as Error).message)
+    }
+  }
+
+  useEffect(() => {
+    loadGeocodingStatus().catch(console.error)
+  }, [])
+
+  const processGeocodingBatch = async () => {
+    if (geocodingBusy) return
+    setGeocodingBusy(true)
+    setGeocodingMessage(null)
+    try {
+      const response = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'batch', limit: 10 }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo procesar la geolocalización')
+      setGeocodingMessage(`${result.data.processed} clientes procesados. La siguiente tanda respeta el límite del proveedor.`)
+      await loadGeocodingStatus()
+    } catch (error) {
+      setGeocodingMessage((error as Error).message)
+    } finally {
+      setGeocodingBusy(false)
+    }
+  }
 
   // 规范化城市，仅允许 Cádiz 和 Huelva，兼容大小写与重音
   const normalizeCity = (input?: string): string | null => {
@@ -741,6 +798,51 @@ export default function DataImport() {
           </div>
         </div>
       </div>
+
+      <section className="border border-gray-200 bg-white shadow-sm rounded-xl">
+        <div className="p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Geolocalización</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Procesamiento de direcciones en servidor, una solicitud cada 1,1 segundos como máximo.
+              </p>
+            </div>
+            <button
+              onClick={processGeocodingBatch}
+              disabled={geocodingBusy || (geocodingStatus?.geocoding.pending || 0) === 0}
+              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {geocodingBusy ? 'Procesando...' : 'Procesar 10 direcciones'}
+            </button>
+          </div>
+
+          {geocodingStatus && (
+            <div className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                ['Pendiente', geocodingStatus.geocoding.pending || 0, 'text-slate-700'],
+                ['En proceso', geocodingStatus.geocoding.processing || 0, 'text-blue-700'],
+                ['Correcta', geocodingStatus.geocoding.success || 0, 'text-green-700'],
+                ['Baja confianza', geocodingStatus.geocoding.low_confidence || 0, 'text-amber-700'],
+                ['Fallida', geocodingStatus.geocoding.failed || 0, 'text-red-700'],
+                ['Revisión manual', geocodingStatus.geocoding.manual_review || 0, 'text-violet-700'],
+              ].map(([label, count, color]) => (
+                <div key={label as string} className="rounded-lg border border-gray-200 px-3 py-2">
+                  <p className="text-xs text-gray-500">{label}</p>
+                  <p className={`mt-1 text-lg font-semibold ${color}`}>{count}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {geocodingStatus && (
+            <p className="mt-4 text-xs text-gray-500">
+              Provider: {geocodingStatus.providers.geocoding} · Hoy: {geocodingStatus.usage.today} solicitudes · Mes: {geocodingStatus.usage.month} · Errores: {(geocodingStatus.usage.errorRate * 100).toFixed(0)}%
+            </p>
+          )}
+          {geocodingMessage && <p className="mt-3 text-sm text-gray-600">{geocodingMessage}</p>}
+        </div>
+      </section>
 
       {/* Área de carga */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">

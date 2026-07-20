@@ -66,6 +66,7 @@ import {
   type ResolvedMapClient,
 } from './mapsPageUtils'
 import { PROVINCE_CENTERS } from '../utils/mapCentroids'
+import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../services/mapProviders'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 
@@ -453,56 +454,6 @@ export default function Maps() {
     [coordsById, geocodeCustomerPrecise]
   )
 
-  useEffect(() => {
-    let cancelled = false
-
-    const run = async () => {
-      if (!selectedProvince) return
-      if (isGeocodingRef.current) return
-      isGeocodingRef.current = true
-
-      try {
-        const customersToGeocode = filteredCustomers.filter(customer => {
-          const audit = getCoordinateAuditForClient(customer, coordsById[customer.id])
-          const attemptKey = `${customer.id}:${audit.addressSignature}`
-          return (
-            audit.geocodeStatus !== 'valid' &&
-            audit.addressCompleteness !== 'minimal' &&
-            !geocodeAttemptedRef.current.has(attemptKey)
-          )
-        })
-
-        if (customersToGeocode.length === 0) return
-
-        const batchEntries: CoordinateCache = {}
-
-        for (const customer of customersToGeocode) {
-          if (cancelled) return
-
-          const existing = getCoordinateAuditForClient(customer, coordsById[customer.id])
-          const attemptKey = `${customer.id}:${existing.addressSignature}`
-          geocodeAttemptedRef.current.add(attemptKey)
-
-          const audit = await ensureCustomerCoordinates(customer)
-          batchEntries[customer.id] = audit
-          await new Promise(resolve => setTimeout(resolve, 150))
-        }
-
-        if (!cancelled && Object.keys(batchEntries).length > 0) {
-          persistCoordinateCache(batchEntries)
-        }
-      } finally {
-        isGeocodingRef.current = false
-      }
-    }
-
-    run().catch(error => console.error('[GEOCODE_BATCH] Error:', error))
-
-    return () => {
-      cancelled = true
-    }
-  }, [coordsById, ensureCustomerCoordinates, filteredCustomers, persistCoordinateCache, selectedProvince])
-
   const resolvedCustomersBase = useMemo(() => {
     return filteredCustomers.map(customer => {
       const audit = getCoordinateAuditForClient(customer, coordsById[customer.id])
@@ -600,15 +551,17 @@ export default function Maps() {
   const buildMapsSearchUrl = useCallback((client: ResolvedMapClient) => {
     const coords = getClientRenderableCoordinates(client)
     if (coords) {
-      return `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`
+      return externalNavigationProvider.openStreetMap(coords.lat, coords.lng)
     }
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`
+    return `https://www.openstreetmap.org/search?query=${encodeURIComponent(client.address)}`
   }, [])
 
   const buildMapsDirectionsUrl = useCallback((client: ResolvedMapClient) => {
     const coords = getClientRenderableCoordinates(client)
-    const destination = coords ? `${coords.lat},${coords.lng}` : client.address
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+    if (!coords) return `https://www.openstreetmap.org/search?query=${encodeURIComponent(client.address)}`
+    return isAppleDevice()
+      ? externalNavigationProvider.appleMaps(coords.lat, coords.lng)
+      : externalNavigationProvider.googleMaps(coords.lat, coords.lng)
   }, [])
 
   const invalidateMapSoon = useCallback(() => {
@@ -1121,51 +1074,6 @@ export default function Maps() {
           </div>
         </div>
 
-        {/* Coordinate Repair Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={repairAllSuspiciousCoordinates}
-            disabled={repairingCoordinates}
-            className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {repairingCoordinates ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                <span>Reparando...</span>
-              </>
-            ) : (
-              <>
-                <LocateFixed className="h-4 w-4" />
-                <span>Reparar coordenadas</span>
-              </>
-            )}
-          </button>
-          <button
-            onClick={preciseLocate}
-            disabled={locatingAllPrecise}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {locatingAllPrecise ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                <span>Geocodificando...</span>
-              </>
-            ) : (
-              <>
-                <MapPin className="h-4 w-4" />
-                <span>Geocodificar todos</span>
-              </>
-            )}
-          </button>
-          {repairStats && (
-            <div className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm">
-              <span className="text-green-600 font-medium">{repairStats.repaired} reparados</span>
-              {repairStats.failed > 0 && (
-                <span className="text-red-600">· {repairStats.failed} fallidos</span>
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
@@ -1404,21 +1312,6 @@ export default function Maps() {
                   <span className="text-xs text-gray-700">{fittingAll ? 'Ajustando…' : 'Ver todos'}</span>
                 </button>
                 <button
-                  onClick={preciseLocate}
-                  title="Localización precisa"
-                  disabled={locatingAllPrecise}
-                  aria-busy={locatingAllPrecise}
-                  className={`inline-flex items-center space-x-1 rounded-md border px-2 py-1.5 shadow transition-colors sm:space-x-2 sm:px-3 sm:py-2 ${
-                    locatingAllPrecise
-                      ? 'cursor-not-allowed bg-gray-100'
-                      : 'bg-white/90 backdrop-blur hover:bg-white'
-                  }`}
-                >
-                  <span className="text-xs text-gray-700">
-                    {locatingAllPrecise ? 'Geocodificando…' : 'Localización precisa'}
-                  </span>
-                </button>
-                <button
                   onClick={locateMe}
                   title="Mi ubicación"
                   className="inline-flex items-center space-x-1 rounded-md border bg-white/90 px-2 py-1.5 shadow backdrop-blur hover:bg-white sm:px-3 sm:py-2"
@@ -1435,7 +1328,11 @@ export default function Maps() {
                   filterProvince={selectedProvince}
                   filterCity={selectedCity}
                 />
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <TileLayer
+                  url={mapTileProvider.url}
+                  attribution={mapTileProvider.attribution}
+                  maxZoom={mapTileProvider.maxZoom}
+                />
 
                 <MarkerClusterGroup
                   iconCreateFunction={createClusterIcon}
@@ -1522,7 +1419,7 @@ export default function Maps() {
                                 onClick={() => window.open(buildMapsSearchUrl(client), '_blank')}
                                 className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs text-indigo-600 transition-colors hover:bg-indigo-100"
                               >
-                                <ExternalLink className="mr-1 h-3 w-3" /> Google Maps
+                                <ExternalLink className="mr-1 h-3 w-3" /> OpenStreetMap
                               </button>
                             </div>
                           </div>

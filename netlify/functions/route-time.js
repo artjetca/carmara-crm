@@ -1,5 +1,6 @@
 const CACHE_TTL_MS = 30 * 60 * 1000
 const routeCache = new Map()
+const { getMapProviderConfig } = require('./_shared/map-providers')
 
 const respond = (statusCode, body) => ({
   statusCode,
@@ -46,8 +47,16 @@ exports.handler = async event => {
       return respond(200, { success: true, data: cached.data })
     }
 
+    const config = getMapProviderConfig()
+    if (config.routingProvider !== 'osrm') {
+      return respond(200, {
+        success: true,
+        data: { durationMinutes: null, distanceKm: null, status: 'unavailable' },
+      })
+    }
+
     const url = new URL(
-      `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}`
+      `${config.osrmBaseUrl}/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}`
     )
     url.searchParams.set('overview', 'false')
     url.searchParams.set('alternatives', 'false')

@@ -31,6 +31,13 @@ export interface Customer {
   latitude?: number
   longitude?: number
   coordinates?: string
+  normalized_address?: string
+  geocoding_status?: 'pending' | 'processing' | 'success' | 'low_confidence' | 'failed' | 'manual_review' | 'manual'
+  geocoding_provider?: string
+  geocoding_confidence?: number
+  geocoding_attempts?: number
+  geocoded_at?: string
+  geocoding_error?: string
   distance?: number
   business_hours?: string
   contrato?: string

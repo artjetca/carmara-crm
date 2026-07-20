@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js')
+const { getMapProviderConfig } = require('./_shared/map-providers')
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -24,27 +25,10 @@ const getSupabaseConfig = () => {
   }
 }
 
-const getGoogleMapsConfig = () => {
-  const key =
-    process.env.GOOGLE_PLACES_API_KEY ||
-    process.env.GOOGLE_MAPS_SERVER_API_KEY ||
-    process.env.GOOGLE_MAPS_API_KEY ||
-    process.env.VITE_GOOGLE_MAPS_API_KEY ||
-    ''
-  const source = process.env.GOOGLE_PLACES_API_KEY
-    ? 'GOOGLE_PLACES_API_KEY'
-    : process.env.GOOGLE_MAPS_SERVER_API_KEY
-      ? 'GOOGLE_MAPS_SERVER_API_KEY'
-      : process.env.GOOGLE_MAPS_API_KEY
-        ? 'GOOGLE_MAPS_API_KEY'
-        : (process.env.VITE_GOOGLE_MAPS_API_KEY ? 'VITE_GOOGLE_MAPS_API_KEY' : 'none')
-
-  return {
-    key,
-    keyExists: Boolean(key),
-    keySource: source,
-  }
-}
+const getProspectProviderConfig = () => ({
+  available: getMapProviderConfig().prospectProvider === 'osm',
+  source: getMapProviderConfig().prospectProvider,
+})
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -78,9 +62,9 @@ const buildStageErrorMessage = (stage, details) => {
     case 'prospects_insert':
       return `prospects insert failed.${suffix}`.trim()
     case 'google_places':
-      return `Google Places request failed.${suffix}`.trim()
+      return `OpenStreetMap prospect search failed.${suffix}`.trim()
     case 'google_places_empty':
-      return `Google Places returned no results.${suffix}`.trim()
+      return `OpenStreetMap returned no results.${suffix}`.trim()
     default:
       return `Unexpected server error.${suffix}`.trim()
   }
@@ -564,96 +548,44 @@ const loadCustomersForDedupe = async admin => {
   return { data: fallback.data || [], usedMobilePhone: false, error: null }
 }
 
-const fetchTextSearch = async query => {
-  const { key } = getGoogleMapsConfig()
-  const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json')
-  url.searchParams.set('query', query)
-  url.searchParams.set('language', 'es')
-  url.searchParams.set('region', 'es')
-  url.searchParams.set('key', key)
-
-  logStep('calling Google Places Text Search', {
-    requestUrl: maskGoogleUrl(url.toString()),
-    query,
+const fetchTextSearch = async (query, payload) => {
+  const areaName = String(payload.city || payload.province || '').replace(/"/g, '')
+  const keyword = String(payload.keyword || 'estética').toLowerCase()
+  const tagPattern = /peluquer|hair/i.test(keyword)
+    ? 'hairdresser|beauty'
+    : /farmac/i.test(keyword)
+      ? 'cosmetics|beauty|pharmacy'
+      : 'beauty|cosmetics|hairdresser|spa'
+  const overpassQuery = `[out:json][timeout:25];area["name"="${areaName}"]["boundary"="administrative"]->.area;(nwr["shop"~"${tagPattern}",i](area.area);nwr["leisure"="spa"](area.area););out center 50;`
+  const endpoint = process.env.OVERPASS_BASE_URL || 'https://overpass-api.de/api/interpreter'
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'CASMARA-CRM/1.0' },
+    body: new URLSearchParams({ data: overpassQuery }).toString(),
   })
-
-  const { ok, status, json } = await fetchJson(url.toString())
-
-  logStep('Google Places Text Search response', {
-    query,
-    httpStatus: status,
-    apiStatus: json?.status || 'UNKNOWN',
-    errorMessage: json?.error_message || null,
-    parsedResultsCount: Array.isArray(json?.results) ? json.results.length : 0,
-  })
-
-  if (!ok) {
+  const json = await response.json().catch(() => ({}))
+  if (!response.ok || !Array.isArray(json.elements)) {
+    return { ok: false, results: [], error: `Overpass HTTP ${response.status}` }
+  }
+  const results = json.elements.map(element => {
+    const lat = Number(element.lat ?? element.center?.lat)
+    const lng = Number(element.lon ?? element.center?.lon)
+    const tags = element.tags || {}
     return {
-      ok: false,
-      results: [],
-      error: json?.error_message || json?.status || `HTTP ${json?.status || 'error'}`,
+      place_id: `osm:${element.type}:${element.id}`,
+      name: tags.name || '',
+      formatted_address: [tags['addr:street'], tags['addr:housenumber'], tags['addr:postcode'], tags['addr:city']].filter(Boolean).join(', '),
+      formatted_phone_number: tags.phone || tags['contact:phone'] || null,
+      website: tags.website || tags['contact:website'] || null,
+      geometry: { location: { lat, lng } },
+      osm_category: tags.shop || tags.leisure || null,
     }
-  }
-
-  if (json?.status === 'ZERO_RESULTS') {
-    return { ok: true, results: [] }
-  }
-
-  if (json?.status && json.status !== 'OK') {
-    return {
-      ok: false,
-      results: [],
-      error: json.error_message || json.status,
-    }
-  }
-
-  if (!Array.isArray(json?.results)) {
-    return {
-      ok: false,
-      results: [],
-      error: 'Invalid Google Places response format',
-    }
-  }
-
-  return { ok: true, results: json.results }
+  }).filter(item => item.name && Number.isFinite(item.geometry.location.lat) && Number.isFinite(item.geometry.location.lng))
+  logStep('Overpass prospect search completed', { query, areaName, count: results.length })
+  return { ok: true, results }
 }
 
-const fetchPlaceDetails = async placeId => {
-  const { key } = getGoogleMapsConfig()
-  const url = new URL('https://maps.googleapis.com/maps/api/place/details/json')
-  url.searchParams.set('place_id', placeId)
-  url.searchParams.set(
-    'fields',
-    'name,formatted_phone_number,website,address_components,formatted_address'
-  )
-  url.searchParams.set('language', 'es')
-  url.searchParams.set('key', key)
-
-  logStep('calling Google Places Details', {
-    requestUrl: maskGoogleUrl(url.toString()),
-    placeId,
-  })
-
-  const { ok, status, json } = await fetchJson(url.toString())
-
-  logStep('Google Places Details response', {
-    placeId,
-    httpStatus: status,
-    apiStatus: json?.status || 'UNKNOWN',
-    errorMessage: json?.error_message || null,
-    hasResult: Boolean(json?.result),
-  })
-
-  if (!ok) {
-    return { ok: false, result: null, error: json?.error_message || json?.status || 'HTTP error' }
-  }
-
-  if (json?.status && json.status !== 'OK') {
-    return { ok: false, result: null, error: json.error_message || json.status }
-  }
-
-  return { ok: true, result: json?.result || null, error: null }
-}
+const fetchPlaceDetails = async place => ({ ok: true, result: place, error: null })
 
 const getAddressComponent = (components, type) => {
   const match = (components || []).find(component => Array.isArray(component.types) && component.types.includes(type))
@@ -685,7 +617,7 @@ const normalizePlaceToProspect = (place, payload) => {
     category: String(payload.keyword || '').trim() || 'estética',
     rating: Number.isFinite(place.rating) ? Number(place.rating) : null,
     reviews_count: Number.isFinite(place.user_ratings_total) ? Number(place.user_ratings_total) : null,
-    source: 'google_places',
+    source: 'openstreetmap',
     status: 'nuevo',
     interest: 'alto',
     place_id: place.place_id || null,
@@ -703,12 +635,11 @@ const normalizePlaceToProspect = (place, payload) => {
 }
 
 exports.handler = async event => {
-  const mapsConfig = getGoogleMapsConfig()
+  const prospectConfig = getProspectProviderConfig()
   const supabaseConfig = getSupabaseConfig()
 
   console.info('[prospect-scrape] function started', {
-    keyExists: mapsConfig.keyExists,
-    keySource: mapsConfig.keySource,
+    prospectProvider: prospectConfig.source,
     supabaseUrlExists: supabaseConfig.urlExists,
     supabaseUrlSource: supabaseConfig.urlSource,
     supabaseHost: supabaseConfig.host,
@@ -733,18 +664,16 @@ exports.handler = async event => {
     return respond(200, {
       success: true,
       data: {
-        keyExists: mapsConfig.keyExists,
-        keySource: mapsConfig.keySource,
+        keyExists: prospectConfig.available,
+        keySource: prospectConfig.source,
       },
     })
   }
 
-  if (!mapsConfig.keyExists) {
-    console.warn('[prospect-scrape] Google Maps API key missing. Checked env: GOOGLE_PLACES_API_KEY, GOOGLE_MAPS_SERVER_API_KEY, GOOGLE_MAPS_API_KEY, VITE_GOOGLE_MAPS_API_KEY')
+  if (!prospectConfig.available) {
     return respond(500, {
       success: false,
-      error:
-        'Google Maps API key not configured. Configure GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_SERVER_API_KEY in Netlify environment variables and redeploy the site.',
+      error: 'El proveedor de prospectos OSM no está habilitado.',
     })
   }
 
@@ -816,8 +745,7 @@ exports.handler = async event => {
       })
     }
     console.info('[prospect-scrape] request config', {
-      keyExists: mapsConfig.keyExists,
-      keySource: mapsConfig.keySource,
+      prospectProvider: prospectConfig.source,
       supabaseHost: supabaseConfig.host,
       province: payload.province || null,
       city: payload.city || null,
@@ -940,7 +868,7 @@ exports.handler = async event => {
 
     for (const query of queries) {
       console.info('[prospect-scrape] [1/8] text search starting', { query })
-      const textSearch = await fetchTextSearch(query)
+      const textSearch = await fetchTextSearch(query, payload)
       if (!textSearch.ok) {
         const errorMessage = buildStageErrorMessage('google_places', textSearch.error)
         await admin
@@ -990,7 +918,7 @@ exports.handler = async event => {
     let detailsFailed = 0
     for (const result of candidates) {
       try {
-        const details = await fetchPlaceDetails(result.place_id)
+        const details = await fetchPlaceDetails(result)
         if (!details.ok) {
           detailsFailed += 1
           console.error('[prospect-scrape] details fetch error', {
@@ -999,10 +927,7 @@ exports.handler = async event => {
           })
           continue
         }
-        const normalized = normalizePlaceToProspect(
-          { ...result, ...(details.result || {}) },
-          payload
-        )
+        const normalized = normalizePlaceToProspect({ ...result, ...(details.result || {}) }, payload)
         collected.push(normalized)
       } catch (detailsError) {
         detailsFailed += 1
@@ -1269,7 +1194,7 @@ exports.handler = async event => {
         total_failed: totalFailed,
         finished_at: new Date().toISOString(),
         error_message: totalFound === 0
-          ? `Sin resultados de Google Places para: ${queries.join(', ')}`
+          ? `Sin resultados de OpenStreetMap para: ${queries.join(', ')}`
           : (totalImported === 0 && totalFound > 0)
             ? `${totalFound} encontrados, ${omittedExistingCustomerCount} omitidos por cliente existente y ${internalDuplicateCount} duplicados internos`
             : null,

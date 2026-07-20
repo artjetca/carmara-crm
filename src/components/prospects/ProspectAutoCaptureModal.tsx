@@ -170,7 +170,7 @@ export default function ProspectAutoCaptureModal({
         setError(
           config.keyExists
             ? ''
-            : 'Google Maps API key not configured. Auto captar necesita una server-side key. 請在 Netlify 設定 GOOGLE_PLACES_API_KEY 或 GOOGLE_MAPS_SERVER_API_KEY，並重新部署網站。'
+            : 'El proveedor OpenStreetMap/Overpass no está disponible. Revisa PROSPECT_PROVIDER en Netlify y vuelve a desplegar.'
         )
       } catch (configError) {
         if (cancelled) return
@@ -237,7 +237,7 @@ export default function ProspectAutoCaptureModal({
               try {
                 if (!keyConfigured) {
                   throw new Error(
-                    'Google Maps API key not configured. Auto captar necesita una server-side key. 請在 Netlify 設定 GOOGLE_PLACES_API_KEY 或 GOOGLE_MAPS_SERVER_API_KEY，並重新部署網站。'
+                    'El proveedor OpenStreetMap/Overpass no está disponible. Revisa PROSPECT_PROVIDER en Netlify y vuelve a desplegar.'
                   )
                 }
                 const keywords = form.selectedKeywords.length > 0 
@@ -491,7 +491,7 @@ export default function ProspectAutoCaptureModal({
             <div className="rounded-lg bg-gray-50 p-3 text-sm">
               <div className="text-gray-600 mb-2">
                 {previewQueries.length === 1 
-                  ? 'Se buscarán negocios con Google Places usando la consulta:'
+                  ? 'Se buscarán negocios públicos en OpenStreetMap usando la consulta:'
                   : `Se ejecutarán ${previewQueries.length} búsquedas en lote:`}
               </div>
               <div className="space-y-1 max-h-32 overflow-y-auto">

@@ -257,7 +257,7 @@ test('refreshMapAndSidebarDistances recalculates city and client distances when 
   assert.equal(fromJerez.cities[0]?.nearestDistanceFromUser, 0)
   assert.ok((fromJerez.cities[1]?.nearestDistanceFromUser ?? 0) > 20)
   assert.equal(fromJerez.cities[1]?.clients[2]?.distanceFromUser, null)
-  assert.equal(fromJerez.cities[1]?.clients[2]?.usesApproximateMarker, true)
+  assert.equal(fromJerez.cities[1]?.clients[2]?.usesApproximateMarker, false)
   assert.ok((fromJerez.cities[1]?.clients[0]?.nearestNeighborDistanceInCity ?? 0) > 0)
 
   assert.deepEqual(fromCadiz.cities.map(city => city.city), ['Cádiz', 'Jerez de la Frontera'])

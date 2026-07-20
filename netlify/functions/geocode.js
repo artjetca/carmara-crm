@@ -1,207 +1,259 @@
-const https = require('https');
-const http = require('http');
+const { createClient } = require('@supabase/supabase-js')
+const { getMapProviderConfig } = require('./_shared/map-providers')
 
-const googleApiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
-const nominatimEmail = process.env.NOMINATIM_EMAIL || process.env.VITE_NOMINATIM_EMAIL;
-
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const cache = new Map();
-
-const doFetch = async (targetUrl) => {
-  const targetUrlObj = new URL(targetUrl);
-  return await new Promise((resolve) => {
-    const lib = targetUrlObj.protocol === 'http:' ? http : https;
-    const req = lib.request(
-      targetUrl,
-      {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Casmara-CRM/1.0 (server-proxy)',
-          'Accept': 'application/json',
-          'Accept-Language': 'es,en;q=0.9',
-        },
-      },
-      (resp) => {
-        const status = resp.statusCode || 0;
-        const chunks = [];
-        resp.on('data', (d) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
-        resp.on('end', () => {
-          const body = Buffer.concat(chunks).toString('utf8');
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            json: async () => {
-              try {
-                return JSON.parse(body);
-              } catch {
-                return null;
-              }
-            },
-          });
-        });
-      }
-    );
-    req.on('error', () => {
-      resolve({ ok: false, status: 500, json: async () => null });
-    });
-    req.end();
-  });
-};
-
-const normalizeNominatimResult = (entry) => {
-  if (!entry?.lat || !entry?.lon) return null;
-  return {
-    lat: Number.parseFloat(entry.lat),
-    lng: Number.parseFloat(entry.lon),
-    display_name: entry.display_name,
-    country: entry.address?.country || '',
-    province:
-      entry.address?.state ||
-      entry.address?.province ||
-      entry.address?.county ||
-      '',
-    city:
-      entry.address?.city ||
-      entry.address?.town ||
-      entry.address?.village ||
-      entry.address?.municipality ||
-      '',
-    type: entry.type || '',
-    category: entry.class || '',
-    source: 'nominatim',
-    raw: entry,
-  };
-};
-
-const normalizeGoogleResult = (entry) => {
-  const location = entry?.geometry?.location;
-  if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
-    return null;
-  }
-
-  const addressComponents = Array.isArray(entry.address_components) ? entry.address_components : [];
-  const findComponent = (...types) => {
-    const match = addressComponents.find((component) =>
-      Array.isArray(component.types) && component.types.some((type) => types.includes(type))
-    );
-    return match?.long_name || '';
-  };
-
-  return {
-    lat: Number(location.lat),
-    lng: Number(location.lng),
-    display_name: entry.formatted_address || '',
-    country: findComponent('country'),
-    province: findComponent('administrative_area_level_1', 'administrative_area_level_2'),
-    city: findComponent('locality', 'postal_town', 'administrative_area_level_3'),
-    type: Array.isArray(entry.types) ? entry.types.join(',') : '',
-    category: Array.isArray(entry.types) ? entry.types[0] || '' : '',
-    source: 'google',
-    raw: entry,
-  };
-};
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const memoryCache = new Map()
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 const respond = (statusCode, body) => ({
   statusCode,
   headers: {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   },
   body: JSON.stringify(body),
-});
+})
 
-exports.handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
+const normalizePart = value => String(value || '').trim().replace(/\s+/g, ' ')
+
+const buildNormalizedAddress = customer => {
+  const parts = [
+    normalizePart(customer.address),
+    normalizePart(customer.postal_code),
+    normalizePart(customer.city),
+    normalizePart(customer.province),
+    normalizePart(customer.country) || 'España',
+  ].filter(Boolean)
+
+  return parts.join(', ')
+}
+
+const getConfidence = result => {
+  const importance = Number(result?.importance || 0)
+  const type = String(result?.type || '')
+  const isStreetLevel = /^(house|building|amenity|shop|office|commercial|residential)$/i.test(type)
+  if (isStreetLevel && importance >= 0.25) return { status: 'success', confidence: Math.min(1, importance) }
+  return { status: 'low_confidence', confidence: Math.min(1, importance) }
+}
+
+const searchNominatim = async address => {
+  const config = getMapProviderConfig()
+  const cacheKey = address.toLowerCase()
+  const cached = memoryCache.get(cacheKey)
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.results
+
+  const url = new URL(`${config.nominatimBaseUrl}/search`)
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('q', address)
+  url.searchParams.set('limit', '3')
+  url.searchParams.set('addressdetails', '1')
+  url.searchParams.set('countrycodes', 'es')
+  if (config.nominatimEmail) url.searchParams.set('email', config.nominatimEmail)
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10000)
+  try {
+    const response = await fetch(url, {
       headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        Accept: 'application/json',
+        'User-Agent': config.nominatimUserAgent,
+        Referer: process.env.URL || 'https://casmara-charo.netlify.app',
       },
-      body: '',
-    };
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`Nominatim responded ${response.status}`)
+    const payload = await response.json()
+    const results = Array.isArray(payload)
+      ? payload
+          .map(entry => {
+            const lat = Number(entry.lat)
+            const lng = Number(entry.lon)
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+            return {
+              lat,
+              lng,
+              display_name: entry.display_name || '',
+              source: 'nominatim',
+              type: entry.type || '',
+              category: entry.category || entry.class || '',
+              raw: entry,
+            }
+          })
+          .filter(Boolean)
+      : []
+    memoryCache.set(cacheKey, { createdAt: Date.now(), results })
+    return results
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+const getAdmin = () => {
+  if (!supabaseUrl || !serviceRoleKey) return null
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+}
+
+const logUsage = async (admin, success, errorMessage = null) => {
+  if (!admin) return
+  await admin.from('map_service_usage').insert({
+    provider: 'nominatim',
+    operation: 'geocode',
+    success,
+    error_message: errorMessage,
+  })
+}
+
+const geocodeCustomer = async (admin, customer) => {
+  const normalizedAddress = buildNormalizedAddress(customer)
+  if (!normalizedAddress || normalizedAddress === 'España') {
+    await admin
+      .from('customers')
+      .update({
+        normalized_address: normalizedAddress || null,
+        geocoding_status: 'manual_review',
+        geocoding_error: 'Dirección incompleta',
+        geocoding_attempts: Number(customer.geocoding_attempts || 0) + 1,
+      })
+      .eq('id', customer.id)
+    return { id: customer.id, status: 'manual_review', reason: 'Dirección incompleta' }
   }
 
-  if (event.httpMethod !== 'POST') {
-    return respond(405, { success: false, error: 'Method not allowed' });
-  }
+  const attempts = Number(customer.geocoding_attempts || 0) + 1
+  await admin
+    .from('customers')
+    .update({ geocoding_status: 'processing', geocoding_attempts: attempts, normalized_address: normalizedAddress })
+    .eq('id', customer.id)
 
   try {
-    const { address } = JSON.parse(event.body || '{}');
-
-    if (!address || typeof address !== 'string') {
-      return respond(400, { success: false, error: 'Missing address' });
+    const results = await searchNominatim(normalizedAddress)
+    const first = results[0]
+    if (!first) {
+      const status = attempts >= 3 ? 'manual_review' : 'failed'
+      await admin
+        .from('customers')
+        .update({
+          geocoding_status: status,
+          geocoding_provider: 'nominatim',
+          geocoding_error: 'Sin resultados en Nominatim',
+          geocoded_at: new Date().toISOString(),
+        })
+        .eq('id', customer.id)
+      await logUsage(admin, false, 'Sin resultados en Nominatim')
+      return { id: customer.id, status }
     }
 
-    const cacheKey = String(address).trim().toLowerCase();
-    try {
-      const hit = cache.get(cacheKey);
-      if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
-        return respond(200, {
-          success: true,
-          data: hit.data,
-          results: hit.results,
-        });
-      }
-    } catch {}
-
-    let results = [];
-
-    const nominatimUrl = new URL('https://nominatim.openstreetmap.org/search');
-    nominatimUrl.searchParams.set('format', 'json');
-    nominatimUrl.searchParams.set('q', address);
-    nominatimUrl.searchParams.set('limit', '6');
-    nominatimUrl.searchParams.set('addressdetails', '1');
-    nominatimUrl.searchParams.set('countrycodes', 'es');
-    if (nominatimEmail) nominatimUrl.searchParams.set('email', nominatimEmail);
-
-    const nominatimResp = await doFetch(nominatimUrl.toString());
-    if (nominatimResp.ok) {
-      const nominatimData = await nominatimResp.json();
-      if (Array.isArray(nominatimData)) {
-        results = nominatimData.map(normalizeNominatimResult).filter(Boolean);
-      }
-    }
-
-    if (results.length === 0 && googleApiKey) {
-      try {
-        const googleUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-        googleUrl.searchParams.set('address', address);
-        googleUrl.searchParams.set('key', googleApiKey);
-        googleUrl.searchParams.set('language', 'es');
-        googleUrl.searchParams.set('region', 'es');
-        googleUrl.searchParams.set('components', 'country:ES');
-
-        const googleResp = await doFetch(googleUrl.toString());
-        if (googleResp.ok) {
-          const googleData = await googleResp.json();
-          if (googleData?.status === 'OK' && Array.isArray(googleData.results)) {
-            results = googleData.results
-              .slice(0, 6)
-              .map(normalizeGoogleResult)
-              .filter(Boolean);
-          }
-        }
-      } catch (error) {
-        console.warn('[geocode] Google API fallback failed:', error);
-      }
-    }
-
-    const first = results[0] || null;
-    try {
-      cache.set(cacheKey, { ts: Date.now(), data: first, results });
-    } catch {}
-
-    return respond(200, {
-      success: true,
-      data: first,
-      results,
-    });
+    const confidence = getConfidence(first.raw)
+    await admin
+      .from('customers')
+      .update({
+        latitude: first.lat,
+        longitude: first.lng,
+        coordinates: `${first.lat},${first.lng}`,
+        normalized_address: normalizedAddress,
+        geocoding_status: confidence.status,
+        geocoding_provider: 'nominatim',
+        geocoding_confidence: confidence.confidence,
+        geocoded_at: new Date().toISOString(),
+        geocoding_error: null,
+      })
+      .eq('id', customer.id)
+    await logUsage(admin, true)
+    return { id: customer.id, status: confidence.status, lat: first.lat, lng: first.lng }
   } catch (error) {
-    return respond(500, {
-      success: false,
-      error: error?.message || 'Unexpected server error',
-    });
+    const status = attempts >= 3 ? 'manual_review' : 'failed'
+    const message = error?.message || 'Error inesperado de geocodificación'
+    await admin
+      .from('customers')
+      .update({
+        geocoding_status: status,
+        geocoding_provider: 'nominatim',
+        geocoding_error: message,
+        geocoded_at: new Date().toISOString(),
+      })
+      .eq('id', customer.id)
+    await logUsage(admin, false, message)
+    return { id: customer.id, status, error: message }
   }
-};
+}
+
+const getStatus = async admin => {
+  const config = getMapProviderConfig()
+  const [customers, usage] = await Promise.all([
+    admin.from('customers').select('geocoding_status'),
+    admin.from('map_service_usage').select('success, created_at').gte('created_at', new Date(Date.now() - 31 * 86400000).toISOString()),
+  ])
+  if (customers.error) throw customers.error
+  if (usage.error) throw usage.error
+
+  const counts = (customers.data || []).reduce((all, customer) => {
+    const key = customer.geocoding_status || 'pending'
+    all[key] = (all[key] || 0) + 1
+    return all
+  }, {})
+  const today = new Date().toISOString().slice(0, 10)
+  const requests = usage.data || []
+  const successful = requests.filter(item => item.success)
+
+  return {
+    providers: {
+      map: config.mapProvider,
+      geocoding: config.geocodingProvider,
+      routing: config.routingProvider,
+      prospect: config.prospectProvider,
+      ai: config.aiProvider,
+    },
+    geocoding: counts,
+    usage: {
+      today: requests.filter(item => item.created_at?.slice(0, 10) === today).length,
+      month: requests.length,
+      errorRate: requests.length ? Number(((requests.length - successful.length) / requests.length).toFixed(3)) : 0,
+      cacheHitRate: null,
+      lastSuccessAt: successful[0]?.created_at || null,
+      lastFailureAt: requests.find(item => !item.success)?.created_at || null,
+    },
+  }
+}
+
+exports.handler = async event => {
+  if (event.httpMethod === 'OPTIONS') return respond(200, {})
+  const admin = getAdmin()
+  if (!admin) return respond(500, { success: false, error: 'Server missing map geocoding configuration' })
+
+  try {
+    if (event.httpMethod === 'GET') return respond(200, { success: true, data: await getStatus(admin) })
+    if (event.httpMethod !== 'POST') return respond(405, { success: false, error: 'Method not allowed' })
+
+    const body = JSON.parse(event.body || '{}')
+    if (body.action === 'batch') {
+      const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 25)
+      const { data: pending, error } = await admin
+        .from('customers')
+        .select('id, address, postal_code, city, province, country, geocoding_attempts')
+        .in('geocoding_status', ['pending', 'failed'])
+        .lt('geocoding_attempts', 3)
+        .order('updated_at', { ascending: true })
+        .limit(limit)
+      if (error) throw error
+
+      const results = []
+      for (const customer of pending || []) {
+        results.push(await geocodeCustomer(admin, customer))
+        await new Promise(resolve => setTimeout(resolve, getMapProviderConfig().geocodingIntervalMs))
+      }
+      return respond(200, { success: true, data: { processed: results.length, results } })
+    }
+
+    if (typeof body.address !== 'string' || !body.address.trim()) {
+      return respond(400, { success: false, error: 'Missing address' })
+    }
+    const results = await searchNominatim(body.address.trim())
+    return respond(200, { success: true, data: results[0] || null, results })
+  } catch (error) {
+    return respond(500, { success: false, error: error?.message || 'Unexpected geocoding error' })
+  }
+}

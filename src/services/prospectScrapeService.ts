@@ -4,12 +4,7 @@ const BASE = '/.netlify/functions/prospect-scrape'
 
 export type ProspectAutoCaptureConfig = {
   keyExists: boolean
-  keySource:
-    | 'GOOGLE_PLACES_API_KEY'
-    | 'GOOGLE_MAPS_SERVER_API_KEY'
-    | 'GOOGLE_MAPS_API_KEY'
-    | 'VITE_GOOGLE_MAPS_API_KEY'
-    | 'none'
+  keySource: string
 }
 
 export type ProspectAutoCapturePayload = {
@@ -47,19 +42,16 @@ export function mapProspectScrapeErrorMessage(message?: string) {
     return 'No se pudo iniciar la captación automática.'
   }
 
-  if (/google maps api key not configured/i.test(message)) {
-    return 'API key no configurada. Auto captar necesita una server-side key de Google Places. Configura GOOGLE_PLACES_API_KEY o GOOGLE_MAPS_SERVER_API_KEY en Netlify y vuelve a desplegar. 不要使用只有 referer 限制的瀏覽器 key。'
+  if (/proveedor de prospectos osm no está habilitado/i.test(message)) {
+    return 'La captación automática usa OpenStreetMap/Overpass y está deshabilitada en la configuración del servidor.'
   }
 
   if (/scrape_jobs/i.test(message) && /schema cache/i.test(message)) {
     return 'La tabla scrape_jobs no está disponible en la schema cache de Supabase. Falta aplicar o refrescar la migration del sistema de captación automática. Revisa la migration de scrape_jobs y vuelve a desplegar.'
   }
 
-  if (/Google Places request failed/i.test(message)) {
-    if (/referer restrictions/i.test(message)) {
-      return 'Error de Google Places. La key actual tiene restricciones de referer y no puede usarse desde una Netlify Function. Configura una server-side key sin restricciones de referer en GOOGLE_PLACES_API_KEY o GOOGLE_MAPS_SERVER_API_KEY y vuelve a desplegar.'
-    }
-    return `Error de Google Places. ${message}`
+  if (/Overpass HTTP/i.test(message)) {
+    return `El servicio público de OpenStreetMap no respondió. Puedes volver a intentarlo más tarde. ${message}`
   }
 
   if (/scrape_jobs insert failed/i.test(message)) {
