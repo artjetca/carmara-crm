@@ -980,14 +980,17 @@ export const getCoordinateAuditForClient = (
 
   const original = validateOriginalCoordinates(client)
   if (original?.ok) {
+    const approximate = client.geocoding_status === 'low_confidence'
     return buildAudit(client, {
-      geocodeStatus: 'valid',
-      geocodeReason: original.reason,
+      geocodeStatus: approximate ? 'approximate' : 'valid',
+      geocodeReason: approximate
+        ? 'Cliente aproximado. Dirección pendiente de validación.'
+        : original.reason,
       correctedLat: original.coords.lat,
       correctedLng: original.coords.lng,
       markerCoords: original.coords,
-      hasExactCoords: true,
-      usesApproximateMarker: false,
+      hasExactCoords: !approximate,
+      usesApproximateMarker: approximate,
       source: original.source,
     })
   }

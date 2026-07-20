@@ -1770,6 +1770,11 @@ export default function Maps() {
                                 sin mapa
                               </span>
                             )}
+                            {client.geocodeStatus === 'approximate' && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
+                                aproximado
+                              </span>
+                            )}
                           </div>
                         </button>
                       ))
