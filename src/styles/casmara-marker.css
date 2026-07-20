@@ -1,15 +1,38 @@
-.casmara-marker-icon {
-  background: transparent;
+.leaflet-container .leaflet-marker-icon.casmara-marker-icon,
+.leaflet-container .leaflet-div-icon.casmara-marker-icon {
+  width: 38px !important;
+  min-width: 38px !important;
+  max-width: 38px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  overflow: visible;
   border: 0;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1;
+  transform-origin: center bottom;
 }
 
-.casmara-marker {
+.leaflet-container .casmara-marker {
   width: 38px;
   height: 48px;
   position: relative;
+  min-width: 38px;
+  min-height: 48px;
+  max-width: 38px;
+  max-height: 48px;
+  overflow: visible;
+  box-sizing: border-box;
 }
 
-.casmara-marker__pin {
+.leaflet-container .casmara-marker *,
+.leaflet-container .casmara-marker *::before,
+.leaflet-container .casmara-marker *::after {
+  box-sizing: border-box;
+}
+
+.leaflet-container .casmara-marker__pin {
   position: relative;
   display: flex;
   height: 38px;
@@ -23,8 +46,8 @@
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
-.casmara-marker__pin::before,
-.casmara-marker__pin::after {
+.leaflet-container .casmara-marker__pin::before,
+.leaflet-container .casmara-marker__pin::after {
   position: absolute;
   bottom: -11px;
   left: 8px;
@@ -34,7 +57,7 @@
   border-top: 14px solid #ffffff;
 }
 
-.casmara-marker__pin::after {
+.leaflet-container .casmara-marker__pin::after {
   bottom: -7px;
   left: 10px;
   border-right-width: 8px;
@@ -43,12 +66,14 @@
   border-top-color: #123f6d;
 }
 
-.casmara-marker__logo {
+.leaflet-container .casmara-marker__center {
   position: relative;
   z-index: 1;
-  width: 26px;
-  height: auto;
-  filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.24));
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  border-radius: 9999px;
+  background: #60a5fa;
 }
 
 .casmara-marker--approximate .casmara-marker__pin {
@@ -93,25 +118,35 @@
 }
 
 @media (max-width: 767px) {
-  .casmara-marker {
-    width: 36px;
-    height: 46px;
+  .leaflet-container .leaflet-marker-icon.casmara-marker-icon,
+  .leaflet-container .leaflet-div-icon.casmara-marker-icon {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    max-height: 46px !important;
   }
 
-  .casmara-marker__pin {
+  .leaflet-container .casmara-marker {
+    width: 36px;
+    height: 46px;
+    min-width: 36px;
+    min-height: 46px;
+    max-width: 36px;
+    max-height: 46px;
+  }
+
+  .leaflet-container .casmara-marker__pin {
     width: 36px;
     height: 36px;
   }
 
-  .casmara-marker__pin::before {
+  .leaflet-container .casmara-marker__pin::before {
     left: 8px;
   }
 
-  .casmara-marker__pin::after {
+  .leaflet-container .casmara-marker__pin::after {
     left: 10px;
-  }
-
-  .casmara-marker__logo {
-    width: 24px;
   }
 }
