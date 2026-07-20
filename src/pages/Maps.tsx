@@ -607,6 +607,12 @@ export default function Maps() {
   }, [])
 
   const markerClients = useMemo(() => renderAllMarkers(resolvedCustomers), [renderAllMarkers, resolvedCustomers])
+  const unmappedClientsCount = resolvedCustomers.length - markerClients.length
+  const searchCityLabel = useMemo(() => {
+    if (!searchActive || resolvedCustomers.length === 0) return null
+    const cities = Array.from(new Set(resolvedCustomers.map(customer => customer.city).filter(Boolean)))
+    return cities.length === 1 ? cities[0] : null
+  }, [resolvedCustomers, searchActive])
 
   useEffect(() => {
     clearMarkers()
@@ -1683,7 +1689,7 @@ export default function Maps() {
                     className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-5 py-3 text-sm font-medium text-gray-800 shadow-xl backdrop-blur-md transition active:scale-95"
                   >
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
-                    <span>{searchActive ? `${resolvedCustomers.length} encontrados · ${markerClients.length} en el mapa` : `${markerClients.length} en mapa · ${resolvedCustomers.length} clientes`}</span>
+                    <span>{searchActive ? `${resolvedCustomers.length} clientes · ${markerClients.length} en el mapa · ${unmappedClientsCount} sin localizar` : `${markerClients.length} en mapa · ${resolvedCustomers.length} clientes`}</span>
                   </button>
                 </div>
               ) : (
@@ -1697,7 +1703,9 @@ export default function Maps() {
                   <div className="flex items-center justify-between px-4 pb-2">
                     <div className="text-sm font-semibold text-gray-900">
                       {searchActive
-                        ? 'Resultados de búsqueda'
+                        ? searchCityLabel
+                          ? `${resolvedCustomers.length} clientes en ${searchCityLabel}`
+                          : 'Resultados de búsqueda'
                         : areaClients
                           ? `${areaClients.length} en esta zona`
                           : `${resolvedCustomers.length} clientes`}

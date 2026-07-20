@@ -19,9 +19,18 @@ const respond = (statusCode, body) => ({
 
 const normalizePart = value => String(value || '').trim().replace(/\s+/g, ' ')
 
+const normalizeStreetAddress = value => normalizePart(value)
+  .replace(/\bPKAZA\b/gi, 'PLAZA')
+  .replace(/\bPZA\.?\b/gi, 'PLAZA')
+  .replace(/\bC\s*\/\s*/gi, 'CALLE ')
+  .replace(/\bAV\.?\s+/gi, 'AVENIDA ')
+  .replace(/\b(?:N[º°]|Nº|N°|NO\.)\s*/gi, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+
 const buildNormalizedAddress = customer => {
   const parts = [
-    normalizePart(customer.address),
+    normalizeStreetAddress(customer.address),
     normalizePart(customer.postal_code),
     normalizePart(customer.city),
     normalizePart(customer.province),
@@ -181,10 +190,16 @@ const geocodeCustomer = async (admin, customer) => {
   }
 }
 
-const getStatus = async admin => {
+const getStatus = async (admin, filters = {}) => {
   const config = getMapProviderConfig()
+  let scopedCustomers = admin
+    .from('customers')
+    .select('latitude, longitude, geocoding_status')
+  if (filters.province) scopedCustomers = scopedCustomers.eq('province', filters.province)
+  if (filters.city) scopedCustomers = scopedCustomers.eq('city', filters.city)
+
   const [customers, usage] = await Promise.all([
-    admin.from('customers').select('geocoding_status'),
+    scopedCustomers,
     admin.from('map_service_usage').select('success, created_at').gte('created_at', new Date(Date.now() - 31 * 86400000).toISOString()),
   ])
   if (customers.error) throw customers.error
@@ -198,6 +213,12 @@ const getStatus = async admin => {
   const today = new Date().toISOString().slice(0, 10)
   const requests = usage.data || []
   const successful = requests.filter(item => item.success)
+  const scopeRows = customers.data || []
+  const mapped = scopeRows.filter(customer => Number.isFinite(customer.latitude) && Number.isFinite(customer.longitude)).length
+  const pending = scopeRows.filter(customer =>
+    (!Number.isFinite(customer.latitude) || !Number.isFinite(customer.longitude)) &&
+    ['pending', 'failed', 'manual_review'].includes(customer.geocoding_status || 'pending')
+  ).length
 
   return {
     providers: {
@@ -208,6 +229,15 @@ const getStatus = async admin => {
       ai: config.aiProvider,
     },
     geocoding: counts,
+    scope: {
+      total: scopeRows.length,
+      mapped,
+      pending,
+      filters: {
+        province: filters.province || null,
+        city: filters.city || null,
+      },
+    },
     usage: {
       today: requests.filter(item => item.created_at?.slice(0, 10) === today).length,
       month: requests.length,
@@ -225,19 +255,31 @@ exports.handler = async event => {
   if (!admin) return respond(500, { success: false, error: 'Server missing map geocoding configuration' })
 
   try {
-    if (event.httpMethod === 'GET') return respond(200, { success: true, data: await getStatus(admin) })
+    const filters = {
+      province: String(event.queryStringParameters?.province || '').trim(),
+      city: String(event.queryStringParameters?.city || '').trim(),
+    }
+    if (event.httpMethod === 'GET') return respond(200, { success: true, data: await getStatus(admin, filters) })
     if (event.httpMethod !== 'POST') return respond(405, { success: false, error: 'Method not allowed' })
 
     const body = JSON.parse(event.body || '{}')
     if (body.action === 'batch') {
       const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 25)
-      const { data: pending, error } = await admin
+      const batchFilters = {
+        province: String(body.province || '').trim(),
+        city: String(body.city || '').trim(),
+      }
+      let pendingQuery = admin
         .from('customers')
-        .select('id, address, postal_code, city, province, country, geocoding_attempts')
-        .in('geocoding_status', ['pending', 'failed'])
-        .lt('geocoding_attempts', 3)
+        .select('id, address, postal_code, city, province, geocoding_attempts')
+        .in('geocoding_status', ['pending', 'failed', 'manual_review'])
+        .or('latitude.is.null,longitude.is.null')
+        .or('geocoding_attempts.lt.3,geocoding_status.eq.manual_review')
         .order('updated_at', { ascending: true })
         .limit(limit)
+      if (batchFilters.province) pendingQuery = pendingQuery.eq('province', batchFilters.province)
+      if (batchFilters.city) pendingQuery = pendingQuery.eq('city', batchFilters.city)
+      const { data: pending, error } = await pendingQuery
       if (error) throw error
 
       const results = []
@@ -245,7 +287,14 @@ exports.handler = async event => {
         results.push(await geocodeCustomer(admin, customer))
         await new Promise(resolve => setTimeout(resolve, getMapProviderConfig().geocodingIntervalMs))
       }
-      return respond(200, { success: true, data: { processed: results.length, results } })
+      return respond(200, {
+        success: true,
+        data: {
+          processed: results.length,
+          results,
+          status: await getStatus(admin, batchFilters),
+        },
+      })
     }
 
     if (typeof body.address !== 'string' || !body.address.trim()) {

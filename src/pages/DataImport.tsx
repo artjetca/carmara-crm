@@ -53,6 +53,15 @@ interface GeocodingStatus {
     ai: string
   }
   geocoding: Record<string, number>
+  scope: {
+    total: number
+    mapped: number
+    pending: number
+    filters: {
+      province: string | null
+      city: string | null
+    }
+  }
   usage: {
     today: number
     month: number
@@ -77,12 +86,17 @@ export default function DataImport() {
   const [geocodingStatus, setGeocodingStatus] = useState<GeocodingStatus | null>(null)
   const [geocodingBusy, setGeocodingBusy] = useState(false)
   const [geocodingMessage, setGeocodingMessage] = useState<string | null>(null)
+  const [geocodingProvince, setGeocodingProvince] = useState('')
+  const [geocodingCity, setGeocodingCity] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const t = translations
 
-  const loadGeocodingStatus = async () => {
+  const loadGeocodingStatus = async (filters = { province: geocodingProvince, city: geocodingCity }) => {
     try {
-      const response = await fetch('/api/geocode')
+      const params = new URLSearchParams()
+      if (filters.province) params.set('province', filters.province)
+      if (filters.city) params.set('city', filters.city)
+      const response = await fetch(`/api/geocode${params.size ? `?${params}` : ''}`)
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo cargar el estado')
       setGeocodingStatus(result.data)
@@ -103,11 +117,19 @@ export default function DataImport() {
       const response = await fetch('/api/geocode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'batch', limit: 10 }),
+        body: JSON.stringify({
+          action: 'batch',
+          limit: 10,
+          province: geocodingProvince || undefined,
+          city: geocodingCity || undefined,
+        }),
       })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.error || 'No se pudo procesar la geolocalización')
-      setGeocodingMessage(`${result.data.processed} clientes procesados. La siguiente tanda respeta el límite del proveedor.`)
+      const status = result.data.status?.scope
+      setGeocodingMessage(
+        `${result.data.processed} clientes procesados. ${status ? `${status.mapped} localizados · ${status.pending} pendientes.` : ''}`
+      )
       await loadGeocodingStatus()
     } catch (error) {
       setGeocodingMessage((error as Error).message)
@@ -116,17 +138,19 @@ export default function DataImport() {
     }
   }
 
-  // 规范化城市，仅允许 Cádiz 和 Huelva，兼容大小写与重音
+  // Keep every municipality from the source file; only canonicalize province-capital spelling.
   const normalizeCity = (input?: string): string | null => {
     if (!input) return null
-    const v = input
+    const city = input.trim().replace(/\s+/g, ' ')
+    if (!city) return null
+    const v = city
       .trim()
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '') // 去除重音
     if (v === 'cadiz') return 'Cádiz'
     if (v === 'huelva') return 'Huelva'
-    return null
+    return city
   }
 
   // 规范化省份，与后端逻辑保持一致
@@ -576,11 +600,6 @@ export default function DataImport() {
           const notesToSave: string[] = []
           if (customer.notes) notesToSave.push(customer.notes)
           
-          // 只有无法标准化的城市才保存到 notes
-          if (customer.city && !normalizeCity(customer.city)) {
-            notesToSave.push(`Ciudad: ${customer.city}`)
-          }
-          
           // 处理 province 字段 - 现在数据库有专用列
           const normalizedProvince = customer.provincia ? toCanonicalProvince(customer.provincia) : null
           
@@ -589,7 +608,7 @@ export default function DataImport() {
             notesToSave.push(`Provincia: ${customer.provincia}`)
           }
 
-          // 自動填充城市基於省份和筆記
+          // Preserve the imported municipality; use the province only when the city is absent.
           const autoFilledCity = autoFillCityFromProvinceAndNotes(customer)
           const finalCity = autoFilledCity || customer.city
 
@@ -808,14 +827,49 @@ export default function DataImport() {
                 Procesamiento de direcciones en servidor, una solicitud cada 1,1 segundos como máximo.
               </p>
             </div>
-            <button
-              onClick={processGeocodingBatch}
-              disabled={geocodingBusy || (geocodingStatus?.geocoding.pending || 0) === 0}
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {geocodingBusy ? 'Procesando...' : 'Procesar 10 direcciones'}
-            </button>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={geocodingProvince}
+                  onChange={event => setGeocodingProvince(event.target.value)}
+                  className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                >
+                  <option value="">Todas las provincias</option>
+                  <option value="Cádiz">Cádiz</option>
+                  <option value="Huelva">Huelva</option>
+                  <option value="Ceuta">Ceuta</option>
+                </select>
+                <input
+                  value={geocodingCity}
+                  onChange={event => setGeocodingCity(event.target.value)}
+                  placeholder="Ciudad"
+                  className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => loadGeocodingStatus()}
+                  disabled={geocodingBusy}
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Ver estado
+                </button>
+                <button
+                  onClick={processGeocodingBatch}
+                  disabled={geocodingBusy || (geocodingStatus?.scope.pending || 0) === 0}
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {geocodingBusy ? 'Procesando...' : 'Localizar clientes sin mapa'}
+                </button>
+              </div>
+            </div>
           </div>
+
+          {geocodingStatus && (
+            <p className="mt-4 text-sm font-medium text-gray-700">
+              {geocodingStatus.scope.total} clientes encontrados · {geocodingStatus.scope.mapped} ya localizados · {geocodingStatus.scope.pending} pendientes
+            </p>
+          )}
 
           {geocodingStatus && (
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
