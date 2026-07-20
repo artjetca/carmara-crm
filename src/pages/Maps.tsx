@@ -70,7 +70,7 @@ import { PROVINCE_CENTERS } from '../utils/mapCentroids'
 import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../services/mapProviders'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
-type MobileListMode = 'all' | 'mapped' | 'unmapped' | 'area' | 'cluster'
+type MobileListMode = 'all' | 'mapped' | 'unmapped' | 'cluster'
 type MobileSheetSize = 'half' | 'full'
 
 const STORAGE_KEY = 'carmara-customer-coords'
@@ -186,13 +186,11 @@ function MapViewport({
   defaultCenter,
   filterProvince,
   filterCity,
-  onProgrammaticMove,
 }: {
   bounds: LatLngBoundsExpression | null
   defaultCenter: [number, number]
   filterProvince: string
   filterCity: string
-  onProgrammaticMove: () => void
 }) {
   const map = useMap()
   const filterKey = `${filterProvince}|${filterCity}`
@@ -206,7 +204,6 @@ function MapViewport({
     prevFilterRef.current = filterKey
 
     if (bounds) {
-      onProgrammaticMove()
       map.fitBounds(bounds, {
         padding: [48, 48],
         maxZoom: 14,
@@ -217,15 +214,13 @@ function MapViewport({
 
     // No markers — fall back to province center or default
     if (filterProvince && PROVINCE_CENTERS[filterProvince]) {
-      onProgrammaticMove()
       map.flyTo(PROVINCE_CENTERS[filterProvince], 10, { duration: 0.6 })
       return () => window.clearTimeout(resizeTimer)
     }
 
-    onProgrammaticMove()
     map.setView(defaultCenter, 8)
     return () => window.clearTimeout(resizeTimer)
-  }, [bounds, defaultCenter, filterKey, filterProvince, map, onProgrammaticMove])
+  }, [bounds, defaultCenter, filterKey, filterProvince, map])
 
   return null
 }
@@ -268,38 +263,15 @@ export default function Maps() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetSize, setSheetSize] = useState<MobileSheetSize>('half')
   const [mobileListMode, setMobileListMode] = useState<MobileListMode>('all')
-  const [areaClients, setAreaClients] = useState<ResolvedMapClient[] | null>(null)
   const [clusterClients, setClusterClients] = useState<ResolvedMapClient[] | null>(null)
-  const [showSearchAreaButton, setShowSearchAreaButton] = useState(false)
   const mapRef = useRef<LeafletMap | null>(null)
   const clusterGroupRef = useRef<{ _featureGroup?: { getLayers?: () => Array<{ getChildCount?: () => number }> } } | null>(null)
-  const programmaticMoveRef = useRef(false)
-  const programmaticMoveTimerRef = useRef<number | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
   const searchAbortRef = useRef<AbortController | null>(null)
   const cityDistanceCacheRef = useRef(new Map<string, import('./mapsPageUtils').CityDistanceSummary>())
   const t = translations
-
-  const hideSearchAreaButton = useCallback(() => setShowSearchAreaButton(false), [])
-  const beginProgrammaticMapMove = useCallback(() => {
-    hideSearchAreaButton()
-    programmaticMoveRef.current = true
-    if (programmaticMoveTimerRef.current !== null) {
-      window.clearTimeout(programmaticMoveTimerRef.current)
-    }
-    programmaticMoveTimerRef.current = window.setTimeout(() => {
-      programmaticMoveRef.current = false
-      programmaticMoveTimerRef.current = null
-    }, 1200)
-  }, [hideSearchAreaButton])
-
-  useEffect(() => () => {
-    if (programmaticMoveTimerRef.current !== null) {
-      window.clearTimeout(programmaticMoveTimerRef.current)
-    }
-  }, [])
 
   const persistedDbCoordSignaturesRef = useRef(new Map<string, string>())
 
@@ -585,7 +557,7 @@ export default function Maps() {
   )
   const renderableClients = cityMappedCustomers
   const searchActive = searchTerm.trim().length >= 2
-  const mobileSummaryClients = areaClients ?? resolvedCustomers
+  const mobileSummaryClients = resolvedCustomers
   const mobileSummaryMappedClients = useMemo(
     () => mobileSummaryClients.filter(client => hasRenderableCoordinates(client)),
     [mobileSummaryClients]
@@ -597,10 +569,9 @@ export default function Maps() {
   const mobileSheetClients = useMemo(() => {
     if (mobileListMode === 'mapped') return mobileSummaryMappedClients
     if (mobileListMode === 'unmapped') return mobileSummaryUnmappedClients
-    if (mobileListMode === 'area') return areaClients ?? []
     if (mobileListMode === 'cluster') return clusterClients ?? []
     return mobileSummaryClients
-  }, [areaClients, clusterClients, mobileListMode, mobileSummaryClients, mobileSummaryMappedClients, mobileSummaryUnmappedClients])
+  }, [clusterClients, mobileListMode, mobileSummaryClients, mobileSummaryMappedClients, mobileSummaryUnmappedClients])
   const searchSuggestions = searchActive ? resolvedCustomers.slice(0, 8) : []
 
   // Clear city distance cache when location or province changes
@@ -677,8 +648,6 @@ export default function Maps() {
   }, [])
 
   const openCityDetails = useCallback((city: string, province: string) => {
-    hideSearchAreaButton()
-    setAreaClients(null)
     setClusterClients(null)
     setSelectedProvince(province)
     setSelectedCity(city)
@@ -690,18 +659,16 @@ export default function Maps() {
     setSheetSize('half')
     setSheetOpen(true)
     invalidateMapSoon()
-  }, [hideSearchAreaButton, invalidateMapSoon])
+  }, [invalidateMapSoon])
 
   const closeCityDetails = useCallback(() => {
-    hideSearchAreaButton()
-    setAreaClients(null)
     setSelectedCity('')
     setSearchTerm('')
     setSearchResults(null)
     setSelectedCustomerId(null)
     setCityDetailMode(false)
     invalidateMapSoon()
-  }, [hideSearchAreaButton, invalidateMapSoon])
+  }, [invalidateMapSoon])
 
   const openMobileList = useCallback((mode: MobileListMode) => {
     setMobileListMode(mode)
@@ -732,11 +699,10 @@ export default function Maps() {
     )
     const clients = markerClients.filter(client => markerIds.has(client.id))
     setClusterClients(clients)
-    hideSearchAreaButton()
     window.setTimeout(() => {
       mapRef.current?.invalidateSize()
     }, 300)
-  }, [hideSearchAreaButton, markerClients])
+  }, [markerClients])
 
   useEffect(() => {
     console.table(
@@ -923,7 +889,6 @@ export default function Maps() {
 
   const fitToAll = useCallback(() => {
     if (!mapRef.current || fittingAll) return
-    beginProgrammaticMapMove()
     setFittingAll(true)
 
     try {
@@ -935,10 +900,9 @@ export default function Maps() {
     } finally {
       setFittingAll(false)
     }
-  }, [beginProgrammaticMapMove, defaultCenter, fittingAll, mapBounds])
+  }, [defaultCenter, fittingAll, mapBounds])
 
   const locateMe = useCallback(() => {
-    hideSearchAreaButton()
     if (!navigator.geolocation) {
       setLocationMessage('No se pudo obtener tu ubicación.')
       return
@@ -961,7 +925,6 @@ export default function Maps() {
 
         setMyLocation(coords)
         setLocationMessage('Distancias actualizadas desde tu ubicación.')
-        beginProgrammaticMapMove()
         mapRef.current?.flyTo([coords.lat, coords.lng], 13, { duration: 0.8 })
       },
       error => {
@@ -970,27 +933,10 @@ export default function Maps() {
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
-  }, [beginProgrammaticMapMove, hideSearchAreaButton])
-
-  // Filtra los clientes visibles dentro del encuadre actual del mapa (móvil)
-  const searchThisArea = useCallback(() => {
-    const map = mapRef.current
-    if (!map) return
-    const bounds = map.getBounds()
-    const inArea = resolvedCustomers.filter(client => {
-      const coords = getClientRenderableCoordinates(client)
-      return coords ? bounds.contains([coords.lat, coords.lng] as [number, number]) : false
-    })
-    setAreaClients(inArea)
-    setMobileListMode('area')
-    setSheetSize('half')
-    setSheetOpen(true)
-    hideSearchAreaButton()
-  }, [hideSearchAreaButton, resolvedCustomers])
+  }, [])
 
   const flyToCustomer = useCallback(
     async (customer: ResolvedMapClient) => {
-      hideSearchAreaButton()
       setSelectedCustomerId(customer.id)
 
       let target = customer
@@ -1010,14 +956,13 @@ export default function Maps() {
       const coords = getClientRenderableCoordinates(target)
       if (!coords) return
 
-      beginProgrammaticMapMove()
       mapRef.current?.flyTo([coords.lat, coords.lng], 14, { duration: 0.8 })
       window.setTimeout(() => {
         mapRef.current?.invalidateSize()
         markerRegistryRef.current.get(target.id)?.openPopup()
       }, 300)
     },
-    [beginProgrammaticMapMove, ensureCustomerCoordinates, hideSearchAreaButton, persistCoordinateCache]
+    [ensureCustomerCoordinates, persistCoordinateCache]
   )
 
   const autoFocusedSearchRef = useRef('')
@@ -1216,7 +1161,6 @@ export default function Maps() {
                     setCityDetailMode(false)
                     setSelectedCity('')
                   }
-                  setAreaClients(null)
                   setMobileListMode('all')
                   setSearchTerm(event.target.value)
                 }}
@@ -1228,8 +1172,6 @@ export default function Maps() {
             <select
               value={selectedProvince}
               onChange={event => {
-                hideSearchAreaButton()
-                setAreaClients(null)
                 setSelectedProvince(event.target.value)
                 setSelectedCity('')
                 setCityDetailMode(false)
@@ -1248,8 +1190,6 @@ export default function Maps() {
             <select
               value={selectedCity}
               onChange={event => {
-                hideSearchAreaButton()
-                setAreaClients(null)
                 setSelectedCity(event.target.value)
                 setCityDetailMode(Boolean(event.target.value))
               }}
@@ -1266,8 +1206,6 @@ export default function Maps() {
           <div className="lg:w-32">
             <button
               onClick={() => {
-                hideSearchAreaButton()
-                setAreaClients(null)
                 setSearchTerm('')
                 setSelectedProvince('')
                 setSelectedCity('')
@@ -1513,7 +1451,6 @@ export default function Maps() {
                   defaultCenter={defaultCenter as [number, number]}
                   filterProvince={selectedProvince}
                   filterCity={selectedCity}
-                  onProgrammaticMove={beginProgrammaticMapMove}
                 />
                 <TileLayer
                   url={mapTileProvider.url}
@@ -1623,11 +1560,7 @@ export default function Maps() {
                   </Marker>
                 )}
 
-                <MapBridge
-                  mapRef={mapRef}
-                  programmaticMoveRef={programmaticMoveRef}
-                  onUserMapInteraction={() => setShowSearchAreaButton(true)}
-                />
+                <MapBridge mapRef={mapRef} />
               </MapContainer>
 
               {/* Map legend + stats (solo escritorio — en móvil lo sustituye la hoja inferior) */}
@@ -1681,7 +1614,6 @@ export default function Maps() {
                         setCityDetailMode(false)
                         setSelectedCity('')
                       }
-                      setAreaClients(null)
                       setMobileListMode('all')
                       setSearchTerm(event.target.value)
                     }}
@@ -1691,8 +1623,6 @@ export default function Maps() {
                   {searchTerm && (
                     <button
                       onClick={() => {
-                        hideSearchAreaButton()
-                        setAreaClients(null)
                         setMobileListMode('all')
                         if (cityDetailMode) {
                           setCityDetailMode(false)
@@ -1734,20 +1664,6 @@ export default function Maps() {
                   </div>
                 )}
               </div>
-
-              {showSearchAreaButton && (
-                <div
-                  className="absolute inset-x-0 z-[1009] flex justify-center motion-safe:animate-[map-area-fade-in_160ms_ease-out]"
-                  style={{ top: 'calc(env(safe-area-inset-top) + 72px)' }}
-                >
-                  <button
-                    onClick={searchThisArea}
-                    className="h-10 rounded-full border border-white/60 bg-white/90 px-3 text-xs font-medium text-blue-600 shadow-md backdrop-blur-md transition active:scale-95"
-                  >
-                    Buscar aquí
-                  </button>
-                </div>
-              )}
 
               {clusterClients && clusterClients.length > 0 && (
                 <div
@@ -1857,21 +1773,17 @@ export default function Maps() {
                             ? 'Clientes sin coordenadas'
                             : mobileListMode === 'cluster'
                               ? `${mobileSheetClients.length} clientes en esta zona`
-                              : mobileListMode === 'area'
-                                ? 'Clientes en esta zona'
-                                : cityDetailMode
+                              : cityDetailMode
                           ? `${selectedCity} · ${cityCustomers.length} clientes`
                           : searchActive
                             ? searchCityLabel
                               ? `${resolvedCustomers.length} clientes encontrados en ${searchCityLabel}`
                               : 'Resultados de búsqueda'
-                            : areaClients
-                              ? `${areaClients.length} en esta zona`
-                              : `${resolvedCustomers.length} clientes`}
+                            : `${resolvedCustomers.length} clientes`}
                       </div>
                       {(cityDetailMode || searchActive || mobileListMode !== 'all') && (
                         <div className="mt-0.5 text-xs text-gray-500">
-                          {mobileListMode === 'area' || mobileListMode === 'cluster'
+                          {mobileListMode === 'cluster'
                             ? `${mobileSheetClients.filter(client => hasRenderableCoordinates(client)).length} en el mapa`
                             : `${mobileSummaryMappedClients.length} en el mapa · ${mobileSummaryUnmappedClients.length} sin localizar`}
                         </div>
@@ -1884,18 +1796,6 @@ export default function Maps() {
                           className="inline-flex h-9 items-center gap-1 rounded-full bg-blue-50 px-3 text-xs font-medium text-blue-700 active:bg-blue-100"
                         >
                           <ChevronLeft className="h-4 w-4" /> Volver
-                        </button>
-                      )}
-                      {areaClients && (
-                        <button
-                          onClick={() => {
-                            hideSearchAreaButton()
-                            setAreaClients(null)
-                            setMobileListMode('all')
-                          }}
-                          className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 active:bg-blue-100"
-                        >
-                          Quitar filtro
                         </button>
                       )}
                       <button
@@ -1914,7 +1814,7 @@ export default function Maps() {
                       <div className="py-10 text-center">
                         <MapPin className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                         <p className="text-sm text-gray-500">No encontramos clientes que coincidan con tu búsqueda.</p>
-                        <button onClick={() => { hideSearchAreaButton(); setSearchTerm('') }} className="mt-3 text-sm font-medium text-blue-600">Limpiar búsqueda</button>
+                        <button onClick={() => setSearchTerm('')} className="mt-3 text-sm font-medium text-blue-600">Limpiar búsqueda</button>
                       </div>
                     ) : (
                       mobileSheetClients.map(client => (
@@ -1974,48 +1874,17 @@ export default function Maps() {
   )
 }
 
-function MapBridge({
-  mapRef,
-  programmaticMoveRef,
-  onUserMapInteraction,
-}: {
-  mapRef: React.MutableRefObject<LeafletMap | null>
-  programmaticMoveRef: React.MutableRefObject<boolean>
-  onUserMapInteraction: () => void
-}) {
+function MapBridge({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
   const map = useMap()
 
   useEffect(() => {
     mapRef.current = map
     const resizeTimer = window.setTimeout(() => map.invalidateSize(), 300)
-    let userInteraction = false
-
-    const handleDragStart = () => {
-      userInteraction = true
-    }
-    const handleZoomStart = () => {
-      if (!programmaticMoveRef.current) userInteraction = true
-    }
-    const handleMoveEnd = () => {
-      if (programmaticMoveRef.current) {
-        userInteraction = false
-        return
-      }
-      if (userInteraction) onUserMapInteraction()
-      userInteraction = false
-    }
-
-    map.on('dragstart', handleDragStart)
-    map.on('zoomstart', handleZoomStart)
-    map.on('moveend', handleMoveEnd)
 
     return () => {
       window.clearTimeout(resizeTimer)
-      map.off('dragstart', handleDragStart)
-      map.off('zoomstart', handleZoomStart)
-      map.off('moveend', handleMoveEnd)
     }
-  }, [map, mapRef, onUserMapInteraction, programmaticMoveRef])
+  }, [map, mapRef])
 
   return null
 }

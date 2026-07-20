@@ -55,17 +55,6 @@
   color: #ffffff !important;
 }
 
-@keyframes map-area-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* ── Móvil: mapa estilo app — sin controles +/- (se usa pellizco) ───── */
 @media (max-width: 767px) {
   .leaflet-control-zoom {
