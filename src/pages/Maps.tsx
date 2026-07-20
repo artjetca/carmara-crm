@@ -70,6 +70,8 @@ import { PROVINCE_CENTERS } from '../utils/mapCentroids'
 import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../services/mapProviders'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
+type MobileListMode = 'all' | 'mapped' | 'unmapped' | 'area' | 'cluster'
+type MobileSheetSize = 'half' | 'full'
 
 const STORAGE_KEY = 'carmara-customer-coords'
 
@@ -264,9 +266,13 @@ export default function Maps() {
   } | null>(null)
   // ── Mobile app-like map UI ──
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetSize, setSheetSize] = useState<MobileSheetSize>('half')
+  const [mobileListMode, setMobileListMode] = useState<MobileListMode>('all')
   const [areaClients, setAreaClients] = useState<ResolvedMapClient[] | null>(null)
+  const [clusterClients, setClusterClients] = useState<ResolvedMapClient[] | null>(null)
   const [showSearchAreaButton, setShowSearchAreaButton] = useState(false)
   const mapRef = useRef<LeafletMap | null>(null)
+  const clusterGroupRef = useRef<{ _featureGroup?: { getLayers?: () => Array<{ getChildCount?: () => number }> } } | null>(null)
   const programmaticMoveRef = useRef(false)
   const programmaticMoveTimerRef = useRef<number | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
@@ -579,7 +585,22 @@ export default function Maps() {
   )
   const renderableClients = cityMappedCustomers
   const searchActive = searchTerm.trim().length >= 2
-  const mobileSheetClients = (cityDetailMode || searchActive) ? resolvedCustomers : (areaClients ?? resolvedCustomers)
+  const mobileSummaryClients = areaClients ?? resolvedCustomers
+  const mobileSummaryMappedClients = useMemo(
+    () => mobileSummaryClients.filter(client => hasRenderableCoordinates(client)),
+    [mobileSummaryClients]
+  )
+  const mobileSummaryUnmappedClients = useMemo(
+    () => mobileSummaryClients.filter(client => !hasRenderableCoordinates(client)),
+    [mobileSummaryClients]
+  )
+  const mobileSheetClients = useMemo(() => {
+    if (mobileListMode === 'mapped') return mobileSummaryMappedClients
+    if (mobileListMode === 'unmapped') return mobileSummaryUnmappedClients
+    if (mobileListMode === 'area') return areaClients ?? []
+    if (mobileListMode === 'cluster') return clusterClients ?? []
+    return mobileSummaryClients
+  }, [areaClients, clusterClients, mobileListMode, mobileSummaryClients, mobileSummaryMappedClients, mobileSummaryUnmappedClients])
   const searchSuggestions = searchActive ? resolvedCustomers.slice(0, 8) : []
 
   // Clear city distance cache when location or province changes
@@ -658,12 +679,15 @@ export default function Maps() {
   const openCityDetails = useCallback((city: string, province: string) => {
     hideSearchAreaButton()
     setAreaClients(null)
+    setClusterClients(null)
     setSelectedProvince(province)
     setSelectedCity(city)
     setSearchTerm('')
     setSearchResults(null)
     setSelectedCustomerId(null)
     setCityDetailMode(true)
+    setMobileListMode('all')
+    setSheetSize('half')
     setSheetOpen(true)
     invalidateMapSoon()
   }, [hideSearchAreaButton, invalidateMapSoon])
@@ -672,10 +696,18 @@ export default function Maps() {
     hideSearchAreaButton()
     setAreaClients(null)
     setSelectedCity('')
+    setSearchTerm('')
+    setSearchResults(null)
     setSelectedCustomerId(null)
     setCityDetailMode(false)
     invalidateMapSoon()
   }, [hideSearchAreaButton, invalidateMapSoon])
+
+  const openMobileList = useCallback((mode: MobileListMode) => {
+    setMobileListMode(mode)
+    setSheetSize('half')
+    setSheetOpen(true)
+  }, [])
 
   useEffect(() => {
     invalidateMapSoon()
@@ -691,11 +723,20 @@ export default function Maps() {
     })
   }, [])
 
-  const handleClusterClick = useCallback(() => {
+  const handleClusterClick = useCallback((event: { layer?: { getAllChildMarkers?: () => LeafletMarker[] } }) => {
+    const clusterMarkers = event.layer?.getAllChildMarkers?.() ?? []
+    const markerIds = new Set(
+      Array.from(markerRegistryRef.current.entries())
+        .filter(([, marker]) => clusterMarkers.includes(marker))
+        .map(([id]) => id)
+    )
+    const clients = markerClients.filter(client => markerIds.has(client.id))
+    setClusterClients(clients)
+    hideSearchAreaButton()
     window.setTimeout(() => {
       mapRef.current?.invalidateSize()
     }, 300)
-  }, [])
+  }, [hideSearchAreaButton, markerClients])
 
   useEffect(() => {
     console.table(
@@ -798,6 +839,27 @@ export default function Maps() {
       console.warn('[MAP_MARKERS] Marker registry exceeds renderable clients', stats)
     }
   }, [markerClients, resolvedCustomers])
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+
+    const timer = window.setTimeout(() => {
+      const visibleLayers = clusterGroupRef.current?._featureGroup?.getLayers?.() ?? []
+      const visibleClusterCustomerCount = visibleLayers.reduce(
+        (sum, layer) => sum + (layer.getChildCount?.() ?? 1),
+        0
+      )
+
+      if (visibleClusterCustomerCount !== markerClients.length) {
+        console.warn('[MAP_CLUSTERS] visible cluster count does not match filtered markers', {
+          visibleClusterCustomerCount,
+          filteredMappedCustomers: markerClients.length,
+        })
+      }
+    }, 0)
+
+    return () => window.clearTimeout(timer)
+  }, [markerClients])
 
   useEffect(() => {
     if (selectedProvince !== 'Cádiz') return
@@ -920,6 +982,8 @@ export default function Maps() {
       return coords ? bounds.contains([coords.lat, coords.lng] as [number, number]) : false
     })
     setAreaClients(inArea)
+    setMobileListMode('area')
+    setSheetSize('half')
     setSheetOpen(true)
     hideSearchAreaButton()
   }, [hideSearchAreaButton, resolvedCustomers])
@@ -1152,6 +1216,8 @@ export default function Maps() {
                     setCityDetailMode(false)
                     setSelectedCity('')
                   }
+                  setAreaClients(null)
+                  setMobileListMode('all')
                   setSearchTerm(event.target.value)
                 }}
                 className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
@@ -1163,6 +1229,7 @@ export default function Maps() {
               value={selectedProvince}
               onChange={event => {
                 hideSearchAreaButton()
+                setAreaClients(null)
                 setSelectedProvince(event.target.value)
                 setSelectedCity('')
                 setCityDetailMode(false)
@@ -1182,6 +1249,7 @@ export default function Maps() {
               value={selectedCity}
               onChange={event => {
                 hideSearchAreaButton()
+                setAreaClients(null)
                 setSelectedCity(event.target.value)
                 setCityDetailMode(Boolean(event.target.value))
               }}
@@ -1199,6 +1267,7 @@ export default function Maps() {
             <button
               onClick={() => {
                 hideSearchAreaButton()
+                setAreaClients(null)
                 setSearchTerm('')
                 setSelectedProvince('')
                 setSelectedCity('')
@@ -1453,6 +1522,7 @@ export default function Maps() {
                 />
 
                 <MarkerClusterGroup
+                  ref={clusterGroupRef}
                   iconCreateFunction={createClusterIcon}
                   maxClusterRadius={35}
                   spiderfyOnMaxZoom
@@ -1611,6 +1681,8 @@ export default function Maps() {
                         setCityDetailMode(false)
                         setSelectedCity('')
                       }
+                      setAreaClients(null)
+                      setMobileListMode('all')
                       setSearchTerm(event.target.value)
                     }}
                     onFocus={() => setSheetOpen(true)}
@@ -1620,6 +1692,12 @@ export default function Maps() {
                     <button
                       onClick={() => {
                         hideSearchAreaButton()
+                        setAreaClients(null)
+                        setMobileListMode('all')
+                        if (cityDetailMode) {
+                          setCityDetailMode(false)
+                          setSelectedCity('')
+                        }
                         setSearchTerm('')
                       }}
                       className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
@@ -1667,6 +1745,20 @@ export default function Maps() {
                     className="h-10 rounded-full border border-white/60 bg-white/90 px-3 text-xs font-medium text-blue-600 shadow-md backdrop-blur-md transition active:scale-95"
                   >
                     Buscar aquí
+                  </button>
+                </div>
+              )}
+
+              {clusterClients && clusterClients.length > 0 && (
+                <div
+                  className="absolute inset-x-0 z-[1009] flex justify-center md:hidden"
+                  style={{ top: 'calc(env(safe-area-inset-top) + 72px)' }}
+                >
+                  <button
+                    onClick={() => openMobileList('cluster')}
+                    className="h-10 rounded-full border border-white/60 bg-white/90 px-3 text-xs font-medium text-blue-700 shadow-md backdrop-blur-md active:scale-95"
+                  >
+                    {clusterClients.length} clientes en esta zona · Ver clientes
                   </button>
                 </div>
               )}
@@ -1719,26 +1811,55 @@ export default function Maps() {
                   className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
                 >
-                  <button
-                    onClick={() => setSheetOpen(true)}
-                    className="flex items-center gap-2 rounded-full border border-white/60 bg-white/90 px-5 py-3 text-sm font-medium text-gray-800 shadow-xl backdrop-blur-md transition active:scale-95"
-                  >
-                    <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
-                    <span>{searchActive ? `${resolvedCustomers.length} clientes · ${markerClients.length} en el mapa · ${unmappedClientsCount} sin localizar` : `${markerClients.length} en mapa · ${resolvedCustomers.length} clientes`}</span>
-                  </button>
+                  <div className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-white/60 bg-white/90 text-xs font-medium text-gray-800 shadow-xl backdrop-blur-md">
+                    <button
+                      onClick={() => openMobileList('mapped')}
+                      aria-label={`Ver ${mobileSummaryMappedClients.length} clientes en el mapa`}
+                      className="min-h-11 px-3 text-blue-700 transition active:bg-blue-50"
+                    >
+                      {mobileSummaryMappedClients.length} en mapa
+                    </button>
+                    <span className="my-2 w-px bg-gray-200" />
+                    <button
+                      onClick={() => openMobileList('all')}
+                      aria-label={`Ver ${mobileSummaryClients.length} clientes`}
+                      className="min-h-11 px-3 transition active:bg-gray-100"
+                    >
+                      {mobileSummaryClients.length} clientes
+                    </button>
+                    <span className="my-2 w-px bg-gray-200" />
+                    <button
+                      onClick={() => openMobileList('unmapped')}
+                      aria-label={`Ver ${mobileSummaryUnmappedClients.length} clientes sin coordenadas`}
+                      className="min-h-11 px-3 text-amber-700 transition active:bg-amber-50"
+                    >
+                      {mobileSummaryUnmappedClients.length} sin mapa
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div className="absolute inset-x-0 bottom-0 z-[1011] flex max-h-[60%] flex-col rounded-t-2xl bg-white shadow-2xl md:hidden">
+                <div className={`absolute inset-x-0 bottom-0 z-[1011] flex flex-col rounded-t-2xl bg-white shadow-2xl md:hidden ${
+                  sheetSize === 'full' ? 'max-h-[calc(100%-env(safe-area-inset-top)-72px)]' : 'max-h-[60%]'
+                }`}>
                   <button
                     className="flex w-full flex-col items-center pb-1 pt-2"
-                    onClick={() => setSheetOpen(false)}
+                    onClick={() => setSheetSize(size => size === 'half' ? 'full' : 'half')}
+                    aria-label={sheetSize === 'half' ? 'Ampliar lista' : 'Reducir lista'}
                   >
                     <span className="h-1 w-10 rounded-full bg-gray-300" />
                   </button>
                   <div className="flex items-center justify-between px-4 pb-2">
                     <div>
                       <div className="text-sm font-semibold text-gray-900">
-                        {cityDetailMode
+                        {mobileListMode === 'mapped'
+                          ? 'Clientes en el mapa'
+                          : mobileListMode === 'unmapped'
+                            ? 'Clientes sin coordenadas'
+                            : mobileListMode === 'cluster'
+                              ? `${mobileSheetClients.length} clientes en esta zona`
+                              : mobileListMode === 'area'
+                                ? 'Clientes en esta zona'
+                                : cityDetailMode
                           ? `${selectedCity} · ${cityCustomers.length} clientes`
                           : searchActive
                             ? searchCityLabel
@@ -1748,9 +1869,11 @@ export default function Maps() {
                               ? `${areaClients.length} en esta zona`
                               : `${resolvedCustomers.length} clientes`}
                       </div>
-                      {(cityDetailMode || searchActive) && (
+                      {(cityDetailMode || searchActive || mobileListMode !== 'all') && (
                         <div className="mt-0.5 text-xs text-gray-500">
-                          {markerClients.length} en el mapa · {unmappedClientsCount} sin localizar
+                          {mobileListMode === 'area' || mobileListMode === 'cluster'
+                            ? `${mobileSheetClients.filter(client => hasRenderableCoordinates(client)).length} en el mapa`
+                            : `${mobileSummaryMappedClients.length} en el mapa · ${mobileSummaryUnmappedClients.length} sin localizar`}
                         </div>
                       )}
                     </div>
@@ -1768,6 +1891,7 @@ export default function Maps() {
                           onClick={() => {
                             hideSearchAreaButton()
                             setAreaClients(null)
+                            setMobileListMode('all')
                           }}
                           className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 active:bg-blue-100"
                         >
@@ -1798,6 +1922,7 @@ export default function Maps() {
                           key={client.id}
                           onClick={() => {
                             setSheetOpen(false)
+                            setMobileListMode('all')
                             flyToCustomer(client)
                           }}
                           className="flex w-full items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors active:bg-blue-50"
@@ -1810,6 +1935,8 @@ export default function Maps() {
                             <div className="truncate text-xs text-gray-500">
                               {[client.city, client.province].filter(Boolean).join(', ')}
                             </div>
+                            <div className="mt-0.5 truncate text-xs text-gray-500">{client.address}</div>
+                            {client.phone && <div className="mt-0.5 text-xs text-gray-500">{client.phone}</div>}
                           </div>
                           <div className="mt-1 flex flex-shrink-0 flex-col items-end gap-1">
                             {client.distanceFromUser !== null && (
@@ -1820,6 +1947,11 @@ export default function Maps() {
                             {!hasRenderableCoordinates(client) && (
                               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
                                 sin mapa
+                              </span>
+                            )}
+                            {hasRenderableCoordinates(client) && (
+                              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700">
+                                en mapa
                               </span>
                             )}
                             {client.geocodeStatus === 'approximate' && (
