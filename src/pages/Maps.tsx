@@ -19,7 +19,7 @@ import {
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import MarkerClusterGroup from '@changey/react-leaflet-markercluster'
 import L, {
   LatLngBoundsExpression,
@@ -265,7 +265,10 @@ export default function Maps() {
   const [mobileListMode, setMobileListMode] = useState<MobileListMode>('all')
   const [clusterClients, setClusterClients] = useState<ResolvedMapClient[] | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
-  const clusterGroupRef = useRef<{ _featureGroup?: { getLayers?: () => Array<{ getChildCount?: () => number }> } } | null>(null)
+  const clusterGroupRef = useRef<{
+    getLayers?: () => LeafletMarker[]
+    _featureGroup?: { getLayers?: () => Array<{ getChildCount?: () => number }> }
+  } | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
@@ -682,11 +685,12 @@ export default function Maps() {
 
   const createClusterIcon = useCallback((cluster: { getChildCount: () => number }) => {
     const count = cluster.getChildCount()
+    const size = count >= 50 ? 48 : count >= 10 ? 42 : 36
     return L.divIcon({
-      html: `<div style="background:${MARKER_BLUE};color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+      html: `<div title="${count} clientes en esta zona" aria-label="${count} clientes en esta zona" style="background:${MARKER_BLUE};color:#fff;border-radius:50%;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(15,23,42,.3);">${count}</div>`,
       className: 'marker-cluster marker-cluster-casmara',
-      iconSize: L.point(36, 36),
-      iconAnchor: L.point(18, 18),
+      iconSize: L.point(size, size),
+      iconAnchor: L.point(size / 2, size / 2),
     })
   }, [])
 
@@ -699,12 +703,16 @@ export default function Maps() {
     )
     const clients = markerClients.filter(client => markerIds.has(client.id))
     setClusterClients(clients)
+    setMobileListMode('cluster')
+    setSheetSize('half')
+    setSheetOpen(true)
     window.setTimeout(() => {
       mapRef.current?.invalidateSize()
     }, 300)
   }, [markerClients])
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return
     console.table(
       resolvedCustomers.map(client => ({
         name: client.name,
@@ -723,6 +731,7 @@ export default function Maps() {
   }, [resolvedCustomers])
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return
     const sinCoordenadasRows = resolvedCustomers
       .filter(client => !getClientRenderableCoordinates(client))
       .map(client => {
@@ -778,6 +787,7 @@ export default function Maps() {
   }, [resolvedCustomers])
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return
     const uniqueCoords = new Set(
       markerClients
         .map(client =>
@@ -790,7 +800,7 @@ export default function Maps() {
 
     const stats = {
       totalRenderableClients: markerClients.length,
-      totalMarkersRendered: markerRegistryRef.current.size,
+      totalMarkersRendered: clusterGroupRef.current?.getLayers?.().length ?? markerRegistryRef.current.size,
       uniqueCoords: uniqueCoords.size,
       validMarkersCount: markerClients.filter(client => client.geocodeStatus === 'valid').length,
       approximateMarkersCount: markerClients.filter(client => client.geocodeStatus === 'approximate').length,
@@ -799,12 +809,17 @@ export default function Maps() {
       ).length,
     }
 
-    console.log('[MAP_MARKERS] stats:', stats)
+    console.table({
+      expectedMappedCount: markerClients.length,
+      renderedMarkerCount: stats.totalMarkersRendered,
+      selectedCity,
+      filteredCustomerCount: resolvedCustomers.length,
+    })
 
     if (stats.totalMarkersRendered > stats.totalRenderableClients) {
       console.warn('[MAP_MARKERS] Marker registry exceeds renderable clients', stats)
     }
-  }, [markerClients, resolvedCustomers])
+  }, [markerClients, resolvedCustomers, selectedCity])
 
   useEffect(() => {
     if (!import.meta.env.DEV) return
@@ -1220,8 +1235,8 @@ export default function Maps() {
 
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <div className="hidden space-y-6 md:block lg:col-span-1">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="hidden space-y-6 md:block">
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 p-4">
               <h2 className="text-lg font-semibold text-gray-900">{t.maps.customerList}</h2>
@@ -1300,17 +1315,20 @@ export default function Maps() {
                     </>
                   ) : cityGroups.map(cityGroup => {
                     const onMap = cityGroup.clients.filter(client => hasRenderableCoordinates(client)).length
+                    const withoutMap = cityGroup.clientCount - onMap
                     return (
                       <button
                         key={`${cityGroup.province}|${cityGroup.city}`}
-                        className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50"
+                        className="flex min-h-[76px] w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50"
                         onClick={() => openCityDetails(cityGroup.city, cityGroup.province)}
                       >
                         <div className="min-w-0">
                           <span className="text-sm font-semibold text-gray-900">{cityGroup.city}</span>
-                          <span className="ml-2 text-xs text-gray-500">
+                          <span className="mt-1 block text-xs text-gray-600">
                             {cityGroup.clientCount} {cityGroup.clientCount === 1 ? 'cliente' : 'clientes'}
-                            {onMap < cityGroup.clientCount && <span className="ml-1 text-amber-500">({onMap} en mapa)</span>}
+                          </span>
+                          <span className="mt-1 block text-[11px] text-gray-500">
+                            <span className="font-medium text-blue-700">{onMap} en mapa</span> · <span className="font-medium text-amber-700">{withoutMap} sin coordenadas</span>
                           </span>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
@@ -1417,10 +1435,25 @@ export default function Maps() {
           )}
         </div>
 
-        <div className="lg:col-span-3">
+        <div>
           {/* En móvil el mapa ocupa toda la pantalla (debajo de la barra de pestañas) */}
           <div className="max-md:fixed max-md:inset-0 max-md:z-40 overflow-hidden md:rounded-xl md:border md:border-gray-200 bg-white md:shadow-sm">
             <div className="relative h-[800px] max-md:h-full">
+              {selectedCity && (
+                <div className="absolute left-3 top-3 z-[1000] hidden max-w-[360px] items-center gap-3 rounded-lg border border-white/60 bg-white/90 px-3 py-2 shadow-md backdrop-blur md:flex">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-gray-900">{selectedCity}</div>
+                    <div className="text-xs text-gray-600">
+                      {cityCustomers.length} clientes · {cityMappedCustomers.length} en mapa · {cityUnmappedCustomers.length} sin coordenadas
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button onClick={() => setCityDetailMode(true)} className="rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50">Ver lista</button>
+                    <button onClick={fitToAll} className="rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50">Ajustar mapa</button>
+                    <button onClick={closeCityDetails} className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100">Quitar filtro</button>
+                  </div>
+                </div>
+              )}
               <div className="absolute right-3 top-3 z-[1000] hidden gap-2 md:flex">
                 <button
                   onClick={fitToAll}
@@ -1464,8 +1497,8 @@ export default function Maps() {
                   maxClusterRadius={35}
                   spiderfyOnMaxZoom
                   spiderfyOnEveryZoom
-                  spiderfyDistanceMultiplier={3}
-                  disableClusteringAtZoom={15}
+                  spiderfyDistanceMultiplier={4}
+                  disableClusteringAtZoom={16}
                   showCoverageOnHover={false}
                   removeOutsideVisibleBounds={false}
                   zoomToBoundsOnClick
@@ -1491,6 +1524,7 @@ export default function Maps() {
                           click: () => setSelectedCustomerId(client.id),
                         }}
                       >
+                        {client.geocodeStatus === 'approximate' && <Tooltip direction="top">Ubicación aproximada</Tooltip>}
                         <Popup minWidth={280}>
                           <div className="space-y-3" data-popup-summary={popupSummary}>
                             <div className="border-b border-gray-200 pb-2">
@@ -1562,6 +1596,40 @@ export default function Maps() {
 
                 <MapBridge mapRef={mapRef} />
               </MapContainer>
+
+              {clusterClients && clusterClients.length > 0 && (
+                <aside className="absolute right-3 top-16 z-[1000] hidden w-[320px] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-lg backdrop-blur md:block">
+                  <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{clusterClients.length} clientes en esta zona</div>
+                      <div className="text-xs text-gray-500">Selecciona un cliente para verlo en el mapa</div>
+                    </div>
+                    <button onClick={() => setClusterClients(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"><X className="h-4 w-4" /></button>
+                  </div>
+                  <div className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto">
+                    {clusterClients.map(client => (
+                      <button
+                        key={client.id}
+                        onClick={() => {
+                          setClusterClients(null)
+                          flyToCustomer(client)
+                        }}
+                        className="w-full px-3 py-3 text-left hover:bg-blue-50"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-gray-900">{client.name}</div>
+                            {client.company && <div className="truncate text-xs text-gray-600">{client.company}</div>}
+                            <div className="mt-1 max-h-8 overflow-hidden text-xs text-gray-500">{client.address}</div>
+                            {client.phone && <div className="mt-1 text-xs text-gray-500">{client.phone}</div>}
+                          </div>
+                          <span className="shrink-0 text-xs font-medium text-blue-700">Ver cliente</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+              )}
 
               {/* Map legend + stats (solo escritorio — en móvil lo sustituye la hoja inferior) */}
               <div className="absolute bottom-4 right-3 hidden bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px] md:block">
@@ -1664,20 +1732,6 @@ export default function Maps() {
                   </div>
                 )}
               </div>
-
-              {clusterClients && clusterClients.length > 0 && (
-                <div
-                  className="absolute inset-x-0 z-[1009] flex justify-center md:hidden"
-                  style={{ top: 'calc(env(safe-area-inset-top) + 72px)' }}
-                >
-                  <button
-                    onClick={() => openMobileList('cluster')}
-                    className="h-10 rounded-full border border-white/60 bg-white/90 px-3 text-xs font-medium text-blue-700 shadow-md backdrop-blur-md active:scale-95"
-                  >
-                    {clusterClients.length} clientes en esta zona · Ver clientes
-                  </button>
-                </div>
-              )}
 
               {locationMessage && (
                 <div
