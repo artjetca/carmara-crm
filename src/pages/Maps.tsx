@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
-import type { Customer } from '../lib/supabase'
+import type { Customer, Visit } from '../lib/supabase'
 import {
   ChevronDown,
   ChevronLeft,
@@ -68,10 +68,13 @@ import {
 } from './mapsPageUtils'
 import { PROVINCE_CENTERS } from '../utils/mapCentroids'
 import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../services/mapProviders'
+import { createCasmaraMarkerIcon } from '../components/map/CasmaraMarkerIcon'
+import '../styles/casmara-marker.css'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 type MobileListMode = 'all' | 'mapped' | 'unmapped' | 'cluster'
 type MobileSheetSize = 'half' | 'full'
+type VisitMarkerState = { scheduled: boolean; overdue: boolean }
 
 const STORAGE_KEY = 'carmara-customer-coords'
 
@@ -86,6 +89,17 @@ const isCitySearch = (query: string, city: string) => {
   const queryTokens = normalizeCityName(query).split(' ').filter(token => token.length >= 3)
   const cityTokens = normalizeCityName(city).split(' ')
   return queryTokens.length > 0 && queryTokens.every(token => cityTokens.some(cityToken => cityToken.includes(token)))
+}
+
+const getMarkerTooltip = (
+  geocodeStatus: ResolvedMapClient['geocodeStatus'],
+  visitState: VisitMarkerState,
+  followUp: boolean
+) => {
+  if (visitState.overdue) return 'Visita atrasada'
+  if (visitState.scheduled) return 'Visita programada'
+  if (followUp) return 'Seguimiento pendiente'
+  return geocodeStatus === 'approximate' ? 'Ubicación aproximada' : 'Ubicación precisa'
 }
 
 const provinces = ['Cádiz', 'Huelva', 'Ceuta']
@@ -122,53 +136,8 @@ const municipiosByProvince: Record<string, string[]> = {
   Ceuta: ['Ceuta'],
 }
 
-const MARKER_BLUE = '#2563eb'
-const MARKER_BLUE_RING = 'rgba(37,99,235,.28)'
 const MARKER_RED = '#dc2626'
 const MARKER_RED_RING = 'rgba(220,38,38,.28)'
-const MARKER_AMBER = '#d97706'
-const MARKER_AMBER_RING = 'rgba(217,119,6,.28)'
-const MARKER_GRAY = '#6b7280'
-
-// Unified marker icon factory - all client markers use blue color scheme
-// Status differences shown via border style only, not color
-const createCustomerIcon = (
-  geocodeStatus: 'valid' | 'approximate' | 'invalid' | 'sea_suspect',
-  selected: boolean
-) => {
-  const size = selected ? 22 : 18
-
-  // All markers use blue base color for consistency
-  const color = MARKER_BLUE
-  const ringColor = MARKER_BLUE_RING
-
-  // Status differentiation via border style only (not color)
-  // valid: solid white border
-  // approximate: dashed amber border (keep blue fill)
-  // invalid/sea_suspect: should be filtered out by hasRenderableCoordinates
-  const isApproximate = geocodeStatus === 'approximate'
-  const borderStyle = isApproximate ? 'dashed' : 'solid'
-  const borderColor = isApproximate ? MARKER_AMBER : '#ffffff'
-
-  return L.divIcon({
-    className: 'client-marker-icon',
-    html: `
-      <div style="
-        width:${size}px;
-        height:${size}px;
-        border-radius:999px;
-        background:${color};
-        border:2px ${borderStyle} ${borderColor};
-        box-shadow:0 4px 12px rgba(15,23,42,.24);
-        outline:${selected ? `3px solid ${ringColor}` : 'none'};
-      ">
-      </div>
-    `,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -(size / 2 + 8)],
-  })
-}
 
 const myLocationIcon = L.divIcon({
   className: '',
@@ -228,6 +197,7 @@ function MapViewport({
 export default function Maps() {
   const { user } = useAuth()
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [visits, setVisits] = useState<Visit[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null)
@@ -378,6 +348,23 @@ export default function Maps() {
     }
 
     loadCustomers().catch(console.error)
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return
+
+    const controller = new AbortController()
+    fetch('/api/visits', { signal: controller.signal })
+      .then(async response => {
+        const result = await response.json()
+        if (!response.ok || !result.success) throw new Error(result.error || 'Failed to load visits')
+        setVisits(result.data || [])
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') console.warn('Error loading visits for map markers:', error)
+      })
+
+    return () => controller.abort()
   }, [user?.id])
 
   const getFilteredCities = useCallback(() => {
@@ -610,6 +597,22 @@ export default function Maps() {
   }, [])
 
   const markerClients = useMemo(() => renderAllMarkers(cityMappedCustomers), [renderAllMarkers, cityMappedCustomers])
+  const visitMarkerStateByCustomerId = useMemo(() => {
+    const now = Date.now()
+    const states = new Map<string, VisitMarkerState>()
+
+    for (const visit of visits) {
+      if (!['programada', 'pending'].includes(String(visit.status).toLowerCase()) || !visit.customer_id) continue
+      const scheduledAt = visit.scheduled_at || visit.scheduled_date
+      const scheduledTime = scheduledAt ? new Date(scheduledAt).getTime() : Number.NaN
+      const current = states.get(visit.customer_id) ?? { scheduled: false, overdue: false }
+      current.scheduled = true
+      current.overdue ||= Number.isFinite(scheduledTime) && scheduledTime < now
+      states.set(visit.customer_id, current)
+    }
+
+    return states
+  }, [visits])
   const unmappedClientsCount = cityUnmappedCustomers.length
   const searchCityLabel = useMemo(() => {
     if (!searchActive || resolvedCustomers.length === 0) return null
@@ -685,9 +688,9 @@ export default function Maps() {
 
   const createClusterIcon = useCallback((cluster: { getChildCount: () => number }) => {
     const count = cluster.getChildCount()
-    const size = count >= 50 ? 48 : count >= 10 ? 42 : 36
+    const size = count >= 50 ? 56 : count >= 10 ? 48 : 40
     return L.divIcon({
-      html: `<div title="${count} clientes en esta zona" aria-label="${count} clientes en esta zona" style="background:${MARKER_BLUE};color:#fff;border-radius:50%;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(15,23,42,.3);">${count}</div>`,
+      html: `<div class="casmara-cluster" title="${count} clientes en esta zona" aria-label="${count} clientes en esta zona" style="width:${size}px;height:${size}px;">${count}</div>`,
       className: 'marker-cluster marker-cluster-casmara',
       iconSize: L.point(size, size),
       iconAnchor: L.point(size / 2, size / 2),
@@ -810,9 +813,9 @@ export default function Maps() {
     }
 
     console.table({
-      expectedMappedCount: markerClients.length,
-      renderedMarkerCount: stats.totalMarkersRendered,
       selectedCity,
+      expectedCount: markerClients.length,
+      renderedCount: stats.totalMarkersRendered,
       filteredCustomerCount: resolvedCustomers.length,
     })
 
@@ -1510,21 +1513,29 @@ export default function Maps() {
                     if (!coords) return null
 
                     const popupSummary = buildClientPopupHtml(client, myLocation)
+                    const visitState = visitMarkerStateByCustomerId.get(client.id) ?? { scheduled: false, overdue: false }
+                    const followUp = /seguimiento|follow.?up|pendiente/i.test(String(client.sourceCustomer.status || ''))
+                    const tooltip = getMarkerTooltip(client.geocodeStatus, visitState, followUp)
 
                     return (
                       <Marker
                         key={client.id}
                         position={[coords.lat, coords.lng]}
-                        icon={createCustomerIcon(
-                          client.geocodeStatus,
-                          client.id === selectedCustomerId
-                        )}
+                        icon={createCasmaraMarkerIcon({
+                          accuracy: client.geocodeStatus === 'approximate' ? 'approximate' : 'precise',
+                          selected: client.id === selectedCustomerId,
+                          scheduled: visitState.scheduled,
+                          overdue: visitState.overdue,
+                          followUp,
+                        })}
+                        title={client.name}
+                        keyboard
                         ref={marker => upsertMarkerForClient(client, marker)}
                         eventHandlers={{
                           click: () => setSelectedCustomerId(client.id),
                         }}
                       >
-                        {client.geocodeStatus === 'approximate' && <Tooltip direction="top">Ubicación aproximada</Tooltip>}
+                        <Tooltip direction="top">{tooltip}</Tooltip>
                         <Popup minWidth={280}>
                           <div className="space-y-3" data-popup-summary={popupSummary}>
                             <div className="border-b border-gray-200 pb-2">

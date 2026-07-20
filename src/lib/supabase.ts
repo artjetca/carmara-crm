@@ -32,6 +32,7 @@ export interface Customer {
   longitude?: number
   coordinates?: string
   normalized_address?: string
+  status?: string
   geocoding_status?: 'pending' | 'processing' | 'success' | 'low_confidence' | 'failed' | 'manual_review' | 'manual'
   geocoding_provider?: string
   geocoding_confidence?: number
