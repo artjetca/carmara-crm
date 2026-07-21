@@ -2435,8 +2435,8 @@ export default function Maps() {
                     </button>
                   )}
                 </> : <>
-                  <button onClick={() => setDistanceModeSafely(false)} title="Cancelar medición" className="flex min-h-12 w-[72px] items-center justify-center rounded-full bg-slate-900 px-2 text-xs font-semibold text-white shadow-lg transition active:scale-95">
-                    Cancelar
+                  <button onClick={() => setDistanceModeSafely(false)} title="Cancelar medición" aria-label="Cancelar medición" className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition active:scale-95">
+                    <X className="h-6 w-6" />
                   </button>
                   <button
                     onClick={() => startMapPointSelection(routeOrigin ? 'destination' : 'origin')}
