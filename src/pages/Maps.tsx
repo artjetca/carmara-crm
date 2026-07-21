@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -125,17 +125,6 @@ const isCitySearch = (query: string, city: string) => {
   const queryTokens = normalizeCityName(query).split(' ').filter(token => token.length >= 3)
   const cityTokens = normalizeCityName(city).split(' ')
   return queryTokens.length > 0 && queryTokens.every(token => cityTokens.some(cityToken => cityToken.includes(token)))
-}
-
-const getMarkerTooltip = (
-  geocodeStatus: ResolvedMapClient['geocodeStatus'],
-  visitState: VisitMarkerState,
-  followUp: boolean
-) => {
-  if (visitState.overdue) return 'Visita atrasada'
-  if (visitState.scheduled) return 'Visita programada'
-  if (followUp) return 'Seguimiento pendiente'
-  return geocodeStatus === 'approximate' ? 'Ubicación aproximada' : 'Ubicación precisa'
 }
 
 const provinces = ['Cádiz', 'Huelva', 'Ceuta']
@@ -1828,27 +1817,21 @@ export default function Maps() {
                     center={[routeOrigin.latitude, routeOrigin.longitude]}
                     radius={18}
                     pathOptions={{ color: '#16a34a', weight: 3, fillOpacity: 0.12 }}
-                  >
-                    <Tooltip direction="top" permanent>A</Tooltip>
-                  </CircleMarker>
+                  />
                 )}
                 {distanceMode && routeOrigin?.type === 'current-location' && myLocation && (
                   <CircleMarker
                     center={[myLocation.lat, myLocation.lng]}
                     radius={24}
                     pathOptions={{ color: '#16a34a', weight: 3, fillOpacity: 0.05 }}
-                  >
-                    <Tooltip direction="top" permanent>A</Tooltip>
-                  </CircleMarker>
+                  />
                 )}
                 {distanceMode && routeDestination && (
                   <CircleMarker
                     center={[routeDestination.latitude, routeDestination.longitude]}
                     radius={18}
                     pathOptions={{ color: '#dc2626', weight: 3, fillOpacity: 0.1 }}
-                  >
-                    <Tooltip direction="top" permanent>B</Tooltip>
-                  </CircleMarker>
+                  />
                 )}
                 {markerClients.map(client => {
                     const coords = getClientRenderableCoordinates(client)
@@ -1857,8 +1840,6 @@ export default function Maps() {
                     const popupSummary = buildClientPopupHtml(client, myLocation)
                     const visitState = visitMarkerStateByCustomerId.get(client.id) ?? { scheduled: false, overdue: false }
                     const followUp = /seguimiento|follow.?up|pendiente/i.test(String(client.sourceCustomer.status || ''))
-                    const tooltip = getMarkerTooltip(client.geocodeStatus, visitState, followUp)
-
                     return (
                       <Marker
                         key={client.id}
@@ -1870,7 +1851,6 @@ export default function Maps() {
                           overdue: visitState.overdue,
                           followUp,
                         })}
-                        title={client.name}
                         opacity={distanceMode && client.id !== routeOrigin?.id && client.id !== routeDestination?.id ? 0.7 : 1}
                         zIndexOffset={client.id === routeOrigin?.id || client.id === routeDestination?.id ? 500 : 0}
                         keyboard
@@ -1885,7 +1865,6 @@ export default function Maps() {
                           },
                         }}
                       >
-                        <Tooltip direction="top">{tooltip}</Tooltip>
                         {!distanceMode && <Popup minWidth={280}>
                           <div className="space-y-3" data-popup-summary={popupSummary}>
                             <div className="border-b border-gray-200 pb-2">
@@ -1991,7 +1970,6 @@ export default function Maps() {
                       },
                     }}
                   >
-                    <Tooltip direction="top">{getLocationAccuracyLabel(locationDetails?.accuracy)}</Tooltip>
                     {!distanceMode && <Popup minWidth={260}>
                       <div className="space-y-3">
                         <div className="border-b border-gray-200 pb-2">
@@ -2401,22 +2379,15 @@ export default function Maps() {
                     </button>
                   </div>
                 )}
-                {distanceMode && (
+                {distanceMode && (distanceModeState === 'selecting-a' || distanceModeState === 'selecting-b') && (
                   <div className="mt-2 flex min-h-10 items-center justify-between gap-2 rounded-xl border border-blue-100 bg-white/95 px-3 text-xs shadow-md backdrop-blur-md">
                     <div className="min-w-0 truncate font-semibold text-blue-700">
                       {distanceModeState === 'selecting-a' && 'Selecciona el punto A'}
                       {distanceModeState === 'selecting-b' && `Ahora selecciona el punto B${routeOrigin ? ` · A: ${routeOrigin.name}` : ''}`}
-                      {distanceModeState === 'calculating' && 'Calculando ruta…'}
-                      {(distanceModeState === 'result' || distanceModeState === 'error') && 'Medición lista'}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {(distanceModeState === 'selecting-a' || distanceModeState === 'selecting-b') && (
-                        <button onClick={() => setMobileMapSheet(routeOrigin ? 'choose-destination' : 'choose-origin')} className="min-h-9 font-medium text-blue-700">
-                          Más
-                        </button>
-                      )}
-                      <button onClick={() => setDistanceModeSafely(false)} className="min-h-9 font-medium text-gray-600">
-                        Cancelar
+                      <button onClick={() => setMobileMapSheet(routeOrigin ? 'choose-destination' : 'choose-origin')} className="min-h-9 font-medium text-blue-700">
+                        Más
                       </button>
                     </div>
                   </div>
