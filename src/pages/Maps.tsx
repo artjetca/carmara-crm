@@ -2419,10 +2419,9 @@ export default function Maps() {
                     onClick={() => setDistanceModeSafely(true)}
                     title="Medir distancia"
                     aria-label="Medir distancia"
-                    className="flex min-h-12 w-[72px] flex-col items-center justify-center rounded-full border border-white/60 bg-white/90 px-2 text-xs font-semibold text-gray-800 shadow-lg backdrop-blur-md transition active:scale-95"
+                    className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/90 shadow-lg backdrop-blur-md transition active:scale-95"
                   >
-                    <Ruler className="h-5 w-5 text-blue-600" />
-                    <span>Medir</span>
+                    <Ruler className="h-6 w-6 text-blue-600" />
                   </button>
                   <button onClick={locateMe} title="Mi ubicación" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95">
                     <LocateFixed className="h-6 w-6 text-blue-600" />
