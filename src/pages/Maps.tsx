@@ -88,13 +88,12 @@ type MobileListMode = 'all' | 'mapped' | 'unmapped'
 type MobileSheetSize = 'half' | 'full'
 type VisitMarkerState = { scheduled: boolean; overdue: boolean }
 type MapPointSelectionPurpose = 'origin' | 'destination' | 'choose'
-type DistanceModeState =
+type MeasureState =
   | 'idle'
-  | 'selecting-origin'
-  | 'selecting-destination'
-  | 'selecting-map-point'
+  | 'selecting-a'
+  | 'selecting-b'
   | 'calculating'
-  | 'route-ready'
+  | 'result'
   | 'error'
 type MobileMapSheet =
   | 'none'
@@ -180,19 +179,32 @@ function MapViewport({
   defaultCenter,
   filterProvince,
   filterCity,
+  suspendAutoFit,
 }: {
   bounds: LatLngBoundsExpression | null
   defaultCenter: [number, number]
   filterProvince: string
   filterCity: string
+  suspendAutoFit: boolean
 }) {
   const map = useMap()
   const filterKey = `${filterProvince}|${filterCity}`
   const prevFilterRef = useRef(filterKey)
+  const wasSuspendedRef = useRef(false)
 
   useEffect(() => {
-    map.invalidateSize()
-    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 300)
+    map.invalidateSize({ pan: false })
+    const resizeTimer = window.setTimeout(() => map.invalidateSize({ pan: false }), 300)
+
+    if (suspendAutoFit) {
+      wasSuspendedRef.current = true
+      return () => window.clearTimeout(resizeTimer)
+    }
+
+    if (wasSuspendedRef.current) {
+      wasSuspendedRef.current = false
+      return () => window.clearTimeout(resizeTimer)
+    }
 
     const filterChanged = filterKey !== prevFilterRef.current
     prevFilterRef.current = filterKey
@@ -214,7 +226,7 @@ function MapViewport({
 
     map.setView(defaultCenter, 8)
     return () => window.clearTimeout(resizeTimer)
-  }, [bounds, defaultCenter, filterKey, filterProvince, map])
+  }, [bounds, defaultCenter, filterKey, filterProvince, map, suspendAutoFit])
 
   return null
 }
@@ -233,7 +245,7 @@ export default function Maps() {
   const [cityDetailMode, setCityDetailMode] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
   const [distanceMode, setDistanceMode] = useState(false)
-  const [distanceModeState, setDistanceModeState] = useState<DistanceModeState>('idle')
+  const [distanceModeState, setDistanceModeState] = useState<MeasureState>('idle')
   const [mobileMapSheet, setMobileMapSheet] = useState<MobileMapSheet>('none')
   const [distanceOrigin, setDistanceOrigin] = useState<DistanceOrigin>(JEREZ_ORIGIN)
   const [routeTimeByClientId, setRouteTimeByClientId] = useState<Record<string, RouteTimeEntry>>({})
@@ -647,9 +659,9 @@ export default function Maps() {
     setPendingMapPoint(null)
     setMapPointHint(null)
     if (distanceMode) {
-      const nextState = routeOrigin ? 'selecting-destination' : 'selecting-origin'
+      const nextState = routeOrigin ? 'selecting-b' : 'selecting-a'
       setDistanceModeState(nextState)
-      setMobileMapSheet(nextState === 'selecting-origin' ? 'choose-origin' : 'choose-destination')
+      setMobileMapSheet('none')
     }
   }, [distanceMode, routeOrigin])
 
@@ -672,7 +684,6 @@ export default function Maps() {
     updatePendingMapPoint({ lat: center.lat, lng: center.lng })
     setMapPointSelectionPurpose(purpose)
     setMapPointSelectionMode(true)
-    setDistanceModeState('selecting-map-point')
     setMobileMapSheet('select-map-point')
     setMapPointHint('Mueve el mapa y confirma el punto')
     if (window.matchMedia('(max-width: 767px)').matches) setSheetOpen(false)
@@ -685,8 +696,8 @@ export default function Maps() {
     setRouteError(null)
     setRouteSheetExpanded(false)
     if (role === 'origin') {
-      setDistanceModeState('selecting-destination')
-      setMobileMapSheet('choose-destination')
+      setDistanceModeState('selecting-b')
+      setMobileMapSheet('none')
     } else {
       setDistanceModeState('calculating')
       setMobileMapSheet('calculating')
@@ -703,7 +714,7 @@ export default function Maps() {
       setLocationMessage('Este cliente todavía no tiene coordenadas.')
       return
     }
-    const role = distanceModeState === 'selecting-origin' ? 'origin' : 'destination'
+    const role = distanceModeState === 'selecting-a' ? 'origin' : 'destination'
     selectRoutePoint(role, point)
   }, [customerRoutePoint, distanceModeState, selectRoutePoint])
 
@@ -755,8 +766,8 @@ export default function Maps() {
     }
     setDistanceMode(enabled)
     if (enabled) {
-      setDistanceModeState('selecting-origin')
-      setMobileMapSheet('choose-origin')
+      setDistanceModeState('selecting-a')
+      setMobileMapSheet('none')
       setSheetOpen(false)
     }
   }, [clearRoute, closeMapPointSelection, routeDestination, routeOrigin])
@@ -805,7 +816,7 @@ export default function Maps() {
     routingProvider.calculateRoute(routeOrigin, routeDestination, controller.signal)
       .then(result => {
         setRouteResult(result)
-        setDistanceModeState('route-ready')
+        setDistanceModeState('result')
         setMobileMapSheet('route-result')
       })
       .catch(error => {
@@ -909,7 +920,7 @@ export default function Maps() {
 
   const invalidateMapSoon = useCallback(() => {
     window.setTimeout(() => {
-      mapRef.current?.invalidateSize()
+      mapRef.current?.invalidateSize({ pan: false })
     }, 300)
   }, [])
 
@@ -1775,6 +1786,7 @@ export default function Maps() {
                   defaultCenter={defaultCenter as [number, number]}
                   filterProvince={selectedProvince}
                   filterCity={selectedCity}
+                  suspendAutoFit={distanceMode}
                 />
                 <TileLayer
                   url={mapTileProvider.url}
@@ -1788,7 +1800,6 @@ export default function Maps() {
                     updatePendingMapPoint(coordinates)
                     setMapPointSelectionMode(false)
                     setMapPointSelectionPurpose('choose')
-                    setDistanceModeState('selecting-map-point')
                     setMobileMapSheet('select-map-point')
                     setSheetOpen(false)
                   }}
@@ -1863,8 +1874,11 @@ export default function Maps() {
                         ref={marker => upsertMarkerForClient(client, marker)}
                         eventHandlers={{
                           click: () => {
+                            if (distanceMode) {
+                              selectDistanceCustomer(client)
+                              return
+                            }
                             setSelectedCustomerId(client.id)
-                            if (distanceMode) setMobileMapSheet('customer-choice')
                           },
                         }}
                       >
@@ -1964,9 +1978,18 @@ export default function Maps() {
                       accuracy: locationDetails?.accuracy,
                       isMoving: (locationDetails?.speed ?? 0) > 1,
                     })}
+                    eventHandlers={{
+                      click: () => {
+                        if (!distanceMode || !myLocation) return
+                        selectRoutePoint(
+                          distanceModeState === 'selecting-a' ? 'origin' : 'destination',
+                          routePointFromCoordinates('current-location', 'Mi ubicación', myLocation)
+                        )
+                      },
+                    }}
                   >
                     <Tooltip direction="top">{getLocationAccuracyLabel(locationDetails?.accuracy)}</Tooltip>
-                    <Popup minWidth={260}>
+                    {!distanceMode && <Popup minWidth={260}>
                       <div className="space-y-3">
                         <div className="border-b border-gray-200 pb-2">
                           <div className="text-base font-semibold text-gray-900">Mi ubicación</div>
@@ -2042,7 +2065,7 @@ export default function Maps() {
                           </button>
                         </div>
                       </div>
-                    </Popup>
+                    </Popup>}
                   </Marker>
                 )}
 
@@ -2127,7 +2150,7 @@ export default function Maps() {
                         {routeOrigin && (
                           <div className="mt-3 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                             <span><strong>A</strong> {routeOrigin.name}</span>
-                            <button onClick={() => { setRouteOrigin(null); setRouteResult(null); setDistanceModeState('selecting-origin'); setMobileMapSheet('choose-origin') }} className="font-medium text-emerald-700">Cambiar</button>
+                            <button onClick={() => { setRouteOrigin(null); setRouteResult(null); setDistanceModeState('selecting-a'); setMobileMapSheet('none') }} className="font-medium text-emerald-700">Cambiar</button>
                           </div>
                         )}
                         <div className="mt-3 space-y-2">
@@ -2157,7 +2180,7 @@ export default function Maps() {
                             <div className="font-semibold text-gray-900">{selectedCustomer.name}</div>
                             <div className="mt-1 text-xs text-gray-500">{[selectedCustomer.city, selectedCustomer.address].filter(Boolean).join(' · ')}</div>
                             <button onClick={() => selectDistanceCustomer(selectedCustomer)} className="mt-3 min-h-12 w-full rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">
-                              {distanceModeState === 'selecting-origin' ? 'Usar como origen' : 'Usar como destino'}
+                              {distanceModeState === 'selecting-a' ? 'Usar como origen' : 'Usar como destino'}
                             </button>
                             <button onClick={() => { setMobileMapSheet('none'); setSheetOpen(true) }} className="mt-2 min-h-11 w-full text-sm font-medium text-blue-700">Ver cliente</button>
                           </div>
@@ -2166,7 +2189,7 @@ export default function Maps() {
                             <input
                               value={searchTerm}
                               onChange={event => setSearchTerm(event.target.value)}
-                              placeholder={distanceModeState === 'selecting-origin' ? 'Buscar cliente de origen' : 'Buscar cliente de destino'}
+                              placeholder={distanceModeState === 'selecting-a' ? 'Buscar punto A' : 'Buscar punto B'}
                               className="mt-3 min-h-12 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-blue-500"
                             />
                             <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-gray-100">
@@ -2218,9 +2241,9 @@ export default function Maps() {
                             <button onClick={() => window.open(buildRouteNavigationUrl(routeOrigin, routeDestination), '_blank')} className="mt-4 min-h-12 w-full rounded-xl bg-green-600 px-4 text-sm font-semibold text-white">Navegar</button>
                             <div className="mt-2 grid grid-cols-2 gap-2">
                               <button onClick={swapRoutePoints} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Intercambiar</button>
-                              <button onClick={() => { setRouteOrigin(null); setRouteResult(null); setDistanceModeState('selecting-origin'); setMobileMapSheet('choose-origin') }} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Cambiar origen</button>
-                              <button onClick={() => { setRouteDestination(null); setRouteResult(null); setDistanceModeState('selecting-destination'); setMobileMapSheet('choose-destination') }} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Cambiar destino</button>
-                              <button onClick={() => { clearRoute(); setDistanceModeState('selecting-origin'); setMobileMapSheet('choose-origin') }} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Nueva medición</button>
+                              <button onClick={() => { setRouteOrigin(null); setRouteResult(null); setDistanceModeState('selecting-a'); setMobileMapSheet('none') }} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Cambiar A</button>
+                              <button onClick={() => { setRouteDestination(null); setRouteResult(null); setDistanceModeState('selecting-b'); setMobileMapSheet('none') }} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Cambiar B</button>
+                              <button onClick={() => { clearRoute(); setDistanceModeState('selecting-a'); setMobileMapSheet('none') }} className="min-h-11 rounded-lg bg-slate-100 text-sm font-medium text-slate-700">Nueva medición</button>
                             </div>
                             <button onClick={() => setDistanceModeSafely(false)} className="mt-2 min-h-11 w-full text-sm font-medium text-gray-600">Cerrar</button>
                           </div>
@@ -2308,9 +2331,9 @@ export default function Maps() {
                   <input
                     type="text"
                     placeholder={distanceMode
-                      ? distanceModeState === 'selecting-origin'
-                        ? 'Buscar cliente de origen'
-                        : 'Buscar cliente de destino'
+                      ? distanceModeState === 'selecting-a'
+                        ? 'Buscar punto A'
+                        : 'Buscar punto B'
                       : 'Buscar por nombre, teléfono, ciudad…'}
                     value={searchTerm}
                     onChange={event => {
@@ -2323,7 +2346,7 @@ export default function Maps() {
                     }}
                     onFocus={() => {
                       if (distanceMode) {
-                        setMobileMapSheet(distanceModeState === 'selecting-origin' ? 'choose-origin' : 'choose-destination')
+                        setMobileMapSheet('none')
                       } else {
                         setSheetOpen(true)
                       }
@@ -2376,18 +2399,23 @@ export default function Maps() {
                   </div>
                 )}
                 {distanceMode && (
-                  <div className="mt-2 flex min-h-10 items-center justify-between rounded-xl border border-blue-100 bg-white/95 px-3 text-xs shadow-md backdrop-blur-md">
-                    <div>
-                      <span className="font-semibold text-blue-700">
-                        {routeOrigin ? 'Paso 2 de 2' : 'Paso 1 de 2'}
-                      </span>
-                      <span className="ml-2 text-gray-700">
-                        {routeOrigin ? 'Selecciona el destino' : 'Selecciona el origen'}
-                      </span>
+                  <div className="mt-2 flex min-h-10 items-center justify-between gap-2 rounded-xl border border-blue-100 bg-white/95 px-3 text-xs shadow-md backdrop-blur-md">
+                    <div className="min-w-0 truncate font-semibold text-blue-700">
+                      {distanceModeState === 'selecting-a' && 'Selecciona el punto A'}
+                      {distanceModeState === 'selecting-b' && `Ahora selecciona el punto B${routeOrigin ? ` · A: ${routeOrigin.name}` : ''}`}
+                      {distanceModeState === 'calculating' && 'Calculando ruta…'}
+                      {(distanceModeState === 'result' || distanceModeState === 'error') && 'Medición lista'}
                     </div>
-                    <button onClick={() => setDistanceModeSafely(false)} className="min-h-9 px-1 font-medium text-gray-600">
-                      Cancelar
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {(distanceModeState === 'selecting-a' || distanceModeState === 'selecting-b') && (
+                        <button onClick={() => setMobileMapSheet(routeOrigin ? 'choose-destination' : 'choose-origin')} className="min-h-9 font-medium text-blue-700">
+                          Más
+                        </button>
+                      )}
+                      <button onClick={() => setDistanceModeSafely(false)} className="min-h-9 font-medium text-gray-600">
+                        Cancelar
+                      </button>
+                    </div>
                   </div>
                 )}
                 {(searchLoading || searchError || searchSuggestions.length > 0) && (
@@ -2643,7 +2671,7 @@ function MapBridge({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | nul
 
   useEffect(() => {
     mapRef.current = map
-    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 300)
+    const resizeTimer = window.setTimeout(() => map.invalidateSize({ pan: false }), 300)
 
     return () => {
       window.clearTimeout(resizeTimer)
