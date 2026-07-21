@@ -77,12 +77,12 @@
 
 .leaflet-container .leaflet-marker-icon.vehicle-location-marker-icon,
 .leaflet-container .leaflet-div-icon.vehicle-location-marker-icon {
-  width: 58px !important;
-  min-width: 58px !important;
-  max-width: 58px !important;
-  height: 58px !important;
-  min-height: 58px !important;
-  max-height: 58px !important;
+  width: 48px !important;
+  min-width: 48px !important;
+  max-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
   overflow: visible;
   border: 0;
   background: transparent;
@@ -90,8 +90,8 @@
 
 .leaflet-container .vehicle-location-marker {
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 48px;
+  height: 48px;
   overflow: visible;
   --vehicle-location-accent: #2563eb;
 }
@@ -100,9 +100,9 @@
 .leaflet-container .vehicle-location-marker__pulse {
   position: absolute;
   left: 50%;
-  top: 57%;
-  width: 40px;
-  height: 28px;
+  top: 59%;
+  width: 34px;
+  height: 22px;
   border-radius: 999px;
   transform: translate(-50%, -50%);
   background: color-mix(in srgb, var(--vehicle-location-accent) 28%, transparent);
@@ -127,25 +127,13 @@
   --vehicle-location-accent: #64748b;
 }
 
-.leaflet-container .vehicle-location-marker__badge {
-  position: absolute;
-  left: 3px;
-  top: 3px;
-  width: 52px;
-  height: 52px;
-  border: 2px solid var(--vehicle-location-accent);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.28), inset 0 0 0 2px rgba(255, 255, 255, 0.8);
-}
-
 .leaflet-container .vehicle-location-marker__car {
   position: absolute;
-  left: 13px;
-  top: 2px;
+  left: 10px;
+  top: 0;
   display: block;
-  width: 26px !important;
-  height: 46px !important;
+  width: 28px !important;
+  height: 48px !important;
   max-width: none !important;
   max-height: none !important;
   object-fit: contain;
@@ -157,19 +145,16 @@
 
 .vehicle-location-legend-icon {
   display: inline-flex;
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 22px;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  border: 1px solid #2563eb;
-  border-radius: 8px;
-  background: #fff;
+  overflow: visible;
 }
 
 .vehicle-location-legend-icon img {
   display: block;
-  width: 12px;
+  width: 14px;
   height: 22px;
   object-fit: contain;
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.28));
@@ -229,22 +214,17 @@
   .leaflet-container .leaflet-marker-icon.vehicle-location-marker-icon,
   .leaflet-container .leaflet-div-icon.vehicle-location-marker-icon,
   .leaflet-container .vehicle-location-marker {
-    width: 54px !important;
-    min-width: 54px !important;
-    max-width: 54px !important;
-    height: 54px !important;
-    min-height: 54px !important;
-    max-height: 54px !important;
-  }
-
-  .leaflet-container .vehicle-location-marker__badge {
-    width: 48px;
-    height: 48px;
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
   }
 
   .leaflet-container .vehicle-location-marker__car {
-    left: 12px;
-    width: 24px !important;
-    height: 43px !important;
+    left: 9px;
+    width: 26px !important;
+    height: 44px !important;
   }
 }
