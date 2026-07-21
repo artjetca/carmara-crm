@@ -5,6 +5,7 @@ import type { Customer, Visit } from '../lib/supabase'
 import {
   ChevronDown,
   ChevronLeft,
+  Crosshair,
   Expand,
   ExternalLink,
   LocateFixed,
@@ -14,6 +15,7 @@ import {
   Navigation,
   Phone,
   Search,
+  Ruler,
   X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
@@ -85,6 +87,7 @@ type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 type MobileListMode = 'all' | 'mapped' | 'unmapped'
 type MobileSheetSize = 'half' | 'full'
 type VisitMarkerState = { scheduled: boolean; overdue: boolean }
+type MapPointSelectionPurpose = 'origin' | 'destination' | 'choose'
 type LocationDetails = {
   accuracy: number | null
   heading: number | null
@@ -235,7 +238,10 @@ export default function Maps() {
   const [routeRequestVersion, setRouteRequestVersion] = useState(0)
   const [routeStops, setRouteStops] = useState<RoutePoint[]>([])
   const [routeSheetExpanded, setRouteSheetExpanded] = useState(false)
-  const [mapPointCandidate, setMapPointCandidate] = useState<RoutePoint | null>(null)
+  const [mapPointSelectionMode, setMapPointSelectionMode] = useState(false)
+  const [mapPointSelectionPurpose, setMapPointSelectionPurpose] = useState<MapPointSelectionPurpose>('choose')
+  const [pendingMapPoint, setPendingMapPoint] = useState<RoutePoint | null>(null)
+  const [mapPointHint, setMapPointHint] = useState<string | null>(null)
   const [fittingAll, setFittingAll] = useState(false)
   const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
   const [repairingCoordinates, setRepairingCoordinates] = useState(false)
@@ -595,6 +601,10 @@ export default function Maps() {
       : null,
     [resolvedCustomers, routeDestination]
   )
+  const preferredMapPointPurpose: 'origin' | 'destination' = useMemo(() => {
+    if (mapPointSelectionPurpose !== 'choose') return mapPointSelectionPurpose
+    return routeOrigin ? 'destination' : 'origin'
+  }, [mapPointSelectionPurpose, routeOrigin])
   const nearestCustomer = useMemo(() => {
     if (!myLocation) return null
     return resolvedCustomers
@@ -613,15 +623,57 @@ export default function Maps() {
     myLocation ? routePointFromCoordinates('current-location', 'Mi ubicación', myLocation) : null
   ), [myLocation])
 
+  const closeMapPointSelection = useCallback(() => {
+    setMapPointSelectionMode(false)
+    setMapPointSelectionPurpose('choose')
+    setPendingMapPoint(null)
+    setMapPointHint(null)
+  }, [])
+
+  const updatePendingMapPoint = useCallback((coordinates: MapCoordinates) => {
+    if (!isValidCoordinate(coordinates.lat, coordinates.lng)) {
+      setLocationMessage('No hemos podido seleccionar este punto.')
+      return
+    }
+    setPendingMapPoint(routePointFromCoordinates('map-point', 'Punto seleccionado', coordinates))
+  }, [])
+
+  const startMapPointSelection = useCallback((purpose: MapPointSelectionPurpose = 'choose') => {
+    const map = mapRef.current
+    if (!map) {
+      setLocationMessage('El mapa todavía se está cargando.')
+      return
+    }
+
+    const center = map.getCenter()
+    updatePendingMapPoint({ lat: center.lat, lng: center.lng })
+    setMapPointSelectionPurpose(purpose)
+    setMapPointSelectionMode(true)
+    setMapPointHint('Mueve el mapa y confirma el punto')
+    if (window.matchMedia('(max-width: 767px)').matches) setSheetOpen(false)
+  }, [updatePendingMapPoint])
+
   const selectRoutePoint = useCallback((role: 'origin' | 'destination', point: RoutePoint) => {
     if (role === 'origin') setRouteOrigin(point)
     else setRouteDestination(point)
     setRouteResult(null)
     setRouteError(null)
     setRouteSheetExpanded(false)
-    setMapPointCandidate(null)
     if (window.matchMedia('(max-width: 767px)').matches) setSheetOpen(false)
   }, [])
+
+  const confirmMapPoint = useCallback((purpose: MapPointSelectionPurpose) => {
+    if (!pendingMapPoint) {
+      setLocationMessage('No hemos podido seleccionar este punto.')
+      return
+    }
+
+    const role = purpose === 'choose'
+      ? routeOrigin ? 'destination' : 'origin'
+      : purpose
+    selectRoutePoint(role, pendingMapPoint)
+    closeMapPointSelection()
+  }, [closeMapPointSelection, pendingMapPoint, routeOrigin, selectRoutePoint])
 
   const clearRoute = useCallback(() => {
     setRouteOrigin(null)
@@ -630,8 +682,18 @@ export default function Maps() {
     setRouteError(null)
     setRouteStops([])
     setRouteSheetExpanded(false)
-    setMapPointCandidate(null)
-  }, [])
+    closeMapPointSelection()
+  }, [closeMapPointSelection])
+
+  const setDistanceModeSafely = useCallback((enabled: boolean) => {
+    if (!enabled && (routeOrigin || routeDestination)) {
+      const confirmed = window.confirm('¿Quieres salir del modo distancia y limpiar la ruta?')
+      if (!confirmed) return
+      clearRoute()
+    }
+    if (!enabled) closeMapPointSelection()
+    setDistanceMode(enabled)
+  }, [clearRoute, closeMapPointSelection, routeDestination, routeOrigin])
 
   const retryRoute = useCallback(() => setRouteRequestVersion(version => version + 1), [])
 
@@ -696,6 +758,12 @@ export default function Maps() {
 
     return () => controller.abort()
   }, [routeDestination, routeOrigin, routeRequestVersion])
+
+  useEffect(() => {
+    if (!mapPointHint) return
+    const timer = window.setTimeout(() => setMapPointHint(null), 1500)
+    return () => window.clearTimeout(timer)
+  }, [mapPointHint])
 
   const clearMarkers = useCallback(() => {
     markerRegistryRef.current.clear()
@@ -1230,28 +1298,39 @@ export default function Maps() {
             <input
               type="checkbox"
               checked={distanceMode}
-              onChange={e => setDistanceMode(e.target.checked)}
+              onChange={e => setDistanceModeSafely(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
             />
             <span className="text-sm font-medium text-gray-700">Modo distancia (km/min)</span>
           </label>
           {distanceMode && (
-            <button
-              onClick={async () => {
-                setLocationMessage('Obteniendo ubicación...')
-                const location = await getUserLocation()
-                if (location) {
-                  setDistanceOrigin({ name: 'Mi ubicación', coords: location })
-                  setLocationMessage('Usando tu ubicación actual')
-                } else {
-                  setLocationMessage('No se pudo obtener la ubicación')
-                }
-              }}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-            >
-              <LocateFixed className="h-4 w-4" />
-              <span>Mi ubicación</span>
-            </button>
+            <>
+              <button
+                onClick={async () => {
+                  setLocationMessage('Obteniendo ubicación...')
+                  const location = await getUserLocation()
+                  if (location) {
+                    setDistanceOrigin({ name: 'Mi ubicación', coords: location })
+                    setLocationMessage('Usando tu ubicación actual')
+                  } else {
+                    setLocationMessage('No se pudo obtener la ubicación')
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+              >
+                <LocateFixed className="h-4 w-4" />
+                <span>Mi ubicación</span>
+              </button>
+              <button
+                onClick={() => startMapPointSelection(routeOrigin ? 'destination' : 'origin')}
+                title="Seleccionar punto"
+                aria-label="Seleccionar un punto en el mapa"
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+              >
+                <Crosshair className="h-4 w-4" />
+                <span>Seleccionar punto</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1507,7 +1586,7 @@ export default function Maps() {
                     )}
                   </div>
 
-                  {routeDestination?.id === selectedCustomer.id && routeResult && (
+                  {distanceMode && routeDestination?.id === selectedCustomer.id && routeResult && (
                     <div className="space-y-1 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
                       <div className="font-semibold">Ruta desde {routeOrigin?.name}</div>
                       <div>{formatRouteDistance(routeResult.straightLineKm)} en línea recta</div>
@@ -1518,7 +1597,7 @@ export default function Maps() {
                   )}
 
                   <div className="space-y-2 border-t border-gray-200 pt-3">
-                    {customerRoutePoint(selectedCustomer) && (
+                    {distanceMode && customerRoutePoint(selectedCustomer) && (
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={() => selectRoutePoint('origin', customerRoutePoint(selectedCustomer)!)}
@@ -1534,7 +1613,7 @@ export default function Maps() {
                         </button>
                       </div>
                     )}
-                    {myLocation && customerRoutePoint(selectedCustomer) && (
+                    {distanceMode && myLocation && customerRoutePoint(selectedCustomer) && (
                       <button
                         onClick={() => {
                           selectRoutePoint('origin', currentLocationRoutePoint()!)
@@ -1546,7 +1625,7 @@ export default function Maps() {
                         <span>Calcular desde mi ubicación</span>
                       </button>
                     )}
-                    {routeOrigin && routeDestination && (
+                    {distanceMode && routeOrigin && routeDestination && (
                       <div className="grid grid-cols-2 gap-2">
                         <button onClick={focusRoute} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">Ver ruta</button>
                         <button onClick={() => window.open(buildRouteNavigationUrl(routeOrigin, routeDestination), '_blank')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">Navegar</button>
@@ -1575,7 +1654,7 @@ export default function Maps() {
 
         <div>
           {/* En móvil el mapa ocupa toda la pantalla (debajo de la barra de pestañas) */}
-          <div className="max-md:fixed max-md:inset-0 max-md:z-40 overflow-hidden md:rounded-xl md:border md:border-gray-200 bg-white md:shadow-sm">
+          <div className="map-container max-md:fixed max-md:inset-0 max-md:z-40 overflow-hidden md:rounded-xl md:border md:border-gray-200 bg-white md:shadow-sm">
             <div className="relative h-[800px] max-md:h-full">
               {selectedCity && (
                 <div className="absolute left-3 top-3 z-[1000] hidden max-w-[360px] items-center gap-3 rounded-lg border border-white/60 bg-white/90 px-3 py-2 shadow-md backdrop-blur md:flex">
@@ -1629,12 +1708,20 @@ export default function Maps() {
                   maxZoom={mapTileProvider.maxZoom}
                 />
                 <MapRoutePointPicker
-                  onPoint={coordinates => setMapPointCandidate(
-                    routePointFromCoordinates('map-point', 'Punto en el mapa', coordinates)
-                  )}
+                  enabled={distanceMode}
+                  selectionMode={mapPointSelectionMode}
+                  onLongPress={coordinates => {
+                    updatePendingMapPoint(coordinates)
+                    setMapPointSelectionMode(false)
+                    setMapPointSelectionPurpose('choose')
+                    setSheetOpen(false)
+                  }}
+                  onCenterChange={updatePendingMapPoint}
+                  onConfirmCenter={() => confirmMapPoint(mapPointSelectionPurpose)}
+                  onCancel={closeMapPointSelection}
                 />
 
-                {routeResult?.geometry && routeResult.geometry.length > 1 && (
+                {distanceMode && routeResult?.geometry && routeResult.geometry.length > 1 && (
                   <>
                     <Polyline
                       positions={routeResult.geometry.map(([lng, lat]) => [lat, lng] as [number, number])}
@@ -1646,7 +1733,7 @@ export default function Maps() {
                     />
                   </>
                 )}
-                {routeOrigin && routeOrigin.type !== 'current-location' && (
+                {distanceMode && routeOrigin && routeOrigin.type !== 'current-location' && (
                   <CircleMarker
                     center={[routeOrigin.latitude, routeOrigin.longitude]}
                     radius={18}
@@ -1655,7 +1742,7 @@ export default function Maps() {
                     <Tooltip direction="top">Origen</Tooltip>
                   </CircleMarker>
                 )}
-                {routeDestination && (
+                {distanceMode && routeDestination && (
                   <CircleMarker
                     center={[routeDestination.latitude, routeDestination.longitude]}
                     radius={18}
@@ -1664,25 +1751,6 @@ export default function Maps() {
                     <Tooltip direction="top">Destino</Tooltip>
                   </CircleMarker>
                 )}
-                {mapPointCandidate && (
-                  <CircleMarker
-                    center={[mapPointCandidate.latitude, mapPointCandidate.longitude]}
-                    radius={7}
-                    pathOptions={{ color: '#2563eb', weight: 3, fillColor: '#ffffff', fillOpacity: 1 }}
-                  >
-                    <Tooltip direction="top" permanent>Usar este punto</Tooltip>
-                    <Popup minWidth={210}>
-                      <div className="space-y-2 text-sm">
-                        <div className="font-semibold text-gray-900">Punto seleccionado</div>
-                        <div className="flex gap-2">
-                          <button onClick={() => selectRoutePoint('origin', mapPointCandidate)} className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">Usar como origen</button>
-                          <button onClick={() => selectRoutePoint('destination', mapPointCandidate)} className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">Usar como destino</button>
-                        </div>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
-                )}
-
                 {markerClients.map(client => {
                     const coords = getClientRenderableCoordinates(client)
                     if (!coords) return null
@@ -1746,6 +1814,7 @@ export default function Maps() {
                             </div>
 
                             <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
+                              {distanceMode && <>
                               <button
                                 onClick={() => selectRoutePoint('origin', customerRoutePoint(client)!)}
                                 className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
@@ -1769,6 +1838,7 @@ export default function Maps() {
                                   Calcular desde mi ubicación
                                 </button>
                               )}
+                              </>}
                               {client.phone && (
                                 <a
                                   href={`tel:${client.phone}`}
@@ -1836,6 +1906,7 @@ export default function Maps() {
                           )}
                         </div>
                         <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
+                          {distanceMode && <>
                           <button
                             onClick={() => {
                               const point = currentLocationRoutePoint()
@@ -1856,8 +1927,9 @@ export default function Maps() {
                               className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
                             >
                               Calcular ruta al cliente seleccionado
-                            </button>
-                          )}
+                              </button>
+                            )}
+                          </>}
                           <button
                             onClick={centerOnMyLocation}
                             className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
@@ -1887,7 +1959,71 @@ export default function Maps() {
                 <MapBridge mapRef={mapRef} />
               </MapContainer>
 
-              {routeOrigin && routeDestination && (
+              {mapPointSelectionMode && (
+                <>
+                  <div className="map-point-crosshair" aria-hidden="true">
+                    <div className="map-point-crosshair__ring" />
+                    <div className="map-point-crosshair__dot" />
+                  </div>
+                  <div className="sr-only" role="status">
+                    Modo de selección de punto activado. Mueve el mapa y confirma la ubicación.
+                  </div>
+                </>
+              )}
+
+              {mapPointHint && (
+                <div className="absolute left-1/2 top-[88px] z-[1013] -translate-x-1/2 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-white shadow-md md:top-4">
+                  {mapPointHint}
+                </div>
+              )}
+
+              {distanceMode && pendingMapPoint && (
+                <div
+                  className="absolute inset-x-3 z-[1013] md:inset-x-auto md:bottom-4 md:left-1/2 md:w-[360px] md:-translate-x-1/2"
+                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 150px)' }}
+                >
+                  <div className="rounded-xl border border-white/70 bg-white/95 p-3 shadow-xl backdrop-blur-md">
+                    <div className="text-sm font-semibold text-gray-900">
+                      {mapPointSelectionMode ? 'Seleccionar este punto' : '¿Qué quieres hacer con este punto?'}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {mapPointSelectionMode ? 'Ubicación seleccionada en el mapa' : 'Punto seleccionado'}
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => confirmMapPoint('origin')}
+                        className={`min-h-12 rounded-lg px-3 text-sm font-medium ${
+                          preferredMapPointPurpose === 'origin'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-emerald-50 text-emerald-700'
+                        }`}
+                      >
+                        Usar como origen
+                      </button>
+                      <button
+                        onClick={() => confirmMapPoint('destination')}
+                        className={`min-h-12 rounded-lg px-3 text-sm font-medium ${
+                          preferredMapPointPurpose === 'destination'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-rose-50 text-rose-700'
+                        }`}
+                      >
+                        Usar como destino
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <button onClick={closeMapPointSelection} className="min-h-11 px-2 text-sm font-medium text-gray-600">
+                        Cancelar
+                      </button>
+                      <button onClick={centerOnMyLocation} disabled={!myLocation} className="min-h-11 px-2 text-sm font-medium text-blue-700 disabled:text-gray-400">
+                        Centrar en mi ubicación
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {distanceMode && routeOrigin && routeDestination && !pendingMapPoint && (
                 <div className="absolute right-3 top-16 z-[1001] hidden w-[290px] rounded-lg border border-white/70 bg-white/95 p-3 shadow-lg backdrop-blur md:block">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-semibold text-gray-900">Ruta calculada</div>
@@ -2007,6 +2143,20 @@ export default function Maps() {
                     </button>
                   )}
                 </div>
+                {mapPointSelectionMode && (
+                  <div className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-full border border-blue-100 bg-white/95 px-3 text-xs font-medium text-blue-700 shadow-md backdrop-blur-md">
+                    <Crosshair className="h-4 w-4" />
+                    <span>Seleccionando punto</span>
+                    <button
+                      onClick={closeMapPointSelection}
+                      aria-label="Cancelar selección de punto"
+                      title="Cancelar"
+                      className="-mr-1 flex h-7 w-7 items-center justify-center rounded-full text-blue-700 active:bg-blue-50"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 {(searchLoading || searchError || searchSuggestions.length > 0) && (
                   <div className="mt-2 overflow-hidden rounded-xl border border-white/60 bg-white/95 shadow-xl backdrop-blur-md">
                     {searchLoading && <p className="px-4 py-3 text-sm text-gray-500">Buscando clientes…</p>}
@@ -2026,6 +2176,34 @@ export default function Maps() {
                 className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
                 style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
               >
+                <button
+                  onClick={() => setDistanceModeSafely(!distanceMode)}
+                  title="Modo distancia"
+                  aria-label="Modo distancia"
+                  aria-pressed={distanceMode}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition active:scale-95 ${
+                    distanceMode
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-white/60 bg-white/85 text-gray-700'
+                  }`}
+                >
+                  <Ruler className="h-6 w-6" />
+                </button>
+                {distanceMode && (
+                  <button
+                    onClick={() => startMapPointSelection(routeOrigin ? 'destination' : 'origin')}
+                    title="Seleccionar punto"
+                    aria-label="Seleccionar un punto en el mapa"
+                    aria-pressed={mapPointSelectionMode}
+                    className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition active:scale-95 ${
+                      mapPointSelectionMode
+                        ? 'border-blue-600 bg-blue-600 text-white'
+                        : 'border-white/60 bg-white/85 text-blue-600'
+                    }`}
+                  >
+                    <Crosshair className="h-6 w-6" />
+                  </button>
+                )}
                 <button
                   onClick={locateMe}
                   title="Mi ubicación"
@@ -2052,7 +2230,7 @@ export default function Maps() {
                 )}
               </div>
 
-              {routeOrigin && routeDestination && (
+              {distanceMode && routeOrigin && routeDestination && !pendingMapPoint && (
                 <div
                   className="absolute inset-x-3 z-[1012] md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 150px)' }}
@@ -2090,7 +2268,7 @@ export default function Maps() {
               )}
 
               {/* Píldora resumen / hoja inferior */}
-              {!sheetOpen ? (
+              {!sheetOpen && !pendingMapPoint ? (
                 <div
                   className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
@@ -2253,10 +2431,143 @@ function MapBridge({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | nul
   return null
 }
 
-function MapRoutePointPicker({ onPoint }: { onPoint: (coordinates: MapCoordinates) => void }) {
+function MapRoutePointPicker({
+  enabled,
+  selectionMode,
+  onLongPress,
+  onCenterChange,
+  onConfirmCenter,
+  onCancel,
+}: {
+  enabled: boolean
+  selectionMode: boolean
+  onLongPress: (coordinates: MapCoordinates) => void
+  onCenterChange: (coordinates: MapCoordinates) => void
+  onConfirmCenter: () => void
+  onCancel: () => void
+}) {
+  const map = useMap()
+
   useMapEvents({
-    contextmenu: event => onPoint({ lat: event.latlng.lat, lng: event.latlng.lng }),
+    moveend: () => {
+      if (!selectionMode) return
+      const center = map.getCenter()
+      onCenterChange({ lat: center.lat, lng: center.lng })
+    },
   })
+
+  useEffect(() => {
+    if (!selectionMode) return
+    const container = map.getContainer()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        onConfirmCenter()
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCancel()
+      }
+    }
+
+    container.addEventListener('keydown', onKeyDown)
+    return () => container.removeEventListener('keydown', onKeyDown)
+  }, [map, onCancel, onConfirmCenter, selectionMode])
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const container = map.getContainer()
+    const delay = 650
+    const tolerance = 10
+    let timer: number | null = null
+    let startPoint: { x: number; y: number } | null = null
+    let suppressNextClick = false
+
+    const isMapControlTarget = (target: EventTarget | null) => target instanceof Element && Boolean(
+      target.closest('.leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-popup, .leaflet-control, button, input, a')
+    )
+    const clearTimer = () => {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = null
+      startPoint = null
+    }
+    const toCoordinates = (x: number, y: number) => {
+      const rect = container.getBoundingClientRect()
+      const latLng = map.containerPointToLatLng([x - rect.left, y - rect.top])
+      return { lat: latLng.lat, lng: latLng.lng }
+    }
+    const begin = (x: number, y: number, target: EventTarget | null) => {
+      if (isMapControlTarget(target)) return
+      startPoint = { x, y }
+      timer = window.setTimeout(() => {
+        timer = null
+        startPoint = null
+        suppressNextClick = true
+        navigator.vibrate?.(20)
+        onLongPress(toCoordinates(x, y))
+        window.setTimeout(() => { suppressNextClick = false }, 300)
+      }, delay)
+    }
+    const move = (x: number, y: number) => {
+      if (!startPoint) return
+      if (Math.hypot(x - startPoint.x, y - startPoint.y) > tolerance) clearTimer()
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!event.isPrimary || event.button > 0) return
+      begin(event.clientX, event.clientY, event.target)
+    }
+    const onPointerMove = (event: PointerEvent) => move(event.clientX, event.clientY)
+    const onPointerUp = () => clearTimer()
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return
+      const touch = event.touches[0]
+      begin(touch.clientX, touch.clientY, event.target)
+    }
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return clearTimer()
+      const touch = event.touches[0]
+      move(touch.clientX, touch.clientY)
+    }
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+      if (isMapControlTarget(event.target)) return
+      onLongPress(toCoordinates(event.clientX, event.clientY))
+    }
+    const onClick = (event: MouseEvent) => {
+      if (!suppressNextClick) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    if ('PointerEvent' in window) {
+      container.addEventListener('pointerdown', onPointerDown)
+      container.addEventListener('pointermove', onPointerMove)
+      container.addEventListener('pointerup', onPointerUp)
+      container.addEventListener('pointercancel', onPointerUp)
+    } else {
+      container.addEventListener('touchstart', onTouchStart, { passive: true })
+      container.addEventListener('touchmove', onTouchMove, { passive: true })
+      container.addEventListener('touchend', onPointerUp)
+      container.addEventListener('touchcancel', onPointerUp)
+    }
+    container.addEventListener('contextmenu', onContextMenu)
+    container.addEventListener('click', onClick, true)
+
+    return () => {
+      clearTimer()
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerup', onPointerUp)
+      container.removeEventListener('pointercancel', onPointerUp)
+      container.removeEventListener('touchstart', onTouchStart)
+      container.removeEventListener('touchmove', onTouchMove)
+      container.removeEventListener('touchend', onPointerUp)
+      container.removeEventListener('touchcancel', onPointerUp)
+      container.removeEventListener('contextmenu', onContextMenu)
+      container.removeEventListener('click', onClick, true)
+    }
+  }, [enabled, map, onLongPress])
 
   return null
 }

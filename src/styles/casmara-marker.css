@@ -160,6 +160,68 @@
   filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.28));
 }
 
+.map-container .leaflet-container {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.map-container .leaflet-container img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+.map-point-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1005;
+  width: 32px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(15, 23, 42, 0.28));
+}
+
+.map-point-crosshair::before,
+.map-point-crosshair::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: #2563eb;
+  transform: translate(-50%, -50%);
+}
+
+.map-point-crosshair::before {
+  width: 20px;
+  height: 3px;
+}
+
+.map-point-crosshair::after {
+  width: 3px;
+  height: 20px;
+}
+
+.map-point-crosshair__ring {
+  position: absolute;
+  inset: 5px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #2563eb;
+}
+
+.map-point-crosshair__dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2563eb;
+  transform: translate(-50%, -50%);
+}
+
 @keyframes vehicle-location-pulse {
   0% { opacity: 0.65; transform: translate(-50%, -50%) scale(0.85); }
   70% { opacity: 0; transform: translate(-50%, -50%) scale(1.75); }
