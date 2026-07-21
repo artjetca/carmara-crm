@@ -1725,17 +1725,6 @@ export default function Maps() {
                 )}
               </div>
 
-              {locationMessage && (
-                <div
-                  className="absolute inset-x-4 z-[1009] flex justify-center md:hidden"
-                  style={{ top: 'calc(env(safe-area-inset-top) + 118px)' }}
-                >
-                  <div className="max-w-full rounded-full border border-white/60 bg-white/90 px-4 py-2 text-center text-xs font-medium text-slate-700 shadow-lg backdrop-blur-md">
-                    {locationMessage}
-                  </div>
-                </div>
-              )}
-
               {/* Botones circulares flotantes (lado derecho) */}
               <div
                 className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
