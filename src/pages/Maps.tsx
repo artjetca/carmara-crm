@@ -867,7 +867,10 @@ export default function Maps() {
     return sanitizeClients(clients).filter(client => hasRenderableCoordinates(client))
   }, [])
 
-  const markerClients = useMemo(() => renderAllMarkers(cityMappedCustomers), [renderAllMarkers, cityMappedCustomers])
+  // Distance sorting is only for route information. Keep the current filtered
+  // CRM coordinates on the map so entering Medir never removes selectable markers.
+  const markerSourceClients = distanceMode ? resolvedCustomersBase : cityMappedCustomers
+  const markerClients = useMemo(() => renderAllMarkers(markerSourceClients), [markerSourceClients, renderAllMarkers])
   const visitMarkerStateByCustomerId = useMemo(() => {
     const now = Date.now()
     const states = new Map<string, VisitMarkerState>()
