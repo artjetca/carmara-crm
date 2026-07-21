@@ -120,6 +120,7 @@ export default function DataImport() {
         body: JSON.stringify({
           action: 'batch',
           limit: 10,
+          fullAddressOnly: true,
           province: geocodingProvince || undefined,
           city: geocodingCity || undefined,
         }),

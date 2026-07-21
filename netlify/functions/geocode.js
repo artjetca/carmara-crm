@@ -44,6 +44,19 @@ const buildNormalizedAddress = customer => {
   return parts.join(', ')
 }
 
+const hasCompleteAddress = customer => {
+  const street = normalizePart(customer.address)
+  const city = normalizePart(customer.city)
+  const province = normalizePart(customer.province)
+  const normalizedAddress = buildNormalizedAddress(customer)
+  const hasStreetLikeAddress =
+    /(\d|calle|c\/|avenida|avda|av\.|plaza|pol[ií]gono|carretera|camino|urbanizaci[oó]n|local|nave|edificio|portal)/i.test(
+      street
+    ) && street.length >= 8
+
+  return hasStreetLikeAddress && Boolean(city) && Boolean(province) && normalizedAddress.length >= 18
+}
+
 const getConfidence = result => {
   const importance = Number(result?.importance || 0)
   const type = String(result?.type || '')
@@ -269,6 +282,7 @@ exports.handler = async event => {
     const body = JSON.parse(event.body || '{}')
     if (body.action === 'batch') {
       const limit = Math.min(Math.max(Number(body.limit) || 10, 1), 25)
+      const fullAddressOnly = body.fullAddressOnly === true
       const batchFilters = {
         province: String(body.province || '').trim(),
         city: String(body.city || '').trim(),
@@ -280,14 +294,16 @@ exports.handler = async event => {
         .or('latitude.is.null,longitude.is.null')
         .or('geocoding_attempts.lt.3,geocoding_status.eq.manual_review')
         .order('updated_at', { ascending: true })
-        .limit(limit)
       if (batchFilters.province) pendingQuery = pendingQuery.eq('province', batchFilters.province)
       if (batchFilters.city) pendingQuery = pendingQuery.eq('city', batchFilters.city)
       const { data: pending, error } = await pendingQuery
       if (error) throw error
 
+      const batch = (pending || [])
+        .filter(customer => !fullAddressOnly || hasCompleteAddress(customer))
+        .slice(0, limit)
       const results = []
-      for (const customer of pending || []) {
+      for (const customer of batch) {
         results.push(await geocodeCustomer(admin, customer))
         await new Promise(resolve => setTimeout(resolve, getMapProviderConfig().geocodingIntervalMs))
       }
@@ -295,6 +311,7 @@ exports.handler = async event => {
         success: true,
         data: {
           processed: results.length,
+          fullAddressOnly,
           results,
           status: await getStatus(admin, batchFilters),
         },
