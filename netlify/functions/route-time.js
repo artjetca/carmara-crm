@@ -1,4 +1,5 @@
 const CACHE_TTL_MS = 30 * 60 * 1000
+const ROUTING_TIMEOUT_MS = 8000
 const routeCache = new Map()
 const { getMapProviderConfig } = require('./_shared/map-providers')
 
@@ -58,19 +59,40 @@ exports.handler = async event => {
     const url = new URL(
       `${config.osrmBaseUrl}/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}`
     )
-    url.searchParams.set('overview', 'false')
+    url.searchParams.set('overview', 'full')
+    url.searchParams.set('geometries', 'geojson')
     url.searchParams.set('alternatives', 'false')
     url.searchParams.set('steps', 'false')
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': 'CASMARA-CRM/1.0',
-        Accept: 'application/json',
-      },
-    })
+    let response
+    let lastError
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), ROUTING_TIMEOUT_MS)
 
-    if (!response.ok) {
-      return respond(502, { success: false, error: `Routing service failed with ${response.status}` })
+      try {
+        response = await fetch(url.toString(), {
+          headers: {
+            'User-Agent': 'CASMARA-CRM/1.0',
+            Accept: 'application/json',
+          },
+          signal: controller.signal,
+        })
+
+        if (response.ok || attempt === 1 || response.status < 500) break
+      } catch (error) {
+        lastError = error
+        if (attempt === 1) break
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+
+    if (!response || !response.ok) {
+      return respond(502, {
+        success: false,
+        error: `Routing service failed with ${response?.status || lastError?.name || 'timeout'}`,
+      })
     }
 
     const payload = await response.json()
@@ -83,8 +105,9 @@ exports.handler = async event => {
     }
 
     const data = {
-      durationMinutes: Math.round(route.duration / 60),
+      durationMinutes: Math.ceil(route.duration / 60),
       distanceKm: Number((route.distance / 1000).toFixed(1)),
+      geometry: Array.isArray(route.geometry?.coordinates) ? route.geometry.coordinates : null,
       status: 'ready',
     }
 

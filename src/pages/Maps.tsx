@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import {
   LatLngBoundsExpression,
   LatLngExpression,
@@ -41,6 +41,7 @@ import {
 import {
   deriveCity,
   deriveProvince,
+  calculateDistanceKm,
   formatDistanceKm,
   formatDistanceAndTime,
   getCustomerDisplayAddress,
@@ -70,6 +71,14 @@ import {
   createVehicleLocationIcon,
   getLocationAccuracyLabel,
 } from '../components/map/VehicleLocationIcon'
+import {
+  OsrmRoutingProvider,
+  formatRouteDistance,
+  formatRouteDuration,
+  routePointFromCoordinates,
+  type RoutePoint,
+  type RouteResult,
+} from '../services/routingProvider'
 import '../styles/casmara-marker.css'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
@@ -82,6 +91,8 @@ type LocationDetails = {
   speed: number | null
   updatedAt: Date
 }
+
+const routingProvider = new OsrmRoutingProvider()
 
 const STORAGE_KEY = 'carmara-customer-coords'
 
@@ -216,6 +227,15 @@ export default function Maps() {
   const [myLocation, setMyLocation] = useState<MapCoordinates | null>(null)
   const [locationDetails, setLocationDetails] = useState<LocationDetails | null>(null)
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
+  const [routeOrigin, setRouteOrigin] = useState<RoutePoint | null>(null)
+  const [routeDestination, setRouteDestination] = useState<RoutePoint | null>(null)
+  const [routeResult, setRouteResult] = useState<RouteResult | null>(null)
+  const [routeLoading, setRouteLoading] = useState(false)
+  const [routeError, setRouteError] = useState<string | null>(null)
+  const [routeRequestVersion, setRouteRequestVersion] = useState(0)
+  const [routeStops, setRouteStops] = useState<RoutePoint[]>([])
+  const [routeSheetExpanded, setRouteSheetExpanded] = useState(false)
+  const [mapPointCandidate, setMapPointCandidate] = useState<RoutePoint | null>(null)
   const [fittingAll, setFittingAll] = useState(false)
   const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
   const [repairingCoordinates, setRepairingCoordinates] = useState(false)
@@ -569,12 +589,113 @@ export default function Maps() {
     () => resolvedCustomers.find(customer => customer.id === selectedCustomerId) ?? null,
     [resolvedCustomers, selectedCustomerId]
   )
+  const routeDestinationCustomer = useMemo(
+    () => routeDestination?.type === 'customer'
+      ? resolvedCustomers.find(customer => customer.id === routeDestination.id) ?? null
+      : null,
+    [resolvedCustomers, routeDestination]
+  )
   const nearestCustomer = useMemo(() => {
     if (!myLocation) return null
     return resolvedCustomers
       .filter(client => Number.isFinite(client.distanceFromUser))
       .sort((left, right) => (left.distanceFromUser ?? Infinity) - (right.distanceFromUser ?? Infinity))[0] ?? null
   }, [myLocation, resolvedCustomers])
+
+  const customerRoutePoint = useCallback((customer: ResolvedMapClient) => {
+    const coords = getClientRenderableCoordinates(customer)
+    return coords
+      ? routePointFromCoordinates('customer', customer.name, coords, customer.id)
+      : null
+  }, [])
+
+  const currentLocationRoutePoint = useCallback(() => (
+    myLocation ? routePointFromCoordinates('current-location', 'Mi ubicación', myLocation) : null
+  ), [myLocation])
+
+  const selectRoutePoint = useCallback((role: 'origin' | 'destination', point: RoutePoint) => {
+    if (role === 'origin') setRouteOrigin(point)
+    else setRouteDestination(point)
+    setRouteResult(null)
+    setRouteError(null)
+    setRouteSheetExpanded(false)
+    setMapPointCandidate(null)
+    if (window.matchMedia('(max-width: 767px)').matches) setSheetOpen(false)
+  }, [])
+
+  const clearRoute = useCallback(() => {
+    setRouteOrigin(null)
+    setRouteDestination(null)
+    setRouteResult(null)
+    setRouteError(null)
+    setRouteStops([])
+    setRouteSheetExpanded(false)
+    setMapPointCandidate(null)
+  }, [])
+
+  const retryRoute = useCallback(() => setRouteRequestVersion(version => version + 1), [])
+
+  const swapRoutePoints = useCallback(() => {
+    if (!routeOrigin || !routeDestination) return
+    setRouteOrigin(routeDestination)
+    setRouteDestination(routeOrigin)
+    setRouteResult(null)
+    setRouteError(null)
+  }, [routeDestination, routeOrigin])
+
+  const addRouteStop = useCallback(() => {
+    if (!routeDestination) return
+    setRouteStops(stops => stops.some(stop => stop.type === routeDestination.type && stop.id === routeDestination.id)
+      ? stops
+      : [...stops, routeDestination])
+  }, [routeDestination])
+
+  const focusRoute = useCallback(() => {
+    if (!routeResult?.geometry || routeResult.geometry.length < 2) return
+    mapRef.current?.fitBounds(
+      routeResult.geometry.map(([lng, lat]) => [lat, lng] as [number, number]),
+      { padding: [48, 48], maxZoom: 15 }
+    )
+  }, [routeResult])
+
+  const buildRouteNavigationUrl = useCallback((origin: RoutePoint, destination: RoutePoint) => {
+    if (isAppleDevice()) {
+      return `https://maps.apple.com/?saddr=${encodeURIComponent(`${origin.latitude},${origin.longitude}`)}&daddr=${encodeURIComponent(`${destination.latitude},${destination.longitude}`)}&dirflg=d`
+    }
+    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${origin.latitude},${origin.longitude}`)}&destination=${encodeURIComponent(`${destination.latitude},${destination.longitude}`)}&travelmode=driving`
+  }, [])
+
+  useEffect(() => {
+    if (!routeOrigin || !routeDestination) return
+
+    const controller = new AbortController()
+    setRouteLoading(true)
+    setRouteError(null)
+
+    routingProvider.calculateRoute(routeOrigin, routeDestination, controller.signal)
+      .then(result => setRouteResult(result))
+      .catch(error => {
+        if (error.name === 'AbortError') return
+        setRouteResult({
+          straightLineKm: calculateDistanceKm(
+            routeOrigin.latitude,
+            routeOrigin.longitude,
+            routeDestination.latitude,
+            routeDestination.longitude
+          ),
+          distanceKm: null,
+          durationMinutes: null,
+          geometry: null,
+          createdAt: Date.now(),
+        })
+        setRouteError('No hemos podido calcular la ruta por carretera.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRouteLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [routeDestination, routeOrigin, routeRequestVersion])
 
   const clearMarkers = useCallback(() => {
     markerRegistryRef.current.clear()
@@ -1386,7 +1507,51 @@ export default function Maps() {
                     )}
                   </div>
 
+                  {routeDestination?.id === selectedCustomer.id && routeResult && (
+                    <div className="space-y-1 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
+                      <div className="font-semibold">Ruta desde {routeOrigin?.name}</div>
+                      <div>{formatRouteDistance(routeResult.straightLineKm)} en línea recta</div>
+                      <div>{routeResult.distanceKm !== null ? `${formatRouteDistance(routeResult.distanceKm)} por carretera` : 'Distancia por carretera no disponible'}</div>
+                      <div>{routeResult.durationMinutes !== null ? `${formatRouteDuration(routeResult.durationMinutes)} en coche` : 'Tiempo estimado no disponible'}</div>
+                      <div className="text-xs text-blue-700">Tiempo estimado, sin tráfico en tiempo real.</div>
+                    </div>
+                  )}
+
                   <div className="space-y-2 border-t border-gray-200 pt-3">
+                    {customerRoutePoint(selectedCustomer) && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => selectRoutePoint('origin', customerRoutePoint(selectedCustomer)!)}
+                          className="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                        >
+                          {routeOrigin?.id === selectedCustomer.id ? 'Origen seleccionado' : 'Establecer como origen'}
+                        </button>
+                        <button
+                          onClick={() => selectRoutePoint('destination', customerRoutePoint(selectedCustomer)!)}
+                          className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50"
+                        >
+                          {routeDestination?.id === selectedCustomer.id ? 'Destino seleccionado' : 'Establecer como destino'}
+                        </button>
+                      </div>
+                    )}
+                    {myLocation && customerRoutePoint(selectedCustomer) && (
+                      <button
+                        onClick={() => {
+                          selectRoutePoint('origin', currentLocationRoutePoint()!)
+                          selectRoutePoint('destination', customerRoutePoint(selectedCustomer)!)
+                        }}
+                        className="inline-flex w-full items-center justify-center space-x-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200"
+                      >
+                        <LocateFixed className="h-4 w-4" />
+                        <span>Calcular desde mi ubicación</span>
+                      </button>
+                    )}
+                    {routeOrigin && routeDestination && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={focusRoute} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">Ver ruta</button>
+                        <button onClick={() => window.open(buildRouteNavigationUrl(routeOrigin, routeDestination), '_blank')} className="rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">Navegar</button>
+                      </div>
+                    )}
                     <button
                       onClick={() => window.open(buildMapsSearchUrl(selectedCustomer), '_blank')}
                       className="inline-flex w-full items-center justify-center space-x-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white transition-colors hover:bg-blue-700"
@@ -1463,6 +1628,60 @@ export default function Maps() {
                   attribution={mapTileProvider.attribution}
                   maxZoom={mapTileProvider.maxZoom}
                 />
+                <MapRoutePointPicker
+                  onPoint={coordinates => setMapPointCandidate(
+                    routePointFromCoordinates('map-point', 'Punto en el mapa', coordinates)
+                  )}
+                />
+
+                {routeResult?.geometry && routeResult.geometry.length > 1 && (
+                  <>
+                    <Polyline
+                      positions={routeResult.geometry.map(([lng, lat]) => [lat, lng] as [number, number])}
+                      pathOptions={{ color: '#ffffff', weight: 9, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }}
+                    />
+                    <Polyline
+                      positions={routeResult.geometry.map(([lng, lat]) => [lat, lng] as [number, number])}
+                      pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }}
+                    />
+                  </>
+                )}
+                {routeOrigin && routeOrigin.type !== 'current-location' && (
+                  <CircleMarker
+                    center={[routeOrigin.latitude, routeOrigin.longitude]}
+                    radius={18}
+                    pathOptions={{ color: '#16a34a', weight: 3, fillOpacity: 0.12 }}
+                  >
+                    <Tooltip direction="top">Origen</Tooltip>
+                  </CircleMarker>
+                )}
+                {routeDestination && (
+                  <CircleMarker
+                    center={[routeDestination.latitude, routeDestination.longitude]}
+                    radius={18}
+                    pathOptions={{ color: '#dc2626', weight: 3, fillOpacity: 0.1 }}
+                  >
+                    <Tooltip direction="top">Destino</Tooltip>
+                  </CircleMarker>
+                )}
+                {mapPointCandidate && (
+                  <CircleMarker
+                    center={[mapPointCandidate.latitude, mapPointCandidate.longitude]}
+                    radius={7}
+                    pathOptions={{ color: '#2563eb', weight: 3, fillColor: '#ffffff', fillOpacity: 1 }}
+                  >
+                    <Tooltip direction="top" permanent>Usar este punto</Tooltip>
+                    <Popup minWidth={210}>
+                      <div className="space-y-2 text-sm">
+                        <div className="font-semibold text-gray-900">Punto seleccionado</div>
+                        <div className="flex gap-2">
+                          <button onClick={() => selectRoutePoint('origin', mapPointCandidate)} className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">Usar como origen</button>
+                          <button onClick={() => selectRoutePoint('destination', mapPointCandidate)} className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">Usar como destino</button>
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                )}
 
                 {markerClients.map(client => {
                     const coords = getClientRenderableCoordinates(client)
@@ -1527,6 +1746,29 @@ export default function Maps() {
                             </div>
 
                             <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
+                              <button
+                                onClick={() => selectRoutePoint('origin', customerRoutePoint(client)!)}
+                                className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
+                              >
+                                Origen
+                              </button>
+                              <button
+                                onClick={() => selectRoutePoint('destination', customerRoutePoint(client)!)}
+                                className="inline-flex items-center rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-700 transition-colors hover:bg-rose-100"
+                              >
+                                Destino
+                              </button>
+                              {myLocation && (
+                                <button
+                                  onClick={() => {
+                                    selectRoutePoint('origin', currentLocationRoutePoint()!)
+                                    selectRoutePoint('destination', customerRoutePoint(client)!)
+                                  }}
+                                  className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
+                                >
+                                  Calcular desde mi ubicación
+                                </button>
+                              )}
                               {client.phone && (
                                 <a
                                   href={`tel:${client.phone}`}
@@ -1595,6 +1837,28 @@ export default function Maps() {
                         </div>
                         <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-2">
                           <button
+                            onClick={() => {
+                              const point = currentLocationRoutePoint()
+                              if (point) selectRoutePoint('origin', point)
+                            }}
+                            className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
+                          >
+                            Usar como origen
+                          </button>
+                          {selectedCustomer && customerRoutePoint(selectedCustomer) && (
+                            <button
+                              onClick={() => {
+                                const point = currentLocationRoutePoint()
+                                if (!point) return
+                                selectRoutePoint('origin', point)
+                                selectRoutePoint('destination', customerRoutePoint(selectedCustomer)!)
+                              }}
+                              className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
+                            >
+                              Calcular ruta al cliente seleccionado
+                            </button>
+                          )}
+                          <button
                             onClick={centerOnMyLocation}
                             className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
                           >
@@ -1622,6 +1886,38 @@ export default function Maps() {
 
                 <MapBridge mapRef={mapRef} />
               </MapContainer>
+
+              {routeOrigin && routeDestination && (
+                <div className="absolute right-3 top-16 z-[1001] hidden w-[290px] rounded-lg border border-white/70 bg-white/95 p-3 shadow-lg backdrop-blur md:block">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-gray-900">Ruta calculada</div>
+                    <button onClick={clearRoute} className="text-xs font-medium text-gray-500 hover:text-gray-800">Limpiar</button>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-gray-600">
+                    <div><span className="font-medium text-emerald-700">Origen</span> · {routeOrigin.name}</div>
+                    <div><span className="font-medium text-rose-700">Destino</span> · {routeDestination.name}</div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div><div className="text-sm font-semibold text-gray-900">{routeLoading ? '…' : formatRouteDistance(routeResult?.distanceKm ?? null)}</div><div className="text-[10px] text-gray-500">por carretera</div></div>
+                    <div><div className="text-sm font-semibold text-gray-900">{routeLoading ? '…' : formatRouteDuration(routeResult?.durationMinutes ?? null)}</div><div className="text-[10px] text-gray-500">en coche</div></div>
+                    <div><div className="text-sm font-semibold text-gray-900">{routeResult ? formatRouteDistance(routeResult.straightLineKm) : '…'}</div><div className="text-[10px] text-gray-500">en línea recta</div></div>
+                  </div>
+                  <div className="mt-2 text-[10px] text-gray-500">Tiempo estimado, sin tráfico en tiempo real.</div>
+                  {routeError && (
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs text-amber-700">
+                      <span>{routeError}</span><button onClick={retryRoute} className="font-medium underline">Reintentar</button>
+                    </div>
+                  )}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button onClick={focusRoute} className="rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700">Ver ruta</button>
+                    <button onClick={() => window.open(buildRouteNavigationUrl(routeOrigin, routeDestination), '_blank')} className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-green-700">Navegar</button>
+                    <button onClick={swapRoutePoints} className="rounded-md bg-slate-100 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Intercambiar</button>
+                    <button onClick={addRouteStop} className="rounded-md bg-slate-100 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">Añadir parada</button>
+                  </div>
+                  {routeDestinationCustomer && <button onClick={() => flyToCustomer(routeDestinationCustomer)} className="mt-2 text-xs font-medium text-blue-700 hover:text-blue-800">Ver cliente</button>}
+                  {routeStops.length > 0 && <div className="mt-2 text-[10px] text-slate-500">{routeStops.length} parada preparada para la siguiente ruta.</div>}
+                </div>
+              )}
 
               {/* Map legend + stats (solo escritorio — en móvil lo sustituye la hoja inferior) */}
               <div className="absolute bottom-4 right-3 hidden bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px] md:block">
@@ -1755,6 +2051,43 @@ export default function Maps() {
                   </button>
                 )}
               </div>
+
+              {routeOrigin && routeDestination && (
+                <div
+                  className="absolute inset-x-3 z-[1012] md:hidden"
+                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 150px)' }}
+                >
+                  <div className="overflow-hidden rounded-xl border border-white/70 bg-white/95 shadow-xl backdrop-blur-md">
+                    <button
+                      onClick={() => setRouteSheetExpanded(expanded => !expanded)}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 px-4 text-left"
+                      aria-expanded={routeSheetExpanded}
+                    >
+                      <span className="text-sm font-semibold text-gray-900">{routeLoading ? 'Calculando ruta…' : routeResult ? `${formatRouteDistance(routeResult.distanceKm)} · ${formatRouteDuration(routeResult.durationMinutes)}` : 'Ruta'}</span>
+                      <ChevronDown className={`h-5 w-5 text-gray-500 transition-transform ${routeSheetExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    {routeSheetExpanded && (
+                      <div className="border-t border-gray-100 px-4 pb-3 pt-2 text-xs text-gray-700">
+                        <div className="space-y-1">
+                          <div><span className="font-medium text-emerald-700">Origen</span> · {routeOrigin.name}</div>
+                          <div><span className="font-medium text-rose-700">Destino</span> · {routeDestination.name}</div>
+                          {routeResult && <div>{formatRouteDistance(routeResult.straightLineKm)} en línea recta</div>}
+                          <div className="text-[10px] text-gray-500">Tiempo estimado, sin tráfico en tiempo real.</div>
+                          {routeError && <div className="text-amber-700">{routeError}</div>}
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button onClick={focusRoute} className="rounded-md bg-blue-600 px-2 py-2 text-xs font-medium text-white">Ver ruta</button>
+                          <button onClick={() => window.open(buildRouteNavigationUrl(routeOrigin, routeDestination), '_blank')} className="rounded-md bg-green-600 px-2 py-2 text-xs font-medium text-white">Navegar</button>
+                          <button onClick={swapRoutePoints} className="rounded-md bg-slate-100 px-2 py-2 text-xs font-medium text-slate-700">Intercambiar</button>
+                          <button onClick={clearRoute} className="rounded-md bg-slate-100 px-2 py-2 text-xs font-medium text-slate-700">Limpiar</button>
+                        </div>
+                        {routeDestinationCustomer && <button onClick={() => flyToCustomer(routeDestinationCustomer)} className="mt-2 text-xs font-medium text-blue-700">Ver cliente</button>}
+                        {routeError && <button onClick={retryRoute} className="mt-2 text-xs font-medium text-blue-700">Reintentar</button>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Píldora resumen / hoja inferior */}
               {!sheetOpen ? (
@@ -1916,6 +2249,14 @@ function MapBridge({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | nul
       window.clearTimeout(resizeTimer)
     }
   }, [map, mapRef])
+
+  return null
+}
+
+function MapRoutePointPicker({ onPoint }: { onPoint: (coordinates: MapCoordinates) => void }) {
+  useMapEvents({
+    contextmenu: event => onPoint({ lat: event.latlng.lat, lng: event.latlng.lng }),
+  })
 
   return null
 }
