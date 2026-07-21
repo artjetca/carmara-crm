@@ -10,7 +10,7 @@ export type LocationAccuracyState = 'precise' | 'approximate' | 'weak' | 'unknow
 
 const getMarkerSize = () => {
   const compact = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
-  return compact ? 44 : 48
+  return compact ? 54 : 58
 }
 
 export const getLocationAccuracyState = (accuracy?: number | null): LocationAccuracyState => {
@@ -39,12 +39,13 @@ export const createVehicleLocationIcon = ({
   isMoving = false,
 }: VehicleLocationIconOptions) => {
   const size = getMarkerSize()
-  const rotation = Number.isFinite(heading) ? Number(heading) : 0
+  // The supplied top-down asset faces down in its native orientation.
+  const rotation = (Number.isFinite(heading) ? Number(heading) : 0) + 180
   const accuracyState = getLocationAccuracyState(accuracy)
 
   return L.divIcon({
     className: 'vehicle-location-marker-icon',
-    html: `<div class="vehicle-location-marker vehicle-location-marker--${accuracyState}${isMoving ? ' vehicle-location-marker--moving' : ''}" aria-hidden="true"><div class="vehicle-location-marker__accuracy"></div><div class="vehicle-location-marker__pulse"></div><img src="/assets/mini-countryman-location.png" alt="" class="vehicle-location-marker__car" style="--vehicle-heading:${rotation}deg" /></div>`,
+    html: `<div class="vehicle-location-marker vehicle-location-marker--${accuracyState}${isMoving ? ' vehicle-location-marker--moving' : ''}" aria-hidden="true"><div class="vehicle-location-marker__accuracy"></div><div class="vehicle-location-marker__pulse"></div><div class="vehicle-location-marker__badge"><img src="/assets/mini-countryman-location-v2.png" alt="" class="vehicle-location-marker__car" style="--vehicle-heading:${rotation}deg" /></div></div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -(size / 2)],
