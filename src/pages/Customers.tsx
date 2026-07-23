@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Upload, Download, Trash2, Plus, Search, Building, Edit, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useStore } from '../store/useStore'
@@ -1018,7 +1019,7 @@ export default function Customers() {
       </div>
 
       {/* Edit Modal */}
-      {editingCustomer && (
+      {editingCustomer && createPortal(
         <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/50 p-3 md:p-6">
           <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg md:max-h-[90vh]">
             <h3 className="text-lg font-semibold mb-4">Editar cliente</h3>
@@ -1144,7 +1145,8 @@ export default function Customers() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Add Customer Modal */}
