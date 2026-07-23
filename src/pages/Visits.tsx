@@ -38,7 +38,8 @@ import {
   Maximize2,
   Minimize2,
   FileDown,
-  Ruler
+  Ruler,
+  Compass
 } from 'lucide-react'
 
 // Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
@@ -56,6 +57,7 @@ import {
   type RouteResult,
 } from '../services/routingProvider'
 import '../styles/casmara-marker.css'
+import { VoiceSearchButton } from '../components/VoiceSearchButton'
 
 interface RouteCustomer extends Customer {
   order: number
@@ -3110,8 +3112,11 @@ export default function Visits() {
                 placeholder="Buscar clientes por nombre o empresa..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              <div className="absolute right-2">
+                <VoiceSearchButton onTranscript={setSearchTerm} />
+              </div>
             </div>
           </div>
           <div className="sm:w-48">
@@ -3660,6 +3665,7 @@ export default function Visits() {
                       <X className="h-4 w-4" />
                     </button>
                   )}
+                  <VoiceSearchButton onTranscript={setSearchTerm} />
                 </div>
               </div>
 
@@ -3748,6 +3754,9 @@ export default function Visits() {
                       <Navigation className="h-6 w-6 text-white" />
                     </button>
                   )}
+                  <div title="Norte" aria-label="Norte" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md">
+                    <Compass className="h-6 w-6 text-rose-500" />
+                  </div>
                 </>}
               </div>
 

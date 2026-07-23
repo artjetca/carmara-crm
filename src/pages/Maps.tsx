@@ -5,13 +5,13 @@ import type { Customer, Visit } from '../lib/supabase'
 import {
   ChevronDown,
   ChevronLeft,
+  Compass,
   Crosshair,
   Expand,
   ExternalLink,
   LocateFixed,
   Mail,
   MapPin,
-  Mic,
   Navigation,
   Phone,
   Search,
@@ -73,6 +73,7 @@ import {
   createVehicleLocationIcon,
   getLocationAccuracyLabel,
 } from '../components/map/VehicleLocationIcon'
+import { VoiceSearchButton } from '../components/VoiceSearchButton'
 import {
   OsrmRoutingProvider,
   formatRouteDistance,
@@ -1415,7 +1416,7 @@ export default function Maps() {
       <div className="hidden rounded-xl border border-gray-200 bg-white p-6 shadow-sm md:block">
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="flex-1">
-            <div className="relative">
+            <div className="relative flex items-center">
               <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
@@ -1429,8 +1430,11 @@ export default function Maps() {
                   setMobileListMode('all')
                   setSearchTerm(event.target.value)
                 }}
-                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-12 focus:border-transparent focus:ring-2 focus:ring-blue-500"
               />
+              <div className="absolute right-2">
+                <VoiceSearchButton onTranscript={setSearchTerm} />
+              </div>
             </div>
           </div>
           <div className="sm:w-48">
@@ -2167,12 +2171,17 @@ export default function Maps() {
                           </div>
                         ) : (
                           <>
-                            <input
-                              value={searchTerm}
-                              onChange={event => setSearchTerm(event.target.value)}
-                              placeholder={distanceModeState === 'selecting-a' ? 'Buscar punto A' : 'Buscar punto B'}
-                              className="mt-3 min-h-12 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-blue-500"
-                            />
+                            <div className="relative mt-3 flex items-center">
+                              <input
+                                value={searchTerm}
+                                onChange={event => setSearchTerm(event.target.value)}
+                                placeholder={distanceModeState === 'selecting-a' ? 'Buscar punto A' : 'Buscar punto B'}
+                                className="min-h-12 w-full rounded-xl border border-gray-200 px-3 pr-12 text-sm outline-none focus:border-blue-500"
+                              />
+                              <div className="absolute right-2">
+                                <VoiceSearchButton onTranscript={setSearchTerm} />
+                              </div>
+                            </div>
                             <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-gray-100">
                             {resolvedCustomers.filter(client => hasRenderableCoordinates(client) && (
                               !searchTerm || normalizeCityName(`${client.name} ${client.city} ${client.address}`).includes(normalizeCityName(searchTerm))
@@ -2349,21 +2358,7 @@ export default function Maps() {
                       <X className="h-4 w-4" />
                     </button>
                   )}
-                  {'webkitSpeechRecognition' in window && (
-                    <button
-                      onClick={() => {
-                        const Recognition = (window as any).webkitSpeechRecognition
-                        const recognition = new Recognition()
-                        recognition.lang = 'es-ES'
-                        recognition.onresult = (event: any) => setSearchTerm(event.results[0][0].transcript)
-                        recognition.start()
-                      }}
-                      title="Búsqueda por voz"
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
-                    >
-                      <Mic className="h-4 w-4" />
-                    </button>
-                  )}
+                  <VoiceSearchButton onTranscript={setSearchTerm} />
                 </div>
                 {mapPointSelectionMode && (
                   <div className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-full border border-blue-100 bg-white/95 px-3 text-xs font-medium text-blue-700 shadow-md backdrop-blur-md">
@@ -2451,6 +2446,9 @@ export default function Maps() {
                     <LocateFixed className="h-6 w-6 text-blue-600" />
                   </button>
                 </>}
+                <div title="Norte" aria-label="Norte" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md">
+                  <Compass className="h-6 w-6 text-rose-500" />
+                </div>
               </div>
 
               {distanceMode && mobileMapSheet === 'none' && routeOrigin && routeDestination && !pendingMapPoint && (

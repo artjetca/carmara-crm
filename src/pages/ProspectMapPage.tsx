@@ -30,6 +30,7 @@ import {
   Clock,
   XCircle,
 } from 'lucide-react'
+import { VoiceSearchButton } from '../components/VoiceSearchButton'
 
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
@@ -1123,22 +1124,25 @@ export default function ProspectMapPage() {
       {/* ── Filters bar ── */}
       <div className="bg-gray-50 border-b border-gray-200 px-6 py-2 flex flex-wrap items-center gap-3">
         {/* Search */}
-        <div className="relative">
+        <div className="relative flex items-center">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar…"
-            className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none w-52"
+            className="pl-9 pr-12 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none w-52"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+          <div className="absolute right-1 top-1/2 -translate-y-1/2">
+            <VoiceSearchButton onTranscript={setSearchTerm} />
+          </div>
         </div>
 
         {/* Province */}
