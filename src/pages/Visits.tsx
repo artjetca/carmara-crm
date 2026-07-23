@@ -239,6 +239,7 @@ export default function Visits() {
         try { leafletMapInstanceRef.current.remove() } catch {}
         leafletMapInstanceRef.current = null
       }
+      leafletTileLayerRef.current = null
       leafletMarkersRef.current.forEach(m => { try { m.remove() } catch {} })
       leafletMarkersRef.current = []
       if (leafletPolylineRef.current) {
@@ -432,6 +433,7 @@ export default function Visits() {
 
   // Leaflet map refs/state (for OSM rendering)
   const leafletMapInstanceRef = useRef<L.Map | null>(null)
+  const leafletTileLayerRef = useRef<L.TileLayer | null>(null)
   const leafletMarkersRef = useRef<L.Marker[]>([])
   const leafletPolylineRef = useRef<L.Polyline | null>(null)
   const leafletMeasurementMarkersRef = useRef<L.Marker[]>([])
@@ -447,6 +449,19 @@ export default function Visits() {
   const isCalculatingRef = useRef(false)
   const lastCalcKeyRef = useRef<string>('')
   const lastComputedDistanceRef = useRef<number>(-1)
+
+  const refreshLeafletTiles = useCallback(() => {
+    const refresh = () => {
+      const map = leafletMapInstanceRef.current
+      if (!map) return
+      try { map.invalidateSize({ pan: false, animate: false }) } catch {}
+      try { leafletTileLayerRef.current?.redraw() } catch {}
+    }
+
+    refresh()
+    window.setTimeout(refresh, 300)
+    window.setTimeout(refresh, 800)
+  }, [])
 
   // ── Unified distance recalculation (single entry point) ────
   const recalcRouteDistances = useCallback((
@@ -938,13 +953,11 @@ export default function Visits() {
           })
           leafletMapInstanceRef.current = map
 
-          L.tileLayer(mapTileProvider.url, {
+          leafletTileLayerRef.current = L.tileLayer(mapTileProvider.url, {
             attribution: mapTileProvider.attribution,
             maxZoom: mapTileProvider.maxZoom,
           }).addTo(map)
-          // Fix occasional blank tiles by invalidating size after mount
-          try { setTimeout(() => map.invalidateSize(), 0) } catch {}
-          try { setTimeout(() => map.invalidateSize(), 250) } catch {}
+          refreshLeafletTiles()
 
           map.setView([36.7213, -4.4214], routeCustomers.length ? 10 : 7)
         }
@@ -1293,6 +1306,7 @@ export default function Visits() {
           leafletMapInstanceRef.current.remove()
           leafletMapInstanceRef.current = null
         }
+        leafletTileLayerRef.current = null
         leafletMarkersRef.current.forEach(m => { try { m.remove() } catch {} })
         leafletMarkersRef.current = []
         if (leafletPolylineRef.current) {
@@ -1303,32 +1317,34 @@ export default function Visits() {
     }
   }, [])
 
-  // 在返回頁面或窗口尺寸變更/全屏變更時，強制重算 Leaflet 容器尺寸，避免白屏
+  // iOS Safari can restore Leaflet controls before the map tiles after reload or returning to the page.
   useEffect(() => {
     const onVis = () => {
       if (!document.hidden) {
-        try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {}
+        refreshLeafletTiles()
       }
     }
-    const onResize = () => { try { leafletMapInstanceRef.current?.invalidateSize?.() } catch {} }
+    const onResize = () => { refreshLeafletTiles() }
     const onFs = () => {
       const isFullscreen = !!document.fullscreenElement
       setIsDocFullscreen(isFullscreen)
       setLeafletFullscreen(isFullscreen)
-      try { 
-        setTimeout(() => leafletMapInstanceRef.current?.invalidateSize?.(), 100)
-        setTimeout(() => leafletMapInstanceRef.current?.invalidateSize?.(), 300)
-      } catch {}
+      refreshLeafletTiles()
     }
+    const onPageShow = () => { refreshLeafletTiles() }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    window.addEventListener('pageshow', onPageShow)
     document.addEventListener('fullscreenchange', onFs)
     return () => {
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+      window.removeEventListener('pageshow', onPageShow)
       document.removeEventListener('fullscreenchange', onFs)
     }
-  }, [])
+  }, [refreshLeafletTiles])
 
   // Leaflet: fit bounds to all current route stops
   const fitLeafletToAllStops = () => {
