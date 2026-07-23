@@ -854,7 +854,7 @@ export default function Customers() {
           </div>
         ) : (
           <>
-            <div className="space-y-3 bg-blue-50/30 p-3 md:hidden">
+            <div className="space-y-2 bg-blue-50/30 p-3 md:hidden">
               {filteredAndSortedCustomers.map((customer) => {
                 const municipio = displayCity(customer)
                 const phone = customer.phone || customer.mobile_phone
@@ -863,48 +863,36 @@ export default function Customers() {
                 return (
                   <div
                     key={customer.id}
-                    className={`relative min-h-[148px] w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-4 shadow-lg backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
+                    className={`relative min-h-[112px] w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-3 shadow-md backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
                   >
-                    <div className="space-y-3 pr-14">
-                      <div className="flex min-w-0 items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="break-words text-base font-bold leading-snug text-gray-900">{customer.name}</h3>
+                    <div className="min-w-0 pr-24">
+                      <div className="min-w-0">
+                          <h3 className="truncate text-sm font-semibold leading-5 text-gray-900">{customer.name}</h3>
                           {customer.company && (
-                            <p className="mt-1 break-words text-sm text-gray-600">{customer.company}</p>
+                            <p className="mt-0.5 truncate text-xs text-gray-500">{customer.company}</p>
                           )}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleEditOpen(customer)}
-                            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-blue-700 transition hover:bg-blue-50 active:scale-95"
-                            aria-label={`Editar ${customer.name}`}
-                          >
-                            <Edit className="h-5 w-5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteCustomer(customer.id)}
-                            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-red-600 transition hover:bg-red-50 active:scale-95"
-                            aria-label={`Eliminar ${customer.name}`}
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-                        </div>
                       </div>
-                      <div className="space-y-2 text-sm">
-                        {phone ? (
-                          <p className="flex items-center gap-2 text-gray-700">
-                            <Phone className="h-4 w-4 text-blue-600" />
-                            <span>{phone}</span>
-                          </p>
-                        ) : (
-                          <span className="text-gray-500">-</span>
-                        )}
-                        <p className="text-gray-700">{municipio || '-'}</p>
-                      </div>
+                      <p className="mt-2 truncate text-sm text-gray-600">{[municipio, displayProvince(customer)].filter(Boolean).join(', ') || '-'}</p>
                     </div>
-                    <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+                    <div className="absolute right-2 top-1 flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleEditOpen(customer)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-blue-700 transition hover:bg-blue-50 active:scale-95"
+                        aria-label={`Editar ${customer.name}`}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteCustomer(customer.id)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-red-600 transition hover:bg-red-50 active:scale-95"
+                        aria-label={`Eliminar ${customer.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="absolute bottom-3 right-3 flex items-center gap-2">
                       {phone && (
                         <a
                           href={`tel:${phone}`}

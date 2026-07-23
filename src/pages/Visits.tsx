@@ -3369,20 +3369,6 @@ export default function Visits() {
                       </button>
                     </div>
                     <div ref={mapRef} className="w-full h-full rounded-lg border print-map max-md:rounded-none max-md:border-0" />
-                    {routeCustomers.length === 0 && (
-                      <div className="absolute inset-x-5 top-[42%] z-[1000] md:hidden">
-                        <button
-                          onClick={() => {
-                            setMobileSheetTab('clients')
-                            setShowDetails(true)
-                          }}
-                          className="flex w-full items-center justify-center gap-2 rounded-full border border-white/70 bg-white/90 px-5 py-3 text-sm font-semibold text-blue-700 shadow-xl backdrop-blur-md active:scale-[0.98]"
-                        >
-                          <Plus className="h-5 w-5" />
-                          Añadir primera visita
-                        </button>
-                      </div>
-                    )}
                   </div>
                 ) : (!mapsApiKey ? (
                   <div className="flex items-center justify-center h-full">
@@ -3484,6 +3470,19 @@ export default function Visits() {
                 className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
                 style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
               >
+                {routeCustomers.length === 0 && (
+                  <button
+                    onClick={() => {
+                      setMobileSheetTab('clients')
+                      setShowDetails(true)
+                    }}
+                    title="Añadir primera visita"
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition active:scale-95"
+                    aria-label="Añadir primera visita"
+                  >
+                    <Plus className="h-6 w-6" />
+                  </button>
+                )}
                 <button
                   onClick={mapProvider === 'leaflet' ? getCurrentLocationLeaflet : getCurrentLocation}
                   title="Mi ubicacion"
