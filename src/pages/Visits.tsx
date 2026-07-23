@@ -515,6 +515,16 @@ export default function Visits() {
     setShowDetails(false)
   }, [])
 
+  const startMeasurementFromPoint = useCallback((point: RoutePoint) => {
+    setMeasurementOrigin(point)
+    setMeasurementDestination(null)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementStep('selecting-b')
+    setMobileSheetTab('clients')
+    setShowDetails(false)
+  }, [])
+
   const selectMeasurementPoint = useCallback((point: RoutePoint) => {
     if (measurementStep === 'selecting-a') {
       setMeasurementOrigin(point)
@@ -1078,29 +1088,15 @@ export default function Visits() {
           latlngs.push([pos.lat, pos.lng])
           const orderNumber = idx + 1 // 按路線順序連續編號（1..N）
           const marker = L.marker([pos.lat, pos.lng], { icon: createLeafletNumberedIcon(orderNumber) })
-          // Bind popup similar to Maps page
-          const popupHtml = `
-            <div class="space-y-2">
-              <div class="font-semibold text-gray-900">${escapeHtml(c.name || '')}</div>
-              ${c.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.address)}</div>` : ''}
-              <div class="text-xs text-gray-500">${escapeHtml(displayCity(c) || (c.city || c.province || ''))}</div>
-              ${(c.phone || (c as any).mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.phone || (c as any).mobile_phone)}</div>` : ''}
-              ${c.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(c.email)}</div>` : ''}
-              <div class="flex gap-2 pt-2 border-t border-gray-200">
-                ${(c.phone || (c as any).mobile_phone) ? `<a href=\"tel:${sanitizePhone(c.phone || (c as any).mobile_phone)}\" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md\">Llamar</a>` : ''}
-                <a href=\"https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getAddress(c))}\" target=\"_blank\" class=\"inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md\">Direcciones</a>
-              </div>
-            </div>`
           marker.addTo(map)
-          if (measurementStep === 'idle') marker.bindPopup(popupHtml)
           marker.on('click', (event) => {
             L.DomEvent.stopPropagation(event)
-            if (measurementStep !== 'idle') {
-              selectMeasurementPoint(routePointFromCoordinates('customer', c.name, pos, c.id))
+            const point = routePointFromCoordinates('customer', c.name, pos, c.id)
+            if (measurementStep === 'idle') {
+              startMeasurementFromPoint(point)
               return
             }
-            try { setSelectedCustomer(c) } catch {}
-            try { setShowDetails(true) } catch {}
+            selectMeasurementPoint(point)
           })
           leafletMarkersRef.current.push(marker)
         })
