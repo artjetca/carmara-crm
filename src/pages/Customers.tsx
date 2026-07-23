@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Upload, Download, Trash2, Plus, Search, Building, Edit, X } from 'lucide-react'
+import { ArrowLeft, Upload, Download, Trash2, Plus, Search, Building, Edit, Navigation, Phone, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useStore } from '../store/useStore'
 import { supabase, Customer } from '../lib/supabase'
@@ -361,6 +361,23 @@ export default function Customers() {
     setEditData({})
     setEditProvince('')
     setEditMunicipio('')
+  }
+
+  const getDirectionsUrl = (customer: Customer) => {
+    const latitude = Number(customer.latitude)
+    const longitude = Number(customer.longitude)
+    const address = String(customer.address || '').trim()
+    const destination = Number.isFinite(latitude) && Number.isFinite(longitude)
+      ? `${latitude},${longitude}`
+      : address
+        ? [address, customer.postal_code, customer.city, customer.province, 'España']
+          .filter(Boolean)
+          .join(', ')
+        : ''
+
+    return destination
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+      : null
   }
 
   // 排序狀態
@@ -841,13 +858,14 @@ export default function Customers() {
               {filteredAndSortedCustomers.map((customer) => {
                 const municipio = displayCity(customer)
                 const phone = customer.phone || customer.mobile_phone
+                const directionsUrl = getDirectionsUrl(customer)
 
                 return (
                   <div
                     key={customer.id}
-                    className={`w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-4 shadow-lg backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
+                    className={`relative min-h-[148px] w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-4 shadow-lg backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
                   >
-                    <div className="space-y-3">
+                    <div className="space-y-3 pr-14">
                       <div className="flex min-w-0 items-start justify-between gap-3">
                         <div className="min-w-0">
                           <h3 className="break-words text-base font-bold leading-snug text-gray-900">{customer.name}</h3>
@@ -876,17 +894,39 @@ export default function Customers() {
                       </div>
                       <div className="space-y-2 text-sm">
                         {phone ? (
-                          <a
-                            href={`tel:${phone}`}
-                            className="inline-flex min-h-[44px] items-center rounded-full bg-blue-600 px-4 font-medium text-white shadow-md transition active:scale-95"
-                          >
-                            {phone}
-                          </a>
+                          <p className="flex items-center gap-2 text-gray-700">
+                            <Phone className="h-4 w-4 text-blue-600" />
+                            <span>{phone}</span>
+                          </p>
                         ) : (
                           <span className="text-gray-500">-</span>
                         )}
                         <p className="text-gray-700">{municipio || '-'}</p>
                       </div>
+                    </div>
+                    <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+                      {phone && (
+                        <a
+                          href={`tel:${phone}`}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-blue-100 bg-blue-50 text-blue-700 shadow-sm transition active:scale-95"
+                          aria-label={`Llamar a ${customer.name}`}
+                          title="Llamar"
+                        >
+                          <Phone className="h-5 w-5" />
+                        </a>
+                      )}
+                      {directionsUrl && (
+                        <a
+                          href={directionsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition active:scale-95"
+                          aria-label={`Navegar a ${customer.name}`}
+                          title="Navegar"
+                        >
+                          <Navigation className="h-5 w-5" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 )
@@ -1128,17 +1168,18 @@ export default function Customers() {
                   onChange={e => handleEditChange('notes' as any, e.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2 mt-4 flex justify-end gap-3">
+              <div className="sm:col-span-2 mt-4 flex items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={handleEditClose}
-                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                  className="inline-flex min-h-11 items-center gap-2 rounded border px-4 py-2 hover:bg-gray-50"
                 >
-                  Cancelar
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver
                 </button>
                 <button
                   onClick={handleEditSave}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  className="min-h-11 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
                 >
                   Guardar
                 </button>
