@@ -45,6 +45,15 @@ import {
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { mapTileProvider } from '../services/mapProviders'
+import { createVehicleLocationIcon } from '../components/map/VehicleLocationIcon'
+import {
+  OsrmRoutingProvider,
+  formatRouteDistance,
+  formatRouteDuration,
+  routePointFromCoordinates,
+  type RouteResult,
+} from '../services/routingProvider'
+import '../styles/casmara-marker.css'
 
 interface RouteCustomer extends Customer {
   order: number
@@ -193,7 +202,10 @@ export default function Visits() {
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null)
   // ── Unified route distance state ──────────────────────────
   const [routeDistances, setRouteDistances] = useState<RouteDistanceState>(EMPTY_ROUTE_DISTANCES)
+  const [firstLegRoute, setFirstLegRoute] = useState<{ customerId: string; result: RouteResult | null; loading: boolean } | null>(null)
   const userLocationRef = useRef<{ lat: number; lng: number } | null>(null)
+  const firstLegAbortRef = useRef<AbortController | null>(null)
+  const routingProviderRef = useRef(new OsrmRoutingProvider())
   // Detect if a saved route already exists with the same name (case-insensitive)
   const existingRouteSameName = useMemo(() => {
     try {
@@ -435,6 +447,39 @@ export default function Visits() {
       setTotalDistance(state.totalDistanceKm)
     }
   }, [routeCustomers])
+
+  // The route list keeps straight-line distances for all stops. For the first
+  // visit, show the practical road distance and driving time from the MINI.
+  useEffect(() => {
+    const firstStop = routeDistances.stops[0]
+    const userLocation = routeDistances.userLocation
+    firstLegAbortRef.current?.abort()
+
+    if (!firstStop || !userLocation || firstStop.lat == null || firstStop.lng == null) {
+      setFirstLegRoute(null)
+      return
+    }
+
+    const controller = new AbortController()
+    firstLegAbortRef.current = controller
+    setFirstLegRoute({ customerId: firstStop.id, result: null, loading: true })
+
+    routingProviderRef.current.calculateRoute(
+      routePointFromCoordinates('current-location', 'Mi ubicación', userLocation),
+      routePointFromCoordinates('customer', firstStop.name, { lat: firstStop.lat, lng: firstStop.lng }, firstStop.id),
+      controller.signal,
+    ).then(result => {
+      if (!controller.signal.aborted) {
+        setFirstLegRoute({ customerId: firstStop.id, result, loading: false })
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setFirstLegRoute({ customerId: firstStop.id, result: null, loading: false })
+      }
+    })
+
+    return () => controller.abort()
+  }, [routeDistances.stops, routeDistances.userLocation])
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -1180,14 +1225,15 @@ export default function Visits() {
       // Remove previous marker
       try { leafletMyLocationMarkerRef.current?.remove() } catch {}
 
-      const icon = L.divIcon({
-        className: '',
-        html: "<div style='width:18px;height:18px;border-radius:9px;background:#2563EB;box-shadow:0 1px 2px rgba(0,0,0,0.35)'></div>",
-        iconSize: [18, 18],
-        iconAnchor: [9, 9]
+      const marker = L.marker(pos, {
+        icon: createVehicleLocationIcon({
+          heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+          accuracy: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+          isMoving: Number.isFinite(position.coords.speed) && (position.coords.speed || 0) > 1,
+        }),
+        title: 'Mi ubicación',
       })
-      const marker = L.marker(pos, { icon })
-      marker.addTo(map).bindPopup('Mi Ubicación')
+      marker.addTo(map).bindPopup('Mi ubicación')
       leafletMyLocationMarkerRef.current = marker
 
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
@@ -3262,7 +3308,7 @@ export default function Visits() {
                 </div>
               )}
               <div className="h-[800px] relative bg-white max-md:h-full">
-              {routeCustomers.length === 0 ? (
+              {routeCustomers.length === 0 && mapProvider !== 'leaflet' ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
                     <Route className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -3323,6 +3369,20 @@ export default function Visits() {
                       </button>
                     </div>
                     <div ref={mapRef} className="w-full h-full rounded-lg border print-map max-md:rounded-none max-md:border-0" />
+                    {routeCustomers.length === 0 && (
+                      <div className="absolute inset-x-5 top-[42%] z-[1000] md:hidden">
+                        <button
+                          onClick={() => {
+                            setMobileSheetTab('clients')
+                            setShowDetails(true)
+                          }}
+                          className="flex w-full items-center justify-center gap-2 rounded-full border border-white/70 bg-white/90 px-5 py-3 text-sm font-semibold text-blue-700 shadow-xl backdrop-blur-md active:scale-[0.98]"
+                        >
+                          <Plus className="h-5 w-5" />
+                          Añadir primera visita
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (!mapsApiKey ? (
                   <div className="flex items-center justify-center h-full">
@@ -3530,6 +3590,20 @@ export default function Visits() {
                     </div>
                   )}
                 </div>
+                {routeCustomers.length > 0 && (
+                  <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm">
+                    <span className="min-w-0 text-blue-800">MINI → primera visita</span>
+                    <span className="shrink-0 font-semibold text-blue-700">
+                      {firstLegRoute?.customerId === routeCustomers[0]?.id && firstLegRoute.loading
+                        ? 'Calculando…'
+                        : firstLegRoute?.customerId === routeCustomers[0]?.id && firstLegRoute.result
+                          ? `${formatRouteDistance(firstLegRoute.result.distanceKm)} · ${formatRouteDuration(firstLegRoute.result.durationMinutes)}`
+                          : routeDistances.userLocation
+                            ? 'No disponible'
+                            : 'Activa ubicación'}
+                    </span>
+                  </div>
+                )}
                 {mobileSheetTab === 'route' ? (
                   <>
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -3568,7 +3642,9 @@ export default function Visits() {
                                 <div className="truncate text-xs text-gray-500">{customer.company}</div>
                                 <div className="mt-1 text-xs text-blue-600">
                                   {index === 0
-                                    ? (stopDist?.distanceFromUserKm != null ? `Desde mi ubicacion: ${formatDistanceKm(stopDist.distanceFromUserKm)}` : 'Primera parada')
+                                    ? (firstLegRoute?.customerId === customer.id && firstLegRoute.result
+                                      ? `Desde el MINI: ${formatRouteDistance(firstLegRoute.result.distanceKm)} · ${formatRouteDuration(firstLegRoute.result.durationMinutes)}`
+                                      : stopDist?.distanceFromUserKm != null ? `Desde mi ubicación: ${formatDistanceKm(stopDist.distanceFromUserKm)}` : 'Activa Mi ubicación para calcular')
                                     : `Desde anterior: ${formatDistanceKm(stopDist?.distanceFromPreviousStopKm)}`}
                                 </div>
                               </div>

@@ -1061,21 +1061,21 @@ export default function Customers() {
       {/* Edit Modal */}
       {editingCustomer && createPortal(
         <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/50 p-3 md:p-6">
-          <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg md:max-h-[90vh]">
-            <h3 className="text-lg font-semibold mb-4">Editar cliente</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+          <div className="max-h-[calc(100dvh-1rem)] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-4 shadow-lg sm:p-6 md:max-h-[90vh]">
+            <h3 className="mb-3 text-base font-semibold sm:mb-4 sm:text-lg">Editar cliente</h3>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <div className="col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Nombre</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editData.name}
                   onChange={e => handleEditChange('name', e.target.value)}
                 />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Empresa</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editData.company || ''}
                   onChange={e => handleEditChange('company', e.target.value)}
                 />
@@ -1083,7 +1083,7 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Número</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={(editData as any).num || ''}
                   onChange={e => setEditData(prev => ({ ...prev, num: e.target.value }))}
                 />
@@ -1091,23 +1091,23 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Teléfono</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editData.phone || ''}
                   onChange={e => handleEditChange('phone', e.target.value)}
                 />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Email</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editData.email || ''}
                   onChange={e => handleEditChange('email', e.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div className="col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Dirección</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editData.address || ''}
                   onChange={e => handleEditChange('address', e.target.value)}
                 />
@@ -1115,7 +1115,7 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">C.P</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={(editData as any).postal_code || ''}
                   onChange={e => handleEditChange('postal_code' as any, e.target.value)}
                   placeholder="Código postal"
@@ -1124,7 +1124,7 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Provincia</label>
                 <select
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editProvince}
                   onChange={e => handleProvinceChange(e.target.value)}
                 >
@@ -1134,10 +1134,10 @@ export default function Customers() {
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Ciudad</label>
                 <select
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={editMunicipio}
                   onChange={e => handleMunicipioChange(e.target.value)}
                 >
@@ -1154,21 +1154,21 @@ export default function Customers() {
               <div>
                 <label className="block text-sm text-gray-700 mb-1">Contrato</label>
                 <input
-                  className="w-full px-3 py-2 border rounded"
+                  className="min-h-11 w-full rounded border px-3 py-2 text-base"
                   value={(editData as any).contrato || ''}
                   onChange={e => handleEditChange('contrato' as any, e.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div className="col-span-2">
                 <label className="block text-sm text-gray-700 mb-1">Notas</label>
                 <textarea
-                  className="w-full px-3 py-2 border rounded"
-                  rows={3}
+                  className="min-h-20 w-full rounded border px-3 py-2 text-base"
+                  rows={2}
                   value={(editData as any).notes || ''}
                   onChange={e => handleEditChange('notes' as any, e.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2 mt-4 flex items-center justify-between gap-3">
+              <div className="sticky bottom-0 col-span-2 -mx-4 -mb-4 mt-1 flex items-center justify-between gap-3 border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6 sm:py-4">
                 <button
                   type="button"
                   onClick={handleEditClose}
