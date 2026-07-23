@@ -46,6 +46,7 @@ import {
 // Note: remember to `npm i leaflet @types/leaflet` in the project
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet-rotate'
 import { isAppleDevice, mapTileProvider } from '../services/mapProviders'
 import { createVehicleLocationIcon } from '../components/map/VehicleLocationIcon'
 import {
@@ -560,6 +561,26 @@ export default function Visits() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }, [measurementDestination, measurementOrigin])
 
+  const toggleLeafletCompassFollow = useCallback(async () => {
+    const map = leafletMapInstanceRef.current
+    if (!map?.compassBearing) return
+
+    const DeviceOrientation = window.DeviceOrientationEvent as typeof DeviceOrientationEvent & {
+      requestPermission?: () => Promise<'granted' | 'denied'>
+    }
+    if (typeof DeviceOrientation.requestPermission === 'function') {
+      const permission = await DeviceOrientation.requestPermission()
+      if (permission !== 'granted') return
+    }
+
+    if (map.compassBearing.enabled()) {
+      map.compassBearing.disable()
+      map.setBearing(0)
+    } else {
+      map.compassBearing.enable()
+    }
+  }, [])
+
   useEffect(() => {
     measurementAbortRef.current?.abort()
     if (!measurementOrigin || !measurementDestination) return
@@ -902,6 +923,8 @@ export default function Visits() {
         if (!leafletMapInstanceRef.current) {
           const map = L.map(mapRef.current, {
             zoomControl: true,
+            rotate: true,
+            rotateControl: false,
           })
           leafletMapInstanceRef.current = map
 
@@ -3754,9 +3777,9 @@ export default function Visits() {
                       <Navigation className="h-6 w-6 text-white" />
                     </button>
                   )}
-                  <div title="Norte" aria-label="Norte" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md">
+                  <button onClick={toggleLeafletCompassFollow} title="Orientar mapa" aria-label="Orientar mapa" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95">
                     <Compass className="h-6 w-6 text-rose-500" />
-                  </div>
+                  </button>
                 </>}
               </div>
 

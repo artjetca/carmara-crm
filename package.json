@@ -28,6 +28,7 @@
     "express": "^4.21.2",
     "googleapis": "^159.0.0",
     "leaflet": "^1.9.4",
+    "leaflet-rotate": "^0.2.8",
     "leaflet.markercluster": "^1.5.3",
     "lucide-react": "^0.511.0",
     "node-fetch": "^3.3.2",
