@@ -243,8 +243,8 @@ export default function Layout({ children }: LayoutProps) {
       {/* Barra de pestañas inferior (solo móvil) — cápsula flotante estilo app */}
       {createPortal(
         <nav
-          className="fixed bottom-2 inset-x-3 z-[1100] rounded-full border border-gray-200/70 bg-white/90 shadow-xl backdrop-blur-md md:hidden"
-          style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+          className="fixed inset-x-3 z-[1100] transform-gpu rounded-full border border-gray-200/70 bg-white/90 shadow-xl backdrop-blur-md [will-change:transform] md:hidden"
+          style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
         >
           <div className="grid grid-cols-5">
             {mobileTabs.map((tab) => {
