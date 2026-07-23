@@ -44,6 +44,22 @@ const buildNormalizedAddress = customer => {
   return parts.join(', ')
 }
 
+const buildGeocodingCandidates = customer => {
+  const street = normalizeStreetAddress(customer.address)
+  const postalCode = normalizePart(customer.postal_code)
+  const city = normalizePart(customer.city)
+  const province = normalizePart(customer.province)
+  const country = normalizePart(customer.country) || 'España'
+
+  // Some imported CRM rows store the province in city. Keep the complete
+  // address first, then retry with the postcode and province only instead of
+  // assigning a city-centre coordinate to a potentially incorrect city.
+  return [
+    [street, postalCode, city, province, country].filter(Boolean).join(', '),
+    [street, postalCode, province, country].filter(Boolean).join(', '),
+  ].filter((candidate, index, candidates) => candidate && candidates.indexOf(candidate) === index)
+}
+
 const hasCompleteAddress = customer => {
   const street = normalizePart(customer.address)
   const city = normalizePart(customer.city)
@@ -54,7 +70,7 @@ const hasCompleteAddress = customer => {
       street
     ) && street.length >= 8
 
-  return hasStreetLikeAddress && Boolean(city) && Boolean(province) && normalizedAddress.length >= 18
+  return hasStreetLikeAddress && Boolean(province) && Boolean(city || normalizePart(customer.postal_code)) && normalizedAddress.length >= 18
 }
 
 const getConfidence = result => {
@@ -156,8 +172,18 @@ const geocodeCustomer = async (admin, customer) => {
     .eq('id', customer.id)
 
   try {
-    const results = await searchNominatim(normalizedAddress)
-    const first = results[0]
+    const candidates = buildGeocodingCandidates(customer)
+    let first = null
+    for (let index = 0; index < candidates.length; index++) {
+      const results = await searchNominatim(candidates[index])
+      if (results[0]) {
+        first = results[0]
+        break
+      }
+      if (index < candidates.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, getMapProviderConfig().geocodingIntervalMs))
+      }
+    }
     if (!first) {
       const status = attempts >= 3 ? 'manual_review' : 'failed'
       await admin

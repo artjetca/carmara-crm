@@ -37,7 +37,8 @@ import {
   RefreshCcw,
   Maximize2,
   Minimize2,
-  FileDown
+  FileDown,
+  Ruler
 } from 'lucide-react'
 
 // Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
@@ -51,6 +52,7 @@ import {
   formatRouteDistance,
   formatRouteDuration,
   routePointFromCoordinates,
+  type RoutePoint,
   type RouteResult,
 } from '../services/routingProvider'
 import '../styles/casmara-marker.css'
@@ -60,6 +62,8 @@ interface RouteCustomer extends Customer {
   distance?: number // km
   duration?: number // minutes
 }
+
+type MeasurementStep = 'idle' | 'selecting-a' | 'selecting-b' | 'calculating' | 'result'
 
 const formatKm = (value: number | undefined | null): string => {
   const num = Number(value || 0)
@@ -203,8 +207,14 @@ export default function Visits() {
   // ── Unified route distance state ──────────────────────────
   const [routeDistances, setRouteDistances] = useState<RouteDistanceState>(EMPTY_ROUTE_DISTANCES)
   const [firstLegRoute, setFirstLegRoute] = useState<{ customerId: string; result: RouteResult | null; loading: boolean } | null>(null)
+  const [measurementStep, setMeasurementStep] = useState<MeasurementStep>('idle')
+  const [measurementOrigin, setMeasurementOrigin] = useState<RoutePoint | null>(null)
+  const [measurementDestination, setMeasurementDestination] = useState<RoutePoint | null>(null)
+  const [measurementResult, setMeasurementResult] = useState<RouteResult | null>(null)
+  const [measurementError, setMeasurementError] = useState<string | null>(null)
   const userLocationRef = useRef<{ lat: number; lng: number } | null>(null)
   const firstLegAbortRef = useRef<AbortController | null>(null)
+  const measurementAbortRef = useRef<AbortController | null>(null)
   const routingProviderRef = useRef(new OsrmRoutingProvider())
   // Detect if a saved route already exists with the same name (case-insensitive)
   const existingRouteSameName = useMemo(() => {
@@ -421,6 +431,8 @@ export default function Visits() {
   const leafletMapInstanceRef = useRef<L.Map | null>(null)
   const leafletMarkersRef = useRef<L.Marker[]>([])
   const leafletPolylineRef = useRef<L.Polyline | null>(null)
+  const leafletMeasurementMarkersRef = useRef<L.Marker[]>([])
+  const leafletMeasurementPolylineRef = useRef<L.Polyline | null>(null)
   // Leaflet-only: my location marker & geolocation watcher
   const leafletMyLocationMarkerRef = useRef<L.Marker | null>(null)
   const leafletGeoWatchIdRef = useRef<number | null>(null)
@@ -480,6 +492,117 @@ export default function Visits() {
 
     return () => controller.abort()
   }, [routeDistances.stops, routeDistances.userLocation])
+
+  const clearMeasurement = useCallback(() => {
+    measurementAbortRef.current?.abort()
+    setMeasurementOrigin(null)
+    setMeasurementDestination(null)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementStep('idle')
+  }, [])
+
+  const startMeasurement = useCallback(() => {
+    setMeasurementOrigin(null)
+    setMeasurementDestination(null)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementStep('selecting-a')
+    setShowDetails(false)
+  }, [])
+
+  const selectMeasurementPoint = useCallback((point: RoutePoint) => {
+    if (measurementStep === 'selecting-a') {
+      setMeasurementOrigin(point)
+      setMeasurementDestination(null)
+      setMeasurementResult(null)
+      setMeasurementError(null)
+      setMeasurementStep('selecting-b')
+      return
+    }
+    if (measurementStep === 'selecting-b') {
+      setMeasurementDestination(point)
+      setMeasurementResult(null)
+      setMeasurementError(null)
+      setMeasurementStep('calculating')
+    }
+  }, [measurementStep])
+
+  useEffect(() => {
+    measurementAbortRef.current?.abort()
+    if (!measurementOrigin || !measurementDestination) return
+
+    const controller = new AbortController()
+    measurementAbortRef.current = controller
+    setMeasurementStep('calculating')
+    routingProviderRef.current.calculateRoute(measurementOrigin, measurementDestination, controller.signal)
+      .then(result => {
+        if (!controller.signal.aborted) {
+          setMeasurementResult(result)
+          setMeasurementStep('result')
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setMeasurementResult(null)
+          setMeasurementError('No se pudo calcular la ruta por carretera.')
+          setMeasurementStep('result')
+        }
+      })
+
+    return () => controller.abort()
+  }, [measurementDestination, measurementOrigin])
+
+  useEffect(() => {
+    const map = leafletMapInstanceRef.current
+    if (!map) return
+
+    leafletMeasurementMarkersRef.current.forEach(marker => marker.remove())
+    leafletMeasurementMarkersRef.current = []
+    leafletMeasurementPolylineRef.current?.remove()
+    leafletMeasurementPolylineRef.current = null
+
+    const addPointMarker = (point: RoutePoint, label: 'A' | 'B') => {
+      const marker = L.marker([point.latitude, point.longitude], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="display:flex;height:34px;width:34px;align-items:center;justify-content:center;border:3px solid #fff;border-radius:999px;background:${label === 'A' ? '#2563eb' : '#0f766e'};color:#fff;font-size:14px;font-weight:700;box-shadow:0 2px 5px rgba(15,23,42,.35)">${label}</div>`,
+          iconSize: [34, 34],
+          iconAnchor: [17, 17],
+        }),
+        interactive: false,
+      }).addTo(map)
+      leafletMeasurementMarkersRef.current.push(marker)
+    }
+
+    if (measurementOrigin) addPointMarker(measurementOrigin, 'A')
+    if (measurementDestination) addPointMarker(measurementDestination, 'B')
+
+    if (measurementOrigin && measurementDestination) {
+      const positions = measurementResult?.geometry && measurementResult.geometry.length > 1
+        ? measurementResult.geometry.map(([lng, lat]) => [lat, lng] as L.LatLngExpression)
+        : [[measurementOrigin.latitude, measurementOrigin.longitude], [measurementDestination.latitude, measurementDestination.longitude]] as L.LatLngExpression[]
+      leafletMeasurementPolylineRef.current = L.polyline(positions, {
+        color: '#2563eb',
+        weight: 5,
+        opacity: 0.9,
+        dashArray: measurementResult?.geometry ? undefined : '8 8',
+      }).addTo(map)
+    }
+  }, [measurementDestination, measurementOrigin, measurementResult])
+
+  useEffect(() => {
+    const map = leafletMapInstanceRef.current
+    if (!map || (measurementStep !== 'selecting-a' && measurementStep !== 'selecting-b')) return
+    const onMapClick = (event: L.LeafletMouseEvent) => {
+      selectMeasurementPoint(routePointFromCoordinates('map-point', 'Punto seleccionado', {
+        lat: event.latlng.lat,
+        lng: event.latlng.lng,
+      }))
+    }
+    map.on('click', onMapClick)
+    return () => { map.off('click', onMapClick) }
+  }, [measurementStep, selectMeasurementPoint])
 
   // Load Google Maps JS API if needed
   const ensureGoogleMapsLoaded = async (): Promise<any> => {
@@ -913,8 +1036,13 @@ export default function Visits() {
                 <a href=\"https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(getAddress(c))}\" target=\"_blank\" class=\"inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md\">Direcciones</a>
               </div>
             </div>`
-          marker.addTo(map).bindPopup(popupHtml)
+          marker.addTo(map)
+          if (measurementStep === 'idle') marker.bindPopup(popupHtml)
           marker.on('click', () => {
+            if (measurementStep !== 'idle') {
+              selectMeasurementPoint(routePointFromCoordinates('customer', c.name, pos, c.id))
+              return
+            }
             try { setSelectedCustomer(c) } catch {}
             try { setShowDetails(true) } catch {}
           })
@@ -928,10 +1056,12 @@ export default function Visits() {
         }
 
         // Fit bounds with padding
-        try {
-          const bounds = L.latLngBounds(latlngs as any)
-          map.fitBounds(bounds, { padding: [16, 16] })
-        } catch {}
+        if (measurementStep === 'idle') {
+          try {
+            const bounds = L.latLngBounds(latlngs as any)
+            map.fitBounds(bounds, { padding: [16, 16] })
+          } catch {}
+        }
 
         // After render, compute offline distances if not set yet and coordinates are ready
         try {
@@ -951,7 +1081,7 @@ export default function Visits() {
 
     renderLeaflet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapProvider, routeCustomers, leafletReset])
+  }, [mapProvider, routeCustomers, leafletReset, measurementStep])
 
   // 地圖真正全螢幕切換（使用瀏覽器 Fullscreen API）
   const toggleMapFullscreen = async () => {
@@ -1242,6 +1372,9 @@ export default function Visits() {
       const userLoc = { lat: latitude, lng: longitude }
       userLocationRef.current = userLoc
       recalcRouteDistances(undefined, userLoc)
+      if (measurementStep === 'selecting-a' || measurementStep === 'selecting-b') {
+        selectMeasurementPoint(routePointFromCoordinates('current-location', 'Mi ubicación', userLoc))
+      }
     } catch (e) {
       console.error('[Leaflet] getCurrentLocation failed:', e)
       alert('No se pudo obtener la ubicación actual')
@@ -3466,11 +3599,49 @@ export default function Visits() {
                 </div>
               </div>
 
+              {measurementStep !== 'idle' && (
+                <div
+                  className="absolute inset-x-5 z-[1010] md:hidden"
+                  style={{ top: 'calc(env(safe-area-inset-top) + 76px)' }}
+                >
+                  <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white/95 px-3 text-sm shadow-lg backdrop-blur-md">
+                    <span className="font-medium text-blue-700">
+                      {measurementStep === 'selecting-a' && 'Selecciona el punto A'}
+                      {measurementStep === 'selecting-b' && 'Ahora selecciona el punto B'}
+                      {measurementStep === 'calculating' && 'Calculando ruta…'}
+                      {measurementStep === 'result' && 'Medición lista'}
+                    </span>
+                    <button onClick={clearMeasurement} className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 active:bg-gray-100" aria-label="Cancelar medición">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div
                 className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
                 style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
               >
-                {routeCustomers.length === 0 && (
+                {measurementStep === 'idle' ? (
+                  <button
+                    onClick={startMeasurement}
+                    title="Medir distancia"
+                    aria-label="Medir distancia"
+                    className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
+                  >
+                    <Ruler className="h-6 w-6 text-blue-600" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={clearMeasurement}
+                    title="Cancelar medición"
+                    aria-label="Cancelar medición"
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition active:scale-95"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                )}
+                {routeCustomers.length === 0 && measurementStep === 'idle' && (
                   <button
                     onClick={() => {
                       setMobileSheetTab('clients')
@@ -3508,6 +3679,28 @@ export default function Visits() {
                   </button>
                 )}
               </div>
+
+              {measurementStep === 'result' && measurementOrigin && measurementDestination && (
+                <div
+                  className="absolute inset-x-5 z-[1010] md:hidden"
+                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 100px)' }}
+                >
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/60 bg-white/95 px-4 py-3 shadow-xl backdrop-blur-md">
+                    <div>
+                      <div className="text-xs font-medium text-gray-500">A → B</div>
+                      <div className="text-base font-bold text-blue-700">
+                        {measurementResult
+                          ? `${formatRouteDistance(measurementResult.distanceKm)} · ${formatRouteDuration(measurementResult.durationMinutes)}`
+                          : 'Ruta no disponible'}
+                      </div>
+                      {measurementError && <div className="mt-0.5 text-xs text-amber-700">{measurementError}</div>}
+                    </div>
+                    <button onClick={startMeasurement} className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700" aria-label="Nueva medición">
+                      <Ruler className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {!showDetails && (
                 <div
