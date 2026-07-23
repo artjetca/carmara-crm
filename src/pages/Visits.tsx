@@ -3723,30 +3723,32 @@ export default function Visits() {
                     <Plus className="h-6 w-6" />
                   </button>
                 )}
-                <button
-                  onClick={mapProvider === 'leaflet' ? getCurrentLocationLeaflet : getCurrentLocation}
-                  title="Mi ubicacion"
-                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
-                >
-                  <LocateFixed className="h-6 w-6 text-blue-600" />
-                </button>
-                <button
-                  onClick={mapProvider === 'leaflet' ? fitLeafletToAllStops : getCurrentLocation}
-                  title="Ver ruta"
-                  disabled={routeCustomers.length === 0}
-                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95 disabled:opacity-50"
-                >
-                  <Maximize2 className="h-6 w-6 text-gray-700" />
-                </button>
-                {routeCustomers.length > 0 && (
+                {measurementStep !== 'result' && <>
                   <button
-                    onClick={startNavigation}
-                    title="Navegar"
-                    className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 shadow-lg transition active:scale-95"
+                    onClick={mapProvider === 'leaflet' ? getCurrentLocationLeaflet : getCurrentLocation}
+                    title="Mi ubicacion"
+                    className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
                   >
-                    <Navigation className="h-6 w-6 text-white" />
+                    <LocateFixed className="h-6 w-6 text-blue-600" />
                   </button>
-                )}
+                  <button
+                    onClick={mapProvider === 'leaflet' ? fitLeafletToAllStops : getCurrentLocation}
+                    title="Ver ruta"
+                    disabled={routeCustomers.length === 0}
+                    className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95 disabled:opacity-50"
+                  >
+                    <Maximize2 className="h-6 w-6 text-gray-700" />
+                  </button>
+                  {routeCustomers.length > 0 && (
+                    <button
+                      onClick={startNavigation}
+                      title="Navegar"
+                      className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 shadow-lg transition active:scale-95"
+                    >
+                      <Navigation className="h-6 w-6 text-white" />
+                    </button>
+                  )}
+                </>}
               </div>
 
               {measurementStep === 'result' && measurementOrigin && measurementDestination && (
@@ -3779,7 +3781,7 @@ export default function Visits() {
                 </div>
               )}
 
-              {!showDetails && (
+              {!showDetails && measurementStep !== 'result' && (
                 <div
                   className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
