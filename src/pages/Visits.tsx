@@ -45,7 +45,7 @@ import {
 // Note: remember to `npm i leaflet @types/leaflet` in the project
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { mapTileProvider } from '../services/mapProviders'
+import { isAppleDevice, mapTileProvider } from '../services/mapProviders'
 import { createVehicleLocationIcon } from '../components/map/VehicleLocationIcon'
 import {
   OsrmRoutingProvider,
@@ -508,7 +508,8 @@ export default function Visits() {
     setMeasurementResult(null)
     setMeasurementError(null)
     setMeasurementStep('selecting-a')
-    setShowDetails(false)
+    setMobileSheetTab('clients')
+    setShowDetails(true)
   }, [])
 
   const selectMeasurementPoint = useCallback((point: RoutePoint) => {
@@ -525,8 +526,37 @@ export default function Visits() {
       setMeasurementResult(null)
       setMeasurementError(null)
       setMeasurementStep('calculating')
+      setShowDetails(false)
     }
   }, [measurementStep])
+
+  const swapMeasurementPoints = useCallback(() => {
+    if (!measurementOrigin || !measurementDestination) return
+    setMeasurementOrigin(measurementDestination)
+    setMeasurementDestination(measurementOrigin)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementStep('calculating')
+  }, [measurementDestination, measurementOrigin])
+
+  const focusMeasurementRoute = useCallback(() => {
+    const map = leafletMapInstanceRef.current
+    if (!map || !measurementOrigin || !measurementDestination) return
+    const points = measurementResult?.geometry && measurementResult.geometry.length > 1
+      ? measurementResult.geometry.map(([lng, lat]) => [lat, lng] as L.LatLngExpression)
+      : [[measurementOrigin.latitude, measurementOrigin.longitude], [measurementDestination.latitude, measurementDestination.longitude]] as L.LatLngExpression[]
+    map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 15 })
+  }, [measurementDestination, measurementOrigin, measurementResult])
+
+  const openMeasurementNavigation = useCallback(() => {
+    if (!measurementOrigin || !measurementDestination) return
+    const origin = `${measurementOrigin.latitude},${measurementOrigin.longitude}`
+    const destination = `${measurementDestination.latitude},${measurementDestination.longitude}`
+    const url = isAppleDevice()
+      ? `https://maps.apple.com/?saddr=${encodeURIComponent(origin)}&daddr=${encodeURIComponent(destination)}&dirflg=d`
+      : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }, [measurementDestination, measurementOrigin])
 
   useEffect(() => {
     measurementAbortRef.current?.abort()
@@ -1038,7 +1068,8 @@ export default function Visits() {
             </div>`
           marker.addTo(map)
           if (measurementStep === 'idle') marker.bindPopup(popupHtml)
-          marker.on('click', () => {
+          marker.on('click', (event) => {
+            L.DomEvent.stopPropagation(event)
             if (measurementStep !== 'idle') {
               selectMeasurementPoint(routePointFromCoordinates('customer', c.name, pos, c.id))
               return
@@ -1050,7 +1081,7 @@ export default function Visits() {
         })
 
         // Draw polyline connecting stops
-        if (latlngs.length >= 2) {
+        if (measurementStep === 'idle' && latlngs.length >= 2) {
           leafletPolylineRef.current = L.polyline(latlngs, { color: '#2563EB', weight: 5, opacity: 0.9 })
           leafletPolylineRef.current.addTo(map)
         }
@@ -1363,7 +1394,15 @@ export default function Visits() {
         }),
         title: 'Mi ubicación',
       })
-      marker.addTo(map).bindPopup('Mi ubicación')
+      marker.addTo(map)
+      if (measurementStep === 'idle') {
+        marker.bindPopup('Mi ubicación')
+      } else {
+        marker.on('click', (event) => {
+          L.DomEvent.stopPropagation(event)
+          selectMeasurementPoint(routePointFromCoordinates('current-location', 'Mi ubicación', { lat: latitude, lng: longitude }))
+        })
+      }
       leafletMyLocationMarkerRef.current = marker
 
       try { map.flyTo(pos, Math.max(map.getZoom(), 13), { duration: 0.8 }) } catch {}
@@ -1956,6 +1995,31 @@ export default function Visits() {
       return matchesSearch && matchesProvince && matchesCity
     })
   }, [customers, routeCustomers, searchTerm, selectedProvince, selectedCity])
+
+  // Measurement must be able to select every matching CRM customer, including
+  // customers already present in the planned visit route.
+  const measurementCustomers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase()
+    return customers.filter(customer => {
+      const matchesSearch = !query ||
+        customer.name.toLowerCase().includes(query) ||
+        (customer.company || '').toLowerCase().includes(query)
+      const matchesProvince = !selectedProvince || displayProvince(customer) === selectedProvince
+      const city = displayCity(customer)
+      const matchesCity = !selectedCity || (!!city && city.toLowerCase() === selectedCity.toLowerCase())
+      return matchesSearch && matchesProvince && matchesCity
+    })
+  }, [customers, searchTerm, selectedProvince, selectedCity])
+
+  const selectCustomerForMeasurement = useCallback((customer: Customer) => {
+    const latitude = Number((customer as any).latitude)
+    const longitude = Number((customer as any).longitude)
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      alert('Este cliente todavía no tiene coordenadas.')
+      return
+    }
+    selectMeasurementPoint(routePointFromCoordinates('customer', customer.name, { lat: latitude, lng: longitude }, customer.id))
+  }, [selectMeasurementPoint])
 
   // 計算路線距離和時間
   const calculateRouteDistanceAndTime = async (route: RouteCustomer[]) => {
@@ -3607,13 +3671,18 @@ export default function Visits() {
                   <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white/95 px-3 text-sm shadow-lg backdrop-blur-md">
                     <span className="font-medium text-blue-700">
                       {measurementStep === 'selecting-a' && 'Selecciona el punto A'}
-                      {measurementStep === 'selecting-b' && 'Ahora selecciona el punto B'}
+                      {measurementStep === 'selecting-b' && `Ahora selecciona el punto B${measurementOrigin ? ` · A: ${measurementOrigin.name}` : ''}`}
                       {measurementStep === 'calculating' && 'Calculando ruta…'}
                       {measurementStep === 'result' && 'Medición lista'}
                     </span>
-                    <button onClick={clearMeasurement} className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 active:bg-gray-100" aria-label="Cancelar medición">
-                      <X className="h-5 w-5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {(measurementStep === 'selecting-a' || measurementStep === 'selecting-b') && (
+                        <button onClick={() => { setMobileSheetTab('clients'); setShowDetails(true) }} className="min-h-9 px-2 text-xs font-medium text-blue-700" aria-label="Ver opciones de medición">Más</button>
+                      )}
+                      <button onClick={clearMeasurement} className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 active:bg-gray-100" aria-label="Cancelar medición">
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3685,19 +3754,27 @@ export default function Visits() {
                   className="absolute inset-x-5 z-[1010] md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 100px)' }}
                 >
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/60 bg-white/95 px-4 py-3 shadow-xl backdrop-blur-md">
-                    <div>
-                      <div className="text-xs font-medium text-gray-500">A → B</div>
-                      <div className="text-base font-bold text-blue-700">
+                  <div className="overflow-hidden rounded-xl border border-white/60 bg-white/95 shadow-xl backdrop-blur-md">
+                    <button onClick={focusMeasurementRoute} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+                      <span>
+                        <span className="block text-xs font-medium text-gray-500">A → B</span>
+                        <span className="block text-base font-bold text-blue-700">
                         {measurementResult
                           ? `${formatRouteDistance(measurementResult.distanceKm)} · ${formatRouteDuration(measurementResult.durationMinutes)}`
                           : 'Ruta no disponible'}
-                      </div>
+                        </span>
                       {measurementError && <div className="mt-0.5 text-xs text-amber-700">{measurementError}</div>}
-                    </div>
-                    <button onClick={startMeasurement} className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700" aria-label="Nueva medición">
-                      <Ruler className="h-5 w-5" />
+                      </span>
+                      <span className="text-xs font-medium text-blue-700">Centrar</span>
                     </button>
+                    <div className="grid grid-cols-4 border-t border-gray-100">
+                      <button onClick={openMeasurementNavigation} className="min-h-11 border-r border-gray-100 text-xs font-medium text-emerald-700">Navegar</button>
+                      <button onClick={swapMeasurementPoints} className="min-h-11 border-r border-gray-100 text-xs font-medium text-gray-700">Cambiar</button>
+                      <button onClick={() => { setMeasurementDestination(null); setMeasurementResult(null); setMeasurementError(null); setMeasurementStep('selecting-b'); setMobileSheetTab('clients'); setShowDetails(true) }} className="min-h-11 border-r border-gray-100 text-xs font-medium text-gray-700">Cambiar B</button>
+                      <button onClick={startMeasurement} className="flex min-h-11 items-center justify-center text-blue-700" aria-label="Nueva medición">
+                        <Ruler className="h-5 w-5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3739,32 +3816,38 @@ export default function Visits() {
               <div className="px-4 pb-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-gray-900">Planificacion de ruta</div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {measurementStep === 'selecting-a' ? '¿Desde dónde quieres salir?' : measurementStep === 'selecting-b' ? 'Selecciona el punto B' : 'Planificacion de ruta'}
+                    </div>
                     <div className="text-xs text-gray-500">
-                      {routeCustomers.length} paradas · {filteredCustomers.length} clientes disponibles
+                      {measurementStep === 'selecting-a' || measurementStep === 'selecting-b'
+                        ? 'Usa tu ubicación, un cliente o un punto del mapa.'
+                        : `${routeCustomers.length} paradas · ${filteredCustomers.length} clientes disponibles`}
                     </div>
                   </div>
                   <button onClick={() => setShowDetails(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 active:bg-gray-200" aria-label="Cerrar">
                     <ChevronDown className="w-5 h-5" />
                   </button>
                 </div>
-                <div className="mt-3 grid grid-cols-2 rounded-full bg-gray-100 p-1 text-sm font-medium">
-                  <button
-                    onClick={() => setMobileSheetTab('route')}
-                    className={`rounded-full px-3 py-2 transition ${mobileSheetTab === 'route' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
-                  >
-                    Ruta
-                  </button>
-                  <button
-                    onClick={() => setMobileSheetTab('clients')}
-                    className={`rounded-full px-3 py-2 transition ${mobileSheetTab === 'clients' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
-                  >
-                    Clientes
-                  </button>
-                </div>
+                {measurementStep === 'idle' && (
+                  <div className="mt-3 grid grid-cols-2 rounded-full bg-gray-100 p-1 text-sm font-medium">
+                    <button
+                      onClick={() => setMobileSheetTab('route')}
+                      className={`rounded-full px-3 py-2 transition ${mobileSheetTab === 'route' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
+                    >
+                      Ruta
+                    </button>
+                    <button
+                      onClick={() => setMobileSheetTab('clients')}
+                      className={`rounded-full px-3 py-2 transition ${mobileSheetTab === 'clients' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
+                    >
+                      Clientes
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="overflow-y-auto overscroll-contain px-4 pb-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 84px)' }}>
-                <div className="grid grid-cols-3 gap-2 text-sm">
+                {measurementStep === 'idle' && <div className="grid grid-cols-3 gap-2 text-sm">
                   <div className="bg-gray-50 rounded-lg p-2">
                     <div className="text-xs text-gray-500">Paradas</div>
                     <div className="font-semibold">{routeCustomers.length}</div>
@@ -3781,8 +3864,8 @@ export default function Visits() {
                       <div className="font-semibold text-green-700">{Math.floor(totalDuration / 60)}h {Math.round(totalDuration % 60)}min</div>
                     </div>
                   )}
-                </div>
-                {routeCustomers.length > 0 && (
+                </div>}
+                {measurementStep === 'idle' && routeCustomers.length > 0 && (
                   <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm">
                     <span className="min-w-0 text-blue-800">MINI → primera visita</span>
                     <span className="shrink-0 font-semibold text-blue-700">
@@ -3796,7 +3879,7 @@ export default function Visits() {
                     </span>
                   </div>
                 )}
-                {mobileSheetTab === 'route' ? (
+                {measurementStep === 'idle' && mobileSheetTab === 'route' ? (
                   <>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button onClick={reorderRouteByCurrentLocation} disabled={routeCustomers.length < 2} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-purple-600 px-3 py-2 text-sm text-white disabled:opacity-50">
@@ -3856,6 +3939,24 @@ export default function Visits() {
                   </>
                 ) : (
                   <div className="mt-4 space-y-2">
+                    {measurementStep !== 'idle' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {measurementStep === 'selecting-a' && (
+                          <button
+                            onClick={mapProvider === 'leaflet' ? getCurrentLocationLeaflet : getCurrentLocation}
+                            className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white"
+                          >
+                            <LocateFixed className="h-5 w-5" /> Mi ubicación
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setShowDetails(false)}
+                          className={`${measurementStep === 'selecting-a' ? '' : 'col-span-2'} flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-semibold text-slate-800`}
+                        >
+                          <MapPin className="h-5 w-5 text-blue-600" /> Elegir punto en el mapa
+                        </button>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <select
                         value={selectedProvince}
@@ -3881,12 +3982,12 @@ export default function Visits() {
                         ))}
                       </select>
                     </div>
-                    {filteredCustomers.length === 0 ? (
+                    {(measurementStep === 'idle' ? filteredCustomers : measurementCustomers).length === 0 ? (
                       <div className="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
                         No hay clientes disponibles.
                       </div>
                     ) : (
-                      filteredCustomers.slice(0, 80).map((customer) => (
+                      (measurementStep === 'idle' ? filteredCustomers : measurementCustomers).slice(0, 80).map((customer) => (
                         <div key={customer.id} className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm font-medium text-gray-900">{customer.name}</div>
@@ -3906,13 +4007,17 @@ export default function Visits() {
                           )}
                           <button
                             onClick={() => {
-                              addCustomerToRoute(customer)
-                              setMobileSheetTab('route')
+                              if (measurementStep !== 'idle') {
+                                selectCustomerForMeasurement(customer)
+                              } else {
+                                addCustomerToRoute(customer)
+                                setMobileSheetTab('route')
+                              }
                             }}
                             className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
-                            aria-label="Agregar a ruta"
+                            aria-label={measurementStep === 'idle' ? 'Agregar a ruta' : 'Elegir para medir'}
                           >
-                            <Plus className="h-4 w-4" />
+                            {measurementStep === 'idle' ? <Plus className="h-4 w-4" /> : <Ruler className="h-4 w-4" />}
                           </button>
                         </div>
                       ))
