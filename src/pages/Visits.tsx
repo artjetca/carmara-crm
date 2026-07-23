@@ -512,7 +512,7 @@ export default function Visits() {
     setMeasurementError(null)
     setMeasurementStep('selecting-a')
     setMobileSheetTab('clients')
-    setShowDetails(true)
+    setShowDetails(false)
   }, [])
 
   const selectMeasurementPoint = useCallback((point: RoutePoint) => {
