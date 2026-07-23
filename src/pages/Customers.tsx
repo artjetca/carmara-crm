@@ -863,7 +863,7 @@ export default function Customers() {
                 return (
                   <div
                     key={customer.id}
-                    className={`relative min-h-[112px] w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-3 shadow-md backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
+                    className={`relative min-h-[96px] w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-3 shadow-md backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
                   >
                     <div className="min-w-0 pr-24">
                       <div className="min-w-0">
@@ -892,15 +892,15 @@ export default function Customers() {
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
-                    <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                    <div className="absolute bottom-3 right-2 flex items-center gap-0.5">
                       {phone && (
                         <a
                           href={`tel:${phone}`}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-blue-100 bg-blue-50 text-blue-700 shadow-sm transition active:scale-95"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-blue-100 bg-blue-50 text-blue-700 transition active:scale-95"
                           aria-label={`Llamar a ${customer.name}`}
                           title="Llamar"
                         >
-                          <Phone className="h-5 w-5" />
+                          <Phone className="h-4 w-4" />
                         </a>
                       )}
                       {directionsUrl && (
@@ -908,11 +908,11 @@ export default function Customers() {
                           href={directionsUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition active:scale-95"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white transition active:scale-95"
                           aria-label={`Navegar a ${customer.name}`}
                           title="Navegar"
                         >
-                          <Navigation className="h-5 w-5" />
+                          <Navigation className="h-4 w-4" />
                         </a>
                       )}
                     </div>
