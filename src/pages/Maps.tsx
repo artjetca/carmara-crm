@@ -2286,7 +2286,7 @@ export default function Maps() {
                   <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-dashed border-amber-500 shadow"></span> Cliente aproximado
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="vehicle-location-legend-icon" aria-hidden="true"><img src="/assets/mini-countryman-location-transparent.png" alt="" /></span> Mi ubicación
+                  <span className="vehicle-location-legend-icon" aria-hidden="true" /> Mi ubicación
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
                   <div className="flex items-center justify-between gap-3">
@@ -2447,7 +2447,10 @@ export default function Maps() {
                   </button>
                 </>}
                 <div title="Norte" aria-label="Norte" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md">
-                  <Compass className="h-6 w-6 text-rose-500" />
+                  <Compass
+                    className="h-6 w-6 text-rose-500 transition-transform duration-300"
+                    style={{ transform: `rotate(${-Number(locationDetails?.heading || 0)}deg)` }}
+                  />
                 </div>
               </div>
 

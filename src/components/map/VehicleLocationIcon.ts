@@ -39,13 +39,12 @@ export const createVehicleLocationIcon = ({
   isMoving = false,
 }: VehicleLocationIconOptions) => {
   const size = getMarkerSize()
-  // The supplied top-down asset faces down in its native orientation.
-  const rotation = (Number.isFinite(heading) ? Number(heading) : 0) + 180
   const accuracyState = getLocationAccuracyState(accuracy)
+  const rotation = Number.isFinite(heading) ? Number(heading) : 0
 
   return L.divIcon({
     className: 'vehicle-location-marker-icon',
-    html: `<div class="vehicle-location-marker vehicle-location-marker--${accuracyState}${isMoving ? ' vehicle-location-marker--moving' : ''}" aria-hidden="true"><div class="vehicle-location-marker__pulse"></div><div class="vehicle-location-marker__accuracy"></div><img src="/assets/mini-countryman-location-transparent.png" alt="" class="vehicle-location-marker__car" style="--vehicle-heading:${rotation}deg" /></div>`,
+    html: `<div class="vehicle-location-marker vehicle-location-marker--${accuracyState}${isMoving ? ' vehicle-location-marker--moving' : ''}" aria-hidden="true"><div class="vehicle-location-marker__accuracy"></div><div class="vehicle-location-marker__pulse"></div><div class="vehicle-location-marker__beam" style="--vehicle-heading:${rotation}deg"></div><div class="vehicle-location-marker__dot"></div></div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -(size / 2)],
