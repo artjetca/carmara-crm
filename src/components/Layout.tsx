@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
 import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
@@ -240,38 +241,41 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Barra de pestañas inferior (solo móvil) — cápsula flotante estilo app */}
-      <nav
-        className="fixed bottom-2 inset-x-3 z-[1100] rounded-full border border-gray-200/70 bg-white/90 shadow-xl backdrop-blur-md md:hidden"
-        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <div className="grid grid-cols-5">
-          {mobileTabs.map((tab) => {
-            const Icon = tab.icon
-            const isActive = currentPage === tab.id && !sidebarOpen
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleNavigation(tab.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 min-h-[56px] ${
-                  isActive ? 'text-blue-700' : 'text-gray-500'
-                }`}
-              >
-                <Icon className="w-6 h-6" />
-                <span className="text-[11px] font-medium leading-none">{tab.label}</span>
-              </button>
-            )
-          })}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-[56px] ${
-              sidebarOpen ? 'text-blue-700' : 'text-gray-500'
-            }`}
-          >
-            <MoreHorizontal className="w-6 h-6" />
-            <span className="text-[11px] font-medium leading-none">Más</span>
-          </button>
-        </div>
-      </nav>
+      {createPortal(
+        <nav
+          className="fixed bottom-2 inset-x-3 z-[1100] rounded-full border border-gray-200/70 bg-white/90 shadow-xl backdrop-blur-md md:hidden"
+          style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <div className="grid grid-cols-5">
+            {mobileTabs.map((tab) => {
+              const Icon = tab.icon
+              const isActive = currentPage === tab.id && !sidebarOpen
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleNavigation(tab.id)}
+                  className={`flex flex-col items-center justify-center gap-0.5 min-h-[56px] ${
+                    isActive ? 'text-blue-700' : 'text-gray-500'
+                  }`}
+                >
+                  <Icon className="w-6 h-6" />
+                  <span className="text-[11px] font-medium leading-none">{tab.label}</span>
+                </button>
+              )
+            })}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className={`flex flex-col items-center justify-center gap-0.5 min-h-[56px] ${
+                sidebarOpen ? 'text-blue-700' : 'text-gray-500'
+              }`}
+            >
+              <MoreHorizontal className="w-6 h-6" />
+              <span className="text-[11px] font-medium leading-none">Más</span>
+            </button>
+          </div>
+        </nav>,
+        document.body
+      )}
     </div>
   )
 }

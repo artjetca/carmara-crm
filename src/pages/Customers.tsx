@@ -695,12 +695,12 @@ export default function Customers() {
             </div>
           )}
         </div>
-        <div className="flex items-center space-x-3">
-          <button onClick={handleImportClick} className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+        <div className="-mx-3 flex max-w-full items-center gap-3 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0 sm:pb-0">
+          <button onClick={handleImportClick} className="inline-flex shrink-0 items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
             <Upload className="w-4 h-4" />
             <span>{t.customers.import}</span>
           </button>
-          <button onClick={handleExportClick} className="inline-flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+          <button onClick={handleExportClick} className="inline-flex shrink-0 items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
             <Download className="w-4 h-4" />
             <span>{t.customers.export}</span>
           </button>
@@ -708,7 +708,7 @@ export default function Customers() {
             <button
               onClick={handleBulkDelete}
               disabled={bulkDeleting}
-              className="inline-flex items-center space-x-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-60"
+              className="inline-flex shrink-0 items-center space-x-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-60"
             >
               <Trash2 className="w-4 h-4" />
               <span>{bulkDeleting ? 'Eliminando…' : `Eliminar (${selectedIds.size})`}</span>
@@ -716,7 +716,7 @@ export default function Customers() {
           )}
           <button
             onClick={handleAddClick}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="inline-flex shrink-0 items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Cliente</span>
@@ -854,14 +854,24 @@ export default function Customers() {
                             <p className="mt-1 break-words text-sm text-gray-600">{customer.company}</p>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleEditOpen(customer)}
-                          className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full text-blue-700 transition hover:bg-blue-50 active:scale-95"
-                          aria-label={`Editar ${customer.name}`}
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleEditOpen(customer)}
+                            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-blue-700 transition hover:bg-blue-50 active:scale-95"
+                            aria-label={`Editar ${customer.name}`}
+                          >
+                            <Edit className="h-5 w-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteCustomer(customer.id)}
+                            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-red-600 transition hover:bg-red-50 active:scale-95"
+                            aria-label={`Eliminar ${customer.name}`}
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
                       </div>
                       <div className="space-y-2 text-sm">
                         {phone ? (
@@ -1009,8 +1019,8 @@ export default function Customers() {
 
       {/* Edit Modal */}
       {editingCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white w-full max-w-2xl rounded-lg shadow-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/50 p-3 md:p-6">
+          <div className="max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg md:max-h-[90vh]">
             <h3 className="text-lg font-semibold mb-4">Editar cliente</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
