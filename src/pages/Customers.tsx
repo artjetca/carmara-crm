@@ -683,7 +683,7 @@ export default function Customers() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -844,14 +844,24 @@ export default function Customers() {
                 return (
                   <div
                     key={customer.id}
-                    className={`rounded-xl border border-blue-100/80 bg-white/85 p-4 shadow-lg backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
+                    className={`w-full min-w-0 rounded-xl border border-blue-100/80 bg-white/85 p-4 shadow-lg backdrop-blur-md ${isHighlighted(customer) ? 'ring-2 ring-yellow-300' : ''}`}
                   >
                     <div className="space-y-3">
-                      <div>
-                        <h3 className="text-base font-bold leading-snug text-gray-900">{customer.name}</h3>
-                        {customer.company && (
-                          <p className="mt-1 text-sm text-gray-600">{customer.company}</p>
-                        )}
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="break-words text-base font-bold leading-snug text-gray-900">{customer.name}</h3>
+                          {customer.company && (
+                            <p className="mt-1 break-words text-sm text-gray-600">{customer.company}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleEditOpen(customer)}
+                          className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full text-blue-700 transition hover:bg-blue-50 active:scale-95"
+                          aria-label={`Editar ${customer.name}`}
+                        >
+                          <Edit className="h-5 w-5" />
+                        </button>
                       </div>
                       <div className="space-y-2 text-sm">
                         {phone ? (
