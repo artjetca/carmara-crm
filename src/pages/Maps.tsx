@@ -5,7 +5,6 @@ import type { Customer, Visit } from '../lib/supabase'
 import {
   ChevronDown,
   ChevronLeft,
-  Compass,
   Crosshair,
   Expand,
   ExternalLink,
@@ -19,7 +18,6 @@ import {
   X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
-import 'leaflet-rotate'
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import {
   LatLngBoundsExpression,
@@ -231,7 +229,6 @@ export default function Maps() {
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null)
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [mapBearing, setMapBearing] = useState(0)
   const [selectedProvince, setSelectedProvince] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
   const [cityDetailMode, setCityDetailMode] = useState(false)
@@ -791,26 +788,6 @@ export default function Maps() {
 
   const buildRouteNavigationUrl = useCallback((origin: RoutePoint, destination: RoutePoint) => {
     return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${origin.latitude},${origin.longitude}`)}&destination=${encodeURIComponent(`${destination.latitude},${destination.longitude}`)}&travelmode=driving`
-  }, [])
-
-  const toggleCompassFollow = useCallback(async () => {
-    const map = mapRef.current
-    if (!map?.compassBearing) return
-
-    const DeviceOrientation = window.DeviceOrientationEvent as typeof DeviceOrientationEvent & {
-      requestPermission?: () => Promise<'granted' | 'denied'>
-    }
-    if (typeof DeviceOrientation.requestPermission === 'function') {
-      const permission = await DeviceOrientation.requestPermission()
-      if (permission !== 'granted') return
-    }
-
-    if (map.compassBearing.enabled()) {
-      map.compassBearing.disable()
-      map.setBearing(0)
-    } else {
-      map.compassBearing.enable()
-    }
   }, [])
 
   useEffect(() => {
@@ -1791,8 +1768,7 @@ export default function Maps() {
                 </button>
               </div>
 
-              <MapContainer style={{ height: '100%', width: '100%' }} center={defaultCenter} zoom={8} rotate rotateControl={false}>
-                <MapBearingBridge onBearingChange={setMapBearing} />
+              <MapContainer style={{ height: '100%', width: '100%' }} center={defaultCenter} zoom={8}>
                 <MapViewport
                   bounds={mapBounds}
                   defaultCenter={defaultCenter as [number, number]}
@@ -2462,12 +2438,6 @@ export default function Maps() {
                     <LocateFixed className="h-6 w-6 text-blue-600" />
                   </button>
                 </>}
-                <button onClick={toggleCompassFollow} title="Orientar mapa" aria-label="Orientar mapa" className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95">
-                  <Compass
-                    className="h-6 w-6 text-rose-500 transition-transform duration-300"
-                    style={{ transform: `rotate(${mapBearing}deg)` }}
-                  />
-                </button>
               </div>
 
               {distanceMode && mobileMapSheet === 'none' && routeOrigin && routeDestination && !pendingMapPoint && (
@@ -2667,19 +2637,6 @@ function MapBridge({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | nul
       window.clearTimeout(resizeTimer)
     }
   }, [map, mapRef])
-
-  return null
-}
-
-function MapBearingBridge({ onBearingChange }: { onBearingChange: (bearing: number) => void }) {
-  const map = useMap()
-
-  useEffect(() => {
-    const syncBearing = () => onBearingChange(map.getBearing?.() || 0)
-    map.on('rotate', syncBearing)
-    syncBearing()
-    return () => { map.off('rotate', syncBearing) }
-  }, [map, onBearingChange])
 
   return null
 }
