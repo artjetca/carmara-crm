@@ -129,7 +129,7 @@ test('validateAndFixClientCoordinates auto-corrects swapped latitude and longitu
   assert.match(audit.geocodeReason, /invertid/i)
 })
 
-test('validateAndFixClientCoordinates sends incomplete addresses to manual review without a city marker', async () => {
+test('validateAndFixClientCoordinates renders incomplete addresses at a safe approximate city marker', async () => {
   const customer = makeCustomer({
     address: 'Huelva',
     city: 'Huelva',
@@ -142,7 +142,8 @@ test('validateAndFixClientCoordinates sends incomplete addresses to manual revie
 
   assert.equal(audit.geocodeStatus, 'approximate')
   assert.equal(audit.hasExactCoords, false)
-  assert.equal(audit.markerCoords, null)
+  assert.equal(audit.usesApproximateMarker, true)
+  assert.deepEqual(audit.markerCoords, { lat: 37.2575, lng: -6.95 })
   assert.match(audit.geocodeReason, /aproximad/i)
 })
 

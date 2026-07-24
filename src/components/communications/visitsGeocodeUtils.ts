@@ -886,9 +886,9 @@ const buildApproximateFallback = (client: Customer, reason: string) => {
     geocodeReason: `${reason}. Cliente aproximado sin coordenadas de dirección fiables`,
     correctedLat: center.lat,
     correctedLng: center.lng,
-    markerCoords: null,
+    markerCoords: center,
     hasExactCoords: false,
-    usesApproximateMarker: false,
+    usesApproximateMarker: true,
     source: 'city_fallback',
   })
 }

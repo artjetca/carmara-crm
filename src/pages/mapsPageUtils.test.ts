@@ -84,6 +84,15 @@ test('getClientRenderableCoordinates only returns final coordinates for renderab
     }),
     null
   )
+
+  assert.deepEqual(
+    getClientRenderableCoordinates({
+      finalLat: 37.2575,
+      finalLng: -6.95,
+      geocodeStatus: 'approximate',
+    }),
+    { lat: 37.2575, lng: -6.95 }
+  )
 })
 
 test('buildCityDistanceSummary uses final coordinates for user and nearest-neighbor distances', () => {
