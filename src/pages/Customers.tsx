@@ -377,7 +377,7 @@ export default function Customers() {
         : ''
 
     return destination
-      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`
       : null
   }
 

@@ -68,7 +68,7 @@ import {
   type ResolvedMapClient,
 } from './mapsPageUtils'
 import { PROVINCE_CENTERS } from '../utils/mapCentroids'
-import { externalNavigationProvider, isAppleDevice, mapTileProvider } from '../services/mapProviders'
+import { externalNavigationProvider, mapTileProvider } from '../services/mapProviders'
 import { createCasmaraMarkerIcon } from '../components/map/CasmaraMarkerIcon'
 import {
   createVehicleLocationIcon,
@@ -790,9 +790,6 @@ export default function Maps() {
   }, [routeResult])
 
   const buildRouteNavigationUrl = useCallback((origin: RoutePoint, destination: RoutePoint) => {
-    if (isAppleDevice()) {
-      return `https://maps.apple.com/?saddr=${encodeURIComponent(`${origin.latitude},${origin.longitude}`)}&daddr=${encodeURIComponent(`${destination.latitude},${destination.longitude}`)}&dirflg=d`
-    }
     return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(`${origin.latitude},${origin.longitude}`)}&destination=${encodeURIComponent(`${destination.latitude},${destination.longitude}`)}&travelmode=driving`
   }, [])
 
@@ -919,18 +916,14 @@ export default function Maps() {
 
   const buildMapsSearchUrl = useCallback((client: ResolvedMapClient) => {
     const coords = getClientRenderableCoordinates(client)
-    if (coords) {
-      return externalNavigationProvider.openStreetMap(coords.lat, coords.lng)
-    }
-    return `https://www.openstreetmap.org/search?query=${encodeURIComponent(client.address)}`
+    const query = coords ? `${coords.lat},${coords.lng}` : client.address
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
   }, [])
 
   const buildMapsDirectionsUrl = useCallback((client: ResolvedMapClient) => {
     const coords = getClientRenderableCoordinates(client)
-    if (!coords) return `https://www.openstreetmap.org/search?query=${encodeURIComponent(client.address)}`
-    return isAppleDevice()
-      ? externalNavigationProvider.appleMaps(coords.lat, coords.lng)
-      : externalNavigationProvider.googleMaps(coords.lat, coords.lng)
+    if (coords) return externalNavigationProvider.googleMaps(coords.lat, coords.lng)
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(client.address)}&travelmode=driving`
   }, [])
 
   const invalidateMapSoon = useCallback(() => {

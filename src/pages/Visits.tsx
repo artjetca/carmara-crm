@@ -47,7 +47,7 @@ import {
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-rotate'
-import { isAppleDevice, mapTileProvider } from '../services/mapProviders'
+import { mapTileProvider } from '../services/mapProviders'
 import { createVehicleLocationIcon } from '../components/map/VehicleLocationIcon'
 import {
   OsrmRoutingProvider,
@@ -580,9 +580,7 @@ export default function Visits() {
     if (!measurementOrigin || !measurementDestination) return
     const origin = `${measurementOrigin.latitude},${measurementOrigin.longitude}`
     const destination = `${measurementDestination.latitude},${measurementDestination.longitude}`
-    const url = isAppleDevice()
-      ? `https://maps.apple.com/?saddr=${encodeURIComponent(origin)}&daddr=${encodeURIComponent(destination)}&dirflg=d`
-      : `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&travelmode=driving`
     window.open(url, '_blank', 'noopener,noreferrer')
   }, [measurementDestination, measurementOrigin])
 
