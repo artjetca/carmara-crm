@@ -58,6 +58,14 @@
   filter: drop-shadow(0 0 2px #f59e0b) drop-shadow(0 3px 4px rgba(15, 23, 42, 0.28));
 }
 
+.casmara-marker--prospect .casmara-marker__image {
+  filter: hue-rotate(128deg) saturate(1.35) drop-shadow(0 3px 4px rgba(15, 23, 42, 0.28));
+}
+
+.casmara-marker--prospect.casmara-marker--approximate .casmara-marker__image {
+  filter: hue-rotate(128deg) saturate(1.35) drop-shadow(0 0 3px #f59e0b) drop-shadow(0 3px 4px rgba(15, 23, 42, 0.28));
+}
+
 .casmara-marker--scheduled .casmara-marker__image {
   filter: drop-shadow(0 0 2px #22c55e) drop-shadow(0 3px 4px rgba(15, 23, 42, 0.28));
 }

@@ -2,6 +2,7 @@ import L from 'leaflet'
 
 export type CasmaraMarkerIconOptions = {
   accuracy: 'precise' | 'approximate'
+  tone?: 'customer' | 'prospect'
   selected?: boolean
   scheduled?: boolean
   overdue?: boolean
@@ -15,6 +16,7 @@ const getMarkerSize = () => {
 
 export const createCasmaraMarkerIcon = ({
   accuracy,
+  tone = 'customer',
   selected = false,
   scheduled = false,
   overdue = false,
@@ -23,6 +25,7 @@ export const createCasmaraMarkerIcon = ({
   const { width, height } = getMarkerSize()
   const stateClasses = [
     `casmara-marker--${accuracy}`,
+    `casmara-marker--${tone}`,
     selected && 'casmara-marker--selected',
     overdue && 'casmara-marker--overdue',
     !overdue && scheduled && 'casmara-marker--scheduled',

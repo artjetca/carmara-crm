@@ -90,6 +90,8 @@ import {
   getProspectToolbarButtonClass,
 } from '../components/prospects/prospectActionButtonStyles'
 import { PROVINCE_CENTERS, DEFAULT_MAP_CENTER } from '../utils/mapCentroids'
+import { createCasmaraMarkerIcon } from '../components/map/CasmaraMarkerIcon'
+import '../styles/casmara-marker.css'
 
 // ─── Map helpers ──────────────────────────────────────────────────────────────
 
@@ -101,36 +103,12 @@ type MobileSheetSize = 'half' | 'full'
 
 // ─── Marker icons ──────────────────────────────────────────────────────────────
 
-const createProspectIcon = (status: Prospect['geocode_status'], selected: boolean) => {
-  const size = selected ? 22 : 18
-  let bg = '#ec4899'      // valid   → pink
-  let border = '#ffffff'
-  let dash = false
-
-  if (status === 'approximate') { bg = '#fdf2f8'; border = '#ec4899'; dash = true }
-  else if (status === 'invalid' || status === 'pending') { bg = '#6b7280'; border = '#d1d5db' }
-
-  return L.divIcon({
-    className: '',
-    html: `
-      <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-        <div style="
-          width:${size}px;height:${size}px;border-radius:50%;
-          background:${bg};
-          border:2px ${dash ? 'dashed' : 'solid'} ${border};
-          box-shadow:0 4px 12px rgba(15,23,42,.22);
-          ${selected ? 'transform:scale(1.25);' : ''}
-        "></div>
-        <div style="
-          width:2px;height:${size * 0.5}px;background:${bg};
-          margin-top:-2px;opacity:.7;
-        "></div>
-      </div>`,
-    iconSize: [size, size + size * 0.5],
-    iconAnchor: [size / 2, size + size * 0.5],
-    popupAnchor: [0, -(size + 4)],
+const createProspectIcon = (status: Prospect['geocode_status'], selected: boolean) =>
+  createCasmaraMarkerIcon({
+    accuracy: status === 'approximate' ? 'approximate' : 'precise',
+    tone: 'prospect',
+    selected,
   })
-}
 
 const createCustomerIcon = (_approximate = false) =>
   L.divIcon({
@@ -1394,7 +1372,8 @@ export default function ProspectMapPage() {
               iconCreateFunction={(cluster: { getChildCount: () => number }) => {
                 const count = cluster.getChildCount()
                 return L.divIcon({
-                  html: `<div style="background:#ec4899;color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);">${count}</div>`,
+                  html: `<div style="background:linear-gradient(135deg,#f472b6,#db2777);color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:3px solid #fff;box-shadow:0 3px 10px rgba(190,24,93,.36),inset 0 1px 0 rgba(255,255,255,.35);">${count}</div>`,
+
                   className: '',
                   iconSize: L.point(36, 36),
                 })
