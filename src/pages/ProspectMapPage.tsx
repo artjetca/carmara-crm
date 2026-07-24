@@ -110,25 +110,10 @@ const createProspectIcon = (status: Prospect['geocode_status'], selected: boolea
     selected,
   })
 
-const createCustomerIcon = (_approximate = false) =>
-  L.divIcon({
-    className: '',
-    html: `
-      <div style="position:relative;display:flex;flex-direction:column;align-items:center;">
-        <div style="
-          width:16px;height:16px;border-radius:50%;
-          background:#2563eb;
-          border:2px solid #ffffff;
-          box-shadow:0 4px 12px rgba(15,23,42,.22);
-        "></div>
-        <div style="
-          width:2px;height:8px;background:#2563eb;
-          margin-top:-2px;opacity:.7;
-        "></div>
-      </div>`,
-    iconSize: [16, 24],
-    iconAnchor: [8, 24],
-    popupAnchor: [0, -18],
+const createCustomerIcon = (approximate = false) =>
+  createCasmaraMarkerIcon({
+    accuracy: approximate ? 'approximate' : 'precise',
+    tone: 'customer',
   })
 
 // ─── Geocode status badge ─────────────────────────────────────────────────────
@@ -1475,10 +1460,10 @@ export default function ProspectMapPage() {
               <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Gestión de Clientes
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-pink-500 border-2 border-white shadow"></span> Prospectos nuevos
+              <span className="w-3 h-3 rounded-full bg-pink-500 border-2 border-white shadow"></span> Clientes potenciales
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-pink-50 border-2 border-dashed border-pink-500 shadow"></span> Prospecto aproximado
+              <span className="w-3 h-3 rounded-full bg-pink-50 border-2 border-dashed border-pink-500 shadow"></span> Potencial aproximado
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-300 shadow"></span> Sin coordenadas
@@ -1514,13 +1499,13 @@ export default function ProspectMapPage() {
                 </div>
               )}
               <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-500">Prospectos nuevos</span>
+                <span className="text-gray-500">Clientes potenciales</span>
                 <span className="font-semibold text-pink-600">
                   {mappable.filter(p => p.geocode_status !== 'approximate').length}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-500">Prosp. aproximado</span>
+                <span className="text-gray-500">Potencial aproximado</span>
                 <span className="font-semibold text-pink-400">
                   {mappable.filter(p => p.geocode_status === 'approximate').length}
                 </span>
