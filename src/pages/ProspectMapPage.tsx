@@ -29,6 +29,9 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  ChevronDown,
+  LocateFixed,
+  Maximize2,
 } from 'lucide-react'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
 
@@ -93,6 +96,8 @@ import { PROVINCE_CENTERS, DEFAULT_MAP_CENTER } from '../utils/mapCentroids'
 const CUSTOMER_COORDS_STORAGE_KEY = 'prospect-map-customer-coords'
 
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
+type MobileProspectListMode = 'all' | 'mapped' | 'unmapped'
+type MobileSheetSize = 'half' | 'full'
 
 // ─── Marker icons ──────────────────────────────────────────────────────────────
 
@@ -226,6 +231,12 @@ function MapResizeHandler() {
     window.addEventListener('resize', onResize)
     return () => { clearTimeout(t); window.removeEventListener('resize', onResize) }
   }, [map])
+  return null
+}
+
+function MapInstanceHandler({ onReady }: { onReady: (map: L.Map) => void }) {
+  const map = useMap()
+  useEffect(() => { onReady(map) }, [map, onReady])
   return null
 }
 
@@ -418,6 +429,10 @@ export default function ProspectMapPage() {
   const [jobs, setJobs] = useState<ScrapeJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(false)
   const [jobMessage, setJobMessage] = useState('')
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false)
+  const [mobileSheetMode, setMobileSheetMode] = useState<MobileProspectListMode>('all')
+  const [mobileSheetSize, setMobileSheetSize] = useState<MobileSheetSize>('half')
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [coordsByCustomerId, setCoordsByCustomerId] = useState<CoordinateCache>(() => {
     try {
       const saved = localStorage.getItem(CUSTOMER_COORDS_STORAGE_KEY)
@@ -433,6 +448,7 @@ export default function ProspectMapPage() {
   const geocodeAttemptedRef = useRef(new Set<string>())
   const geocodingCustomersRef = useRef(false)
   const persistedCoordinateSignaturesRef = useRef(new Map<string, string>())
+  const mapInstanceRef = useRef<L.Map | null>(null)
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   const loadProspects = useCallback(async () => {
@@ -852,6 +868,40 @@ export default function ProspectMapPage() {
     }
   }, [])
 
+  const fitMapToAll = useCallback(() => {
+    const map = mapInstanceRef.current
+    if (!map) return
+    if (allMapPoints.length >= 2) {
+      map.fitBounds(allMapPoints, { padding: [44, 44], maxZoom: 14, animate: true })
+    } else if (allMapPoints.length === 1) {
+      map.flyTo(allMapPoints[0], 13, { duration: 0.5 })
+    } else {
+      map.flyTo(DEFAULT_MAP_CENTER, 9, { duration: 0.5 })
+    }
+  }, [allMapPoints])
+
+  const locateMap = useCallback(() => {
+    const map = mapInstanceRef.current
+    if (!map || !navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      position => map.flyTo([position.coords.latitude, position.coords.longitude], 14, { duration: 0.6 }),
+      () => undefined,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
+  }, [])
+
+  const openMobileSheet = useCallback((mode: MobileProspectListMode) => {
+    setMobileSheetMode(mode)
+    setMobileSheetSize('half')
+    setMobileSheetOpen(true)
+  }, [])
+
+  const mobileSheetProspects = useMemo(() => {
+    if (mobileSheetMode === 'mapped') return mappable
+    if (mobileSheetMode === 'unmapped') return filtered.filter(prospect => !mappable.some(mapped => mapped.id === prospect.id))
+    return filtered
+  }, [filtered, mappable, mobileSheetMode])
+
   const handleGeocodeAll = useCallback(async () => {
     const pending = prospects.filter((p) => p.geocode_status === 'pending')
     if (pending.length === 0) {
@@ -1049,9 +1099,9 @@ export default function ProspectMapPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full gap-0 -m-6">
+    <div className="flex h-full flex-col gap-0 -m-6">
       {/* ── Top bar ── */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex flex-wrap items-center gap-3">
+      <div className="hidden border-b border-gray-200 bg-white px-6 py-3 md:flex md:flex-wrap md:items-center md:gap-3">
         <div className="flex items-center gap-2 mr-auto">
           <MapPin className="w-5 h-5 text-emerald-600" />
           <h1 className="text-lg font-bold text-gray-900">Mapa de Prospectos</h1>
@@ -1122,7 +1172,7 @@ export default function ProspectMapPage() {
       </div>
 
       {/* ── Filters bar ── */}
-      <div className="bg-gray-50 border-b border-gray-200 px-6 py-2 flex flex-wrap items-center gap-3">
+      <div className="hidden border-b border-gray-200 bg-gray-50 px-6 py-2 md:flex md:flex-wrap md:items-center md:gap-3">
         {/* Search */}
         <div className="relative flex items-center">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -1184,9 +1234,9 @@ export default function ProspectMapPage() {
       </div>
 
       {/* ── Main content ── */}
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
         {/* ── Sidebar ── */}
-        <div className="w-full md:w-80 md:flex-shrink-0 max-h-[45vh] md:max-h-none border-b md:border-b-0 md:border-r border-gray-200 bg-white flex flex-col overflow-hidden order-2 md:order-1">
+        <div className="hidden w-80 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white md:flex">
           <div className="flex-1 overflow-y-auto">
             {loading || customersLoading ? (
               <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
@@ -1238,7 +1288,7 @@ export default function ProspectMapPage() {
         </div>
 
         {/* ── Map ── */}
-        <div className="flex-1 relative min-h-[50vh] order-1 md:order-2">
+        <div className="relative flex-1 min-h-0 max-md:fixed max-md:inset-0 max-md:z-40 max-md:[&_.leaflet-control-zoom]:hidden md:min-h-[50vh]">
           <MapContainer
             center={DEFAULT_MAP_CENTER}
             zoom={9}
@@ -1257,6 +1307,7 @@ export default function ProspectMapPage() {
               filterCity={filterCity}
             />
             <MapResizeHandler />
+            <MapInstanceHandler onReady={map => { mapInstanceRef.current = map }} />
 
             {/* Customer cluster (blue) */}
             <MarkerClusterGroup
@@ -1439,7 +1490,7 @@ export default function ProspectMapPage() {
           </MapContainer>
 
           {/* Map legend + stats */}
-          <div className="absolute bottom-6 right-4 bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[180px]">
+          <div className="absolute bottom-6 right-4 z-[1000] hidden min-w-[180px] space-y-1.5 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-md md:block">
             <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Gestión de Clientes
@@ -1506,6 +1557,158 @@ export default function ProspectMapPage() {
               </div>
             </div>
           </div>
+
+          <div
+            className="absolute inset-x-3 z-[1010] md:hidden"
+            style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
+          >
+            <div className="flex min-h-[52px] items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
+              <Search className="h-5 w-5 flex-shrink-0 text-gray-500" />
+              <input
+                value={searchTerm}
+                onChange={event => setSearchTerm(event.target.value)}
+                onFocus={() => setMobileSheetOpen(true)}
+                placeholder="Buscar prospectos…"
+                className="h-[52px] min-w-0 flex-1 bg-transparent text-[15px] text-gray-900 placeholder-gray-500 outline-none"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  aria-label="Limpiar búsqueda"
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                onClick={() => setMobileFiltersOpen(open => !open)}
+                aria-label="Abrir filtros"
+                aria-expanded={mobileFiltersOpen}
+                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition ${mobileFiltersOpen || filterProvince || filterCity ? 'bg-emerald-600 text-white' : 'text-gray-600 active:bg-gray-100'}`}
+              >
+                <Filter className="h-4 w-4" />
+              </button>
+              <VoiceSearchButton onTranscript={setSearchTerm} />
+            </div>
+            {mobileFiltersOpen && (
+              <div className="mt-2 space-y-2 rounded-2xl border border-white/60 bg-white/95 p-3 shadow-xl backdrop-blur-md">
+                <select
+                  value={filterProvince}
+                  onChange={event => { setFilterProvince(event.target.value); setFilterCity('') }}
+                  className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-800 outline-none focus:border-emerald-500"
+                >
+                  <option value="">Todas las provincias</option>
+                  {availableProvinces.map(province => <option key={province} value={province}>{province}</option>)}
+                </select>
+                <select
+                  value={filterCity}
+                  onChange={event => setFilterCity(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-800 outline-none focus:border-emerald-500"
+                >
+                  <option value="">Todas las ciudades</option>
+                  {availableCities.map(city => <option key={city} value={city}>{city}</option>)}
+                </select>
+                {(filterProvince || filterCity) && (
+                  <button
+                    onClick={() => { setFilterProvince(''); setFilterCity(''); setMobileFiltersOpen(false) }}
+                    className="min-h-10 px-2 text-sm font-medium text-emerald-700"
+                  >
+                    Limpiar filtros
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div
+            className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
+            style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
+          >
+            <button
+              onClick={() => { setEditProspect(null); setShowFormModal(true) }}
+              title="Nuevo prospecto"
+              aria-label="Nuevo prospecto"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg transition active:scale-95"
+            >
+              <PlusCircle className="h-6 w-6" />
+            </button>
+            <button
+              onClick={locateMap}
+              title="Mi ubicación"
+              aria-label="Mi ubicación"
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 text-blue-600 shadow-lg backdrop-blur-md transition active:scale-95"
+            >
+              <LocateFixed className="h-6 w-6" />
+            </button>
+            <button
+              onClick={fitMapToAll}
+              title="Ver todos"
+              aria-label="Ver todos"
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 text-gray-700 shadow-lg backdrop-blur-md transition active:scale-95"
+            >
+              <Maximize2 className="h-6 w-6" />
+            </button>
+          </div>
+
+          {!mobileSheetOpen ? (
+            <div
+              className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
+              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
+            >
+              <div className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-white/60 bg-white/90 text-xs font-medium text-gray-800 shadow-xl backdrop-blur-md">
+                <button onClick={() => openMobileSheet('mapped')} className="min-h-11 px-3 text-emerald-700 active:bg-emerald-50">
+                  {mappable.length} en mapa
+                </button>
+                <span className="my-2 w-px bg-gray-200" />
+                <button onClick={() => openMobileSheet('all')} className="min-h-11 px-3 active:bg-gray-100">
+                  {filtered.length} prospectos
+                </button>
+                <span className="my-2 w-px bg-gray-200" />
+                <button onClick={() => openMobileSheet('unmapped')} className="min-h-11 px-3 text-amber-700 active:bg-amber-50">
+                  {filtered.length - mappable.length} sin mapa
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className={`absolute inset-x-0 bottom-0 z-[1011] flex flex-col rounded-t-2xl bg-white shadow-2xl md:hidden ${mobileSheetSize === 'full' ? 'max-h-[calc(100%-env(safe-area-inset-top)-72px)]' : 'max-h-[60%]'}`}>
+              <button
+                onClick={() => setMobileSheetSize(size => size === 'half' ? 'full' : 'half')}
+                className="flex w-full flex-col items-center pb-1 pt-2"
+                aria-label={mobileSheetSize === 'half' ? 'Ampliar lista' : 'Reducir lista'}
+              >
+                <span className="h-1 w-10 rounded-full bg-gray-300" />
+              </button>
+              <div className="flex items-center justify-between gap-3 px-4 pb-2">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {mobileSheetMode === 'mapped' ? 'Prospectos en el mapa' : mobileSheetMode === 'unmapped' ? 'Prospectos sin coordenadas' : `${filtered.length} prospectos`}
+                  </div>
+                  <div className="mt-0.5 text-xs text-gray-500">{mappable.length} en mapa · {filtered.length - mappable.length} sin localizar</div>
+                </div>
+                <button
+                  onClick={() => setMobileSheetOpen(false)}
+                  aria-label="Cerrar lista"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 active:bg-gray-200"
+                >
+                  <ChevronDown className="h-5 w-5" />
+                </button>
+              </div>
+              <ul className="overflow-y-auto overscroll-contain" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 84px)' }}>
+                {mobileSheetProspects.length === 0 ? (
+                  <li className="px-4 py-10 text-center text-sm text-gray-500">No encontramos prospectos con estos filtros.</li>
+                ) : mobileSheetProspects.map(prospect => (
+                  <ProspectCard
+                    key={prospect.id}
+                    prospect={prospect}
+                    selected={selectedId === prospect.id}
+                    onSelect={() => { handleSelect(prospect); setMobileSheetOpen(false) }}
+                    onEdit={() => { setEditProspect(prospect); setShowFormModal(true) }}
+                    onDelete={() => handleDelete(prospect.id)}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 
