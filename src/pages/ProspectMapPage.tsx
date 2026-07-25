@@ -33,13 +33,16 @@ import {
   LocateFixed,
   Maximize2,
   Sparkles,
+  Ruler,
+  ArrowLeftRight,
+  RotateCcw,
 } from 'lucide-react'
-import { VoiceSearchButton } from '../components/VoiceSearchButton'
+import { VoiceSearchButton, type VoiceSearchStatus } from '../components/VoiceSearchButton'
 
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet'
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import MarkerClusterGroup from '@changey/react-leaflet-markercluster'
 import L from 'leaflet'
 
@@ -91,6 +94,15 @@ import {
   getProspectToolbarButtonClass,
 } from '../components/prospects/prospectActionButtonStyles'
 import { PROVINCE_CENTERS, DEFAULT_MAP_CENTER } from '../utils/mapCentroids'
+import { calculateDistanceKm } from '../components/communications/visitsMapUtils'
+import {
+  OsrmRoutingProvider,
+  formatRouteDistance,
+  formatRouteDuration,
+  routePointFromCoordinates,
+  type RoutePoint,
+  type RouteResult,
+} from '../services/routingProvider'
 import { createCasmaraMarkerIcon } from '../components/map/CasmaraMarkerIcon'
 import '../styles/casmara-marker.css'
 
@@ -102,6 +114,17 @@ type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 type MobileProspectListMode = 'all' | 'mapped' | 'unmapped'
 type MobileSheetSize = 'half' | 'full'
 type MobileQuickActionStage = 'menu' | 'confirm-geocode'
+type MeasurementState = 'idle' | 'selecting-a' | 'selecting-b' | 'calculating' | 'result' | 'error'
+
+const routingProvider = new OsrmRoutingProvider()
+
+const voiceSearchMessages: Partial<Record<VoiceSearchStatus, string>> = {
+  listening: 'Habla ahora',
+  success: 'Búsqueda por voz completada',
+  unsupported: 'El navegador no admite la búsqueda por voz.',
+  'permission-denied': 'Permite el acceso al micrófono para usar esta función.',
+  error: 'No se ha podido reconocer la voz. Inténtalo de nuevo.',
+}
 
 // ─── Marker icons ──────────────────────────────────────────────────────────────
 
@@ -145,6 +168,22 @@ function FlyToMarker({ coords }: { coords: [number, number] | null }) {
   }, [coords, map])
   return null
 }
+
+function MeasurementMapClick({ active, onSelect }: { active: boolean; onSelect: (coordinates: MapCoordinates) => void }) {
+  useMapEvents({
+    click: event => {
+      if (active) onSelect({ lat: event.latlng.lat, lng: event.latlng.lng })
+    },
+  })
+  return null
+}
+
+const createMeasurementMarkerIcon = (label: 'A' | 'B') => L.divIcon({
+  className: '',
+  html: `<div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${label === 'A' ? '#2563eb' : '#db2777'};color:#fff;border:3px solid #fff;font-size:14px;font-weight:700;box-shadow:0 3px 10px rgba(15,23,42,.3)">${label}</div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+})
 
 // ─── Province / city centroids (fallback when no markers have coords) ────────
 
@@ -382,6 +421,7 @@ export default function ProspectMapPage() {
 
   // Filters
   const [searchTerm, setSearchTerm]           = useState('')
+  const [voiceSearchStatus, setVoiceSearchStatus] = useState<VoiceSearchStatus>('idle')
   const [filterProvince, setFilterProvince]   = useState<string>('')
   const [filterCity, setFilterCity]           = useState<string>('')
 
@@ -402,6 +442,12 @@ export default function ProspectMapPage() {
   const [mobileQuickActionStage, setMobileQuickActionStage] = useState<MobileQuickActionStage>('menu')
   const [mobileCaptureConfirmationRequired, setMobileCaptureConfirmationRequired] = useState(false)
   const [autoCapturing, setAutoCapturing] = useState(false)
+  const [measurementActive, setMeasurementActive] = useState(false)
+  const [measurementState, setMeasurementState] = useState<MeasurementState>('idle')
+  const [measurementOrigin, setMeasurementOrigin] = useState<RoutePoint | null>(null)
+  const [measurementDestination, setMeasurementDestination] = useState<RoutePoint | null>(null)
+  const [measurementResult, setMeasurementResult] = useState<RouteResult | null>(null)
+  const [measurementError, setMeasurementError] = useState<string | null>(null)
   const [coordsByCustomerId, setCoordsByCustomerId] = useState<CoordinateCache>(() => {
     try {
       const saved = localStorage.getItem(CUSTOMER_COORDS_STORAGE_KEY)
@@ -421,6 +467,7 @@ export default function ProspectMapPage() {
   const geocodeInFlightRef = useRef(false)
   const autoCaptureInFlightRef = useRef(false)
   const mobileActionSheetStartYRef = useRef<number | null>(null)
+  const measurementAbortRef = useRef<AbortController | null>(null)
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   const loadProspects = useCallback(async () => {
@@ -833,12 +880,126 @@ export default function ProspectMapPage() {
     if (selectedId === id) setSelectedId(null)
   }, [selectedId])
 
+  const clearMeasurement = useCallback(() => {
+    measurementAbortRef.current?.abort()
+    measurementAbortRef.current = null
+    setMeasurementOrigin(null)
+    setMeasurementDestination(null)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementState(measurementActive ? 'selecting-a' : 'idle')
+  }, [measurementActive])
+
+  const exitMeasurement = useCallback(() => {
+    measurementAbortRef.current?.abort()
+    measurementAbortRef.current = null
+    setMeasurementActive(false)
+    setMeasurementOrigin(null)
+    setMeasurementDestination(null)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementState('idle')
+  }, [])
+
+  const selectMeasurementPoint = useCallback((point: RoutePoint) => {
+    if (!measurementActive) return false
+    if (!measurementOrigin || measurementState === 'selecting-a') {
+      setMeasurementOrigin(point)
+      setMeasurementDestination(null)
+      setMeasurementResult(null)
+      setMeasurementError(null)
+      setMeasurementState('selecting-b')
+      return true
+    }
+    setMeasurementDestination(point)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementState('calculating')
+    return true
+  }, [measurementActive, measurementOrigin, measurementState])
+
+  const handleMeasurementMapClick = useCallback((coordinates: MapCoordinates) => {
+    const label = measurementOrigin ? 'Punto B' : 'Punto A'
+    selectMeasurementPoint(routePointFromCoordinates('map-point', label, coordinates))
+  }, [measurementOrigin, selectMeasurementPoint])
+
+  const useCurrentLocationForMeasurement = useCallback(() => {
+    if (!navigator.geolocation) {
+      setMeasurementError('No hemos podido obtener tu ubicación.')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const coordinates = { lat: position.coords.latitude, lng: position.coords.longitude }
+        selectMeasurementPoint(routePointFromCoordinates('current-location', 'Mi ubicación', coordinates))
+      },
+      () => setMeasurementError('No hemos podido obtener tu ubicación.'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
+  }, [selectMeasurementPoint])
+
+  const startMeasurement = useCallback(() => {
+    if (measurementActive) {
+      exitMeasurement()
+      return
+    }
+    setMobileSheetOpen(false)
+    setMeasurementActive(true)
+    setMeasurementState('selecting-a')
+    setMeasurementError(null)
+  }, [exitMeasurement, measurementActive])
+
+  const swapMeasurementPoints = useCallback(() => {
+    if (!measurementOrigin || !measurementDestination) return
+    setMeasurementOrigin(measurementDestination)
+    setMeasurementDestination(measurementOrigin)
+    setMeasurementResult(null)
+    setMeasurementError(null)
+    setMeasurementState('calculating')
+  }, [measurementDestination, measurementOrigin])
+
+  useEffect(() => {
+    if (!measurementActive || !measurementOrigin || !measurementDestination) return
+    const controller = new AbortController()
+    measurementAbortRef.current?.abort()
+    measurementAbortRef.current = controller
+    setMeasurementState('calculating')
+    routingProvider.calculateRoute(measurementOrigin, measurementDestination, controller.signal)
+      .then(result => {
+        if (controller.signal.aborted) return
+        setMeasurementResult(result)
+        setMeasurementState('result')
+      })
+      .catch(error => {
+        if (controller.signal.aborted) return
+        setMeasurementResult({
+          straightLineKm: calculateDistanceKm(
+            measurementOrigin.latitude,
+            measurementOrigin.longitude,
+            measurementDestination.latitude,
+            measurementDestination.longitude
+          ),
+          distanceKm: null,
+          durationMinutes: null,
+          geometry: null,
+          createdAt: Date.now(),
+        })
+        setMeasurementError('No hemos podido calcular la ruta por carretera.')
+        setMeasurementState('error')
+      })
+    return () => controller.abort()
+  }, [measurementActive, measurementDestination, measurementOrigin])
+
   const handleSelect = useCallback((p: Prospect) => {
+    if (measurementActive && p.lat != null && p.lng != null) {
+      selectMeasurementPoint(routePointFromCoordinates('customer', p.business_name, { lat: p.lat, lng: p.lng }, p.id))
+      return
+    }
     setSelectedId(p.id)
     if (p.lat != null && p.lng != null) {
       setFlyTo([p.lat, p.lng])
     }
-  }, [])
+  }, [measurementActive, selectMeasurementPoint])
 
   const fitMapToAll = useCallback(() => {
     const map = mapInstanceRef.current
@@ -1147,6 +1308,13 @@ export default function ProspectMapPage() {
         )}
 
         <button
+          onClick={startMeasurement}
+          aria-label="Medir distancia"
+          className={getProspectToolbarButtonClass(measurementActive ? 'violet' : 'slate')}
+        >
+          <Ruler className="w-3.5 h-3.5" /> {measurementActive ? 'Salir medición' : 'Medir distancia'}
+        </button>
+        <button
           onClick={handleGeocodeAll}
           disabled={geocoding}
           title="Geocodificar pendientes"
@@ -1204,7 +1372,7 @@ export default function ProspectMapPage() {
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar…"
+            placeholder={voiceSearchStatus === 'listening' ? 'Escuchando…' : 'Buscar…'}
             className="pl-9 pr-12 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none w-52"
           />
           {searchTerm && (
@@ -1216,8 +1384,13 @@ export default function ProspectMapPage() {
             </button>
           )}
           <div className="absolute right-1 top-1/2 -translate-y-1/2">
-            <VoiceSearchButton onTranscript={setSearchTerm} />
+            <VoiceSearchButton onTranscript={setSearchTerm} onStatusChange={setVoiceSearchStatus} />
           </div>
+          {voiceSearchStatus !== 'idle' && voiceSearchMessages[voiceSearchStatus] && (
+            <span className={`absolute left-0 top-full mt-1 whitespace-nowrap rounded-md px-2 py-1 text-xs shadow-sm ${voiceSearchStatus === 'listening' ? 'bg-rose-50 text-rose-700' : 'bg-white text-gray-600'}`}>
+              {voiceSearchMessages[voiceSearchStatus]}
+            </span>
+          )}
         </div>
 
         {/* Province */}
@@ -1333,6 +1506,29 @@ export default function ProspectMapPage() {
             />
             <MapResizeHandler />
             <MapInstanceHandler onReady={map => { mapInstanceRef.current = map }} />
+            <MeasurementMapClick active={measurementActive} onSelect={handleMeasurementMapClick} />
+            {measurementOrigin && (
+              <Marker
+                position={[measurementOrigin.latitude, measurementOrigin.longitude]}
+                icon={createMeasurementMarkerIcon('A')}
+                interactive={false}
+              />
+            )}
+            {measurementDestination && (
+              <Marker
+                position={[measurementDestination.latitude, measurementDestination.longitude]}
+                icon={createMeasurementMarkerIcon('B')}
+                interactive={false}
+              />
+            )}
+            {measurementOrigin && measurementDestination && (
+              <Polyline
+                positions={measurementResult?.geometry?.length
+                  ? measurementResult.geometry.map(([lng, lat]) => [lat, lng] as [number, number])
+                  : [[measurementOrigin.latitude, measurementOrigin.longitude], [measurementDestination.latitude, measurementDestination.longitude]]}
+                pathOptions={{ color: measurementResult?.distanceKm != null ? '#2563eb' : '#f59e0b', weight: 5, opacity: 0.8, dashArray: measurementResult?.distanceKm != null ? undefined : '8 8' }}
+              />
+            )}
 
             {/* Customer cluster (blue) */}
             <MarkerClusterGroup
@@ -1435,7 +1631,16 @@ export default function ProspectMapPage() {
                   key={p.id}
                   position={[p.lat!, p.lng!]}
                   icon={createProspectIcon(p.geocode_status, selectedId === p.id)}
-                  eventHandlers={{ click: () => setSelectedId(p.id) }}
+                  eventHandlers={{
+                    click: event => {
+                      if (measurementActive) {
+                        event.target.closePopup()
+                        handleSelect(p)
+                      } else {
+                        setSelectedId(p.id)
+                      }
+                    },
+                  }}
                 >
                   <Popup maxWidth={280}>
                     <div className="text-sm space-y-1.5 min-w-[220px]">
@@ -1594,7 +1799,7 @@ export default function ProspectMapPage() {
                 value={searchTerm}
                 onChange={event => setSearchTerm(event.target.value)}
                 onFocus={() => setMobileSheetOpen(true)}
-                placeholder="Buscar prospectos…"
+                placeholder={voiceSearchStatus === 'listening' ? 'Escuchando…' : 'Buscar prospectos…'}
                 className="h-[52px] min-w-0 flex-1 bg-transparent text-[15px] text-gray-900 placeholder-gray-500 outline-none"
               />
               {searchTerm && (
@@ -1614,8 +1819,13 @@ export default function ProspectMapPage() {
               >
                 <Filter className="h-4 w-4" />
               </button>
-              <VoiceSearchButton onTranscript={setSearchTerm} />
+              <VoiceSearchButton onTranscript={setSearchTerm} onStatusChange={setVoiceSearchStatus} />
             </div>
+            {voiceSearchStatus !== 'idle' && voiceSearchMessages[voiceSearchStatus] && (
+              <div className={`mt-2 rounded-xl px-3 py-2 text-xs font-medium shadow-lg ${voiceSearchStatus === 'listening' ? 'bg-rose-500 text-white' : 'bg-white/95 text-gray-700'}`}>
+                {voiceSearchMessages[voiceSearchStatus]}
+              </div>
+            )}
             {mobileFiltersOpen && (
               <div className="mt-2 space-y-2 rounded-2xl border border-white/60 bg-white/95 p-3 shadow-xl backdrop-blur-md">
                 <select
@@ -1647,8 +1857,8 @@ export default function ProspectMapPage() {
           </div>
 
           <div
-            className="absolute right-3 z-[1009] flex flex-col gap-3 md:hidden"
-            style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
+            className="map-floating-actions absolute z-[1009] flex flex-col gap-3 md:hidden"
+            style={{ right: 'max(16px, env(safe-area-inset-right))', bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
           >
             <button
               onClick={() => { if (!geocoding && !autoCapturing) { setMobileQuickActionStage('menu'); setMobileQuickActionsOpen(true) } }}
@@ -1659,6 +1869,15 @@ export default function ProspectMapPage() {
               className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg transition active:scale-95 disabled:opacity-60"
             >
               {geocoding || autoCapturing ? <RefreshCw className="h-6 w-6 animate-spin" /> : <PlusCircle className="h-6 w-6" />}
+            </button>
+            <button
+              onClick={startMeasurement}
+              title="Medir distancia"
+              aria-label="Medir distancia"
+              aria-pressed={measurementActive}
+              className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition active:scale-95 ${measurementActive ? 'border-violet-200 bg-violet-600 text-white' : 'border-white/60 bg-white/85 text-violet-700'}`}
+            >
+              <Ruler className="h-6 w-6" />
             </button>
             <button
               onClick={locateMap}
@@ -1677,6 +1896,41 @@ export default function ProspectMapPage() {
               <Maximize2 className="h-6 w-6" />
             </button>
           </div>
+
+          {measurementActive && (
+            <div
+              className="absolute bottom-0 left-3 z-[1010] max-w-[calc(100%-88px)] rounded-2xl border border-white/60 bg-white/95 p-3 shadow-xl backdrop-blur-md md:bottom-4 md:left-4 md:max-w-sm"
+              style={{ bottom: 'calc(env(safe-area-inset-bottom) + 154px)' }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-violet-800">Modo medición</div>
+                  <div className="mt-0.5 text-xs text-gray-600">
+                    {measurementState === 'selecting-a' && 'Selecciona el punto A y después el punto B.'}
+                    {measurementState === 'selecting-b' && 'Selecciona el punto B.'}
+                    {measurementState === 'calculating' && 'Calculando ruta…'}
+                    {(measurementState === 'result' || measurementState === 'error') && `${measurementOrigin?.name || 'A'} → ${measurementDestination?.name || 'B'}`}
+                  </div>
+                </div>
+                <button type="button" onClick={exitMeasurement} aria-label="Salir de medición" className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-violet-700"><X className="h-4 w-4" /></button>
+              </div>
+              {!measurementOrigin && (
+                <button type="button" onClick={useCurrentLocationForMeasurement} className="mt-3 min-h-10 rounded-lg bg-blue-50 px-3 text-xs font-semibold text-blue-700">Usar mi ubicación</button>
+              )}
+              {measurementResult && (
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg bg-violet-50 p-2"><div className="text-gray-500">Distancia</div><div className="mt-0.5 font-bold text-violet-900">{measurementResult.distanceKm != null ? formatRouteDistance(measurementResult.distanceKm) : formatRouteDistance(measurementResult.straightLineKm)}</div><div className="mt-0.5 text-[10px] text-gray-500">{measurementResult.distanceKm != null ? 'Por carretera' : 'Distancia en línea recta'}</div></div>
+                  <div className="rounded-lg bg-blue-50 p-2"><div className="text-gray-500">Tiempo estimado</div><div className="mt-0.5 font-bold text-blue-900">{measurementResult.durationMinutes != null ? formatRouteDuration(measurementResult.durationMinutes) : 'No disponible'}</div><div className="mt-0.5 text-[10px] text-gray-500">Sin tráfico en tiempo real</div></div>
+                </div>
+              )}
+              {measurementError && <div className="mt-2 text-xs text-amber-700">{measurementError}</div>}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {measurementOrigin && measurementDestination && <button type="button" onClick={swapMeasurementPoints} className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-gray-100 px-2 text-xs font-semibold text-gray-700"><ArrowLeftRight className="h-3.5 w-3.5" />Cambiar A y B</button>}
+                <button type="button" onClick={clearMeasurement} className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-gray-100 px-2 text-xs font-semibold text-gray-700"><RotateCcw className="h-3.5 w-3.5" />Nueva medición</button>
+                <button type="button" onClick={clearMeasurement} className="min-h-9 rounded-lg px-2 text-xs font-semibold text-gray-600">Limpiar</button>
+              </div>
+            </div>
+          )}
 
           {!mobileSheetOpen ? (
             <div
