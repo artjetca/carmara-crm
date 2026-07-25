@@ -58,6 +58,7 @@ import {
 import '../styles/casmara-marker.css'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
+import { MapDrawer, MapFocusButton, MapWorkspaceHeader } from '../components/MapWorkspace'
 
 interface RouteCustomer extends Customer {
   order: number
@@ -214,6 +215,8 @@ export default function Visits() {
   const [measurementDestination, setMeasurementDestination] = useState<RoutePoint | null>(null)
   const [measurementResult, setMeasurementResult] = useState<RouteResult | null>(null)
   const [measurementError, setMeasurementError] = useState<string | null>(null)
+  const [desktopDrawerOpen, setDesktopDrawerOpen] = useState(false)
+  const [mapFocusMode, setMapFocusMode] = useState(false)
   const userLocationRef = useRef<{ lat: number; lng: number } | null>(null)
   const firstLegAbortRef = useRef<AbortController | null>(null)
   const measurementAbortRef = useRef<AbortController | null>(null)
@@ -2991,9 +2994,9 @@ export default function Visits() {
   }
 
   return (
-    <div ref={fullContainerRef} className="max-md:min-h-screen">
+    <div ref={fullContainerRef} className="relative h-full max-md:min-h-screen">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 print-hide max-md:hidden">
+      <div className="hidden flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 print-hide">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Planificación de Rutas</h1>
           <p className="text-gray-600">Crear y optimizar rutas para visitas a clientes</p>
@@ -3175,9 +3178,13 @@ export default function Visits() {
       </div>
 
       {/* Layout matching Maps.tsx: 1/4 left panel, 3/4 right panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 print-grid">
-        {/* Panel izquierdo - Lista de clientes y ruta */}
-        <div className="hidden md:block lg:col-span-1 space-y-6">
+      <div className="relative h-full print-grid">
+        <MapWorkspaceHeader title="Programación de Visitas" drawerLabel="Planificar ruta" focusMode={mapFocusMode} onOpenDrawer={() => { setMapFocusMode(false); setDesktopDrawerOpen(true) }} onToggleFocusMode={() => { setMapFocusMode(active => !active); setDesktopDrawerOpen(false) }} />
+        <MapFocusButton active={mapFocusMode} onClick={() => setMapFocusMode(active => !active)} />
+        <MapDrawer open={desktopDrawerOpen && !mapFocusMode} onClose={() => setDesktopDrawerOpen(false)} title="Planificar ruta" widthClassName="w-[400px]">
+          <div className="space-y-6 p-3">
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-3"><div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Buscar clientes" className="min-h-11 w-full rounded-lg border border-gray-200 py-2 pl-9 pr-10 text-sm outline-none focus:border-blue-500" /><span className="absolute right-2 top-1/2 -translate-y-1/2"><VoiceSearchButton onTranscript={setSearchTerm} /></span></div><div className="grid grid-cols-2 gap-2"><select value={selectedProvince} onChange={event => { setSelectedProvince(event.target.value); setSelectedCity('') }} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs"><option value="">Provincias</option>{provinces.map(province => <option key={province} value={province}>{province}</option>)}</select><select value={selectedCity} onChange={event => setSelectedCity(event.target.value)} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs"><option value="">Ciudades</option>{getFilteredCities().map(city => <option key={city} value={city}>{city}</option>)}</select></div></div>
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-white p-3"><input type="date" value={routeDate} onChange={event => setRouteDate(event.target.value)} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs" /><input type="time" value={routeTime} onChange={event => setRouteTime(event.target.value)} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs" /><button onClick={() => setShowSaveModal(true)} disabled={routeCustomers.length === 0} className="min-h-10 rounded-lg bg-emerald-600 px-2 text-xs font-semibold text-white disabled:opacity-50">Guardar ruta</button><button onClick={() => setShowLoadModal(true)} className="min-h-10 rounded-lg bg-blue-50 px-2 text-xs font-semibold text-blue-700">Cargar ruta</button></div>
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 print-hide">
               <div className="p-4 border-b border-gray-200">
@@ -3474,18 +3481,19 @@ export default function Visits() {
               </div>
             </div>
           )}
-        </div>
+          </div>
+        </MapDrawer>
 
         {/* Map panel - Right side */}
-        <div className="lg:col-span-3">
+        <div className="absolute inset-0">
           {/* Mapa de la ruta */}
-          <div className="max-md:fixed max-md:inset-0 max-md:z-40 bg-white md:rounded-xl md:shadow-sm md:border md:border-gray-200 overflow-hidden print-card">
-              <div className="p-4 border-b border-gray-200 max-md:hidden">
+          <div className="h-full max-md:fixed max-md:inset-0 max-md:z-40 bg-white overflow-hidden print-card">
+              <div className="hidden p-4 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Mapa de la Ruta</h2>
                 <p className="text-sm text-gray-600">Visualización de la ruta planificada</p>
               </div>
               {routeCustomers.length > 0 && (
-                <div className="px-4 py-3 border-b border-gray-100 bg-white/60 max-md:hidden">
+                <div className="hidden px-4 py-3 border-b border-gray-100 bg-white/60">
                   <div className="flex items-center gap-2 overflow-x-auto">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
                       Paradas: <span className="ml-1 font-medium">{routeCustomers.length}</span>
@@ -3519,7 +3527,7 @@ export default function Visits() {
                   </div>
                 </div>
               )}
-              <div className="h-[800px] relative bg-white max-md:h-full">
+              <div className="relative h-full bg-white max-md:h-full">
               {routeCustomers.length === 0 && mapProvider !== 'leaflet' ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">

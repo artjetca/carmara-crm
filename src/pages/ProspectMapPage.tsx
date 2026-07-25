@@ -39,6 +39,7 @@ import {
 } from 'lucide-react'
 import { VoiceSearchButton, type VoiceSearchStatus } from '../components/VoiceSearchButton'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
+import { MapDrawer, MapFocusButton, MapWorkspaceHeader } from '../components/MapWorkspace'
 
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
@@ -449,6 +450,8 @@ export default function ProspectMapPage() {
   const [measurementDestination, setMeasurementDestination] = useState<RoutePoint | null>(null)
   const [measurementResult, setMeasurementResult] = useState<RouteResult | null>(null)
   const [measurementError, setMeasurementError] = useState<string | null>(null)
+  const [desktopDrawerOpen, setDesktopDrawerOpen] = useState(false)
+  const [mapFocusMode, setMapFocusMode] = useState(false)
   const [coordsByCustomerId, setCoordsByCustomerId] = useState<CoordinateCache>(() => {
     try {
       const saved = localStorage.getItem(CUSTOMER_COORDS_STORAGE_KEY)
@@ -1286,9 +1289,9 @@ export default function ProspectMapPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full flex-col gap-0 -m-6">
+    <div className="flex h-full flex-col gap-0">
       {/* ── Top bar ── */}
-      <div className="hidden border-b border-gray-200 bg-white px-6 py-3 md:flex md:flex-wrap md:items-center md:gap-3">
+      <div className="hidden border-b border-gray-200 bg-white px-6 py-3">
         <div className="flex items-center gap-2 mr-auto">
           <MapPin className="w-5 h-5 text-emerald-600" />
           <h1 className="text-lg font-bold text-gray-900">Mapa de Prospectos</h1>
@@ -1366,7 +1369,7 @@ export default function ProspectMapPage() {
       </div>
 
       {/* ── Filters bar ── */}
-      <div className="hidden border-b border-gray-200 bg-gray-50 px-6 py-2 md:flex md:flex-wrap md:items-center md:gap-3">
+      <div className="hidden border-b border-gray-200 bg-gray-50 px-6 py-2">
         {/* Search */}
         <div className="relative flex items-center">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -1433,9 +1436,13 @@ export default function ProspectMapPage() {
       </div>
 
       {/* ── Main content ── */}
-      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
-        {/* ── Sidebar ── */}
-        <div className="hidden w-80 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white md:flex">
+      <div className="relative flex flex-1 overflow-hidden">
+        <MapWorkspaceHeader title="Prospectos" drawerLabel="Prospectos" focusMode={mapFocusMode} onOpenDrawer={() => { setMapFocusMode(false); setDesktopDrawerOpen(true) }} onToggleFocusMode={() => { setMapFocusMode(active => !active); setDesktopDrawerOpen(false) }} />
+        <MapFocusButton active={mapFocusMode} onClick={() => setMapFocusMode(active => !active)} />
+        <MapDrawer open={desktopDrawerOpen && !mapFocusMode} onClose={() => setDesktopDrawerOpen(false)} title="Prospectos">
+          <div className="border-b border-gray-100 p-3 lg:hidden">
+            <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Buscar prospectos" className="min-h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none focus:border-emerald-500" />
+          </div>
           <div className="flex-1 overflow-y-auto">
             {loading || customersLoading ? (
               <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
@@ -1484,10 +1491,10 @@ export default function ProspectMapPage() {
               </span> posibles duplicados
             </span>
           </div>
-        </div>
+        </MapDrawer>
 
         {/* ── Map ── */}
-        <div className="relative flex-1 min-h-0 max-md:fixed max-md:inset-0 max-md:z-40 max-md:[&_.leaflet-control-zoom]:hidden md:min-h-[50vh]">
+        <div className="absolute inset-0 min-h-0 max-md:fixed max-md:inset-0 max-md:z-40 max-md:[&_.leaflet-control-zoom]:hidden">
           <MapContainer
             center={DEFAULT_MAP_CENTER}
             zoom={9}
@@ -1721,6 +1728,13 @@ export default function ProspectMapPage() {
             </MarkerClusterGroup>
           </MapContainer>
 
+          <div className={`absolute right-20 top-4 z-[650] hidden w-[320px] lg:block ${mapFocusMode ? 'opacity-0 pointer-events-none' : ''}`}>
+            <div className="flex h-11 items-center rounded-xl border border-white/70 bg-white/95 px-3 shadow-lg backdrop-blur-md">
+              <Search className="mr-2 h-4 w-4 text-gray-400" />
+              <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Buscar prospectos" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
+              <VoiceSearchButton onTranscript={setSearchTerm} onStatusChange={setVoiceSearchStatus} />
+            </div>
+          </div>
           <MapFloatingToolbar
             actions={[
               { id: 'new', label: 'Nuevo prospecto', icon: <PlusCircle className="h-5 w-5" />, onClick: () => { setEditProspect(null); setShowFormModal(true) } },

@@ -74,6 +74,7 @@ import {
 } from '../components/map/VehicleLocationIcon'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
+import { MapDrawer, MapFocusButton, MapWorkspaceHeader } from '../components/MapWorkspace'
 import {
   OsrmRoutingProvider,
   formatRouteDistance,
@@ -235,6 +236,8 @@ export default function Maps() {
   const [cityDetailMode, setCityDetailMode] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
   const [distanceMode, setDistanceMode] = useState(false)
+  const [desktopDrawerOpen, setDesktopDrawerOpen] = useState(false)
+  const [mapFocusMode, setMapFocusMode] = useState(false)
   const [distanceModeState, setDistanceModeState] = useState<MeasureState>('idle')
   const [mobileMapSheet, setMobileMapSheet] = useState<MobileMapSheet>('none')
   const [distanceOrigin, setDistanceOrigin] = useState<DistanceOrigin>(JEREZ_ORIGIN)
@@ -1342,9 +1345,9 @@ export default function Maps() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="relative h-full">
       {/* Cabecera y filtros: solo escritorio/tablet — en móvil el mapa es pantalla completa */}
-      <div className="hidden gap-4 md:flex md:items-center md:justify-between">
+      <div className="hidden gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t.maps.title}</h1>
           <p className="text-gray-600">{t.maps.subtitle}</p>
@@ -1406,7 +1409,7 @@ export default function Maps() {
         </div>
       </div>
 
-      <div className="hidden rounded-xl border border-gray-200 bg-white p-6 shadow-sm md:block">
+      <div className="hidden rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="flex-1">
             <div className="relative flex items-center">
@@ -1482,9 +1485,16 @@ export default function Maps() {
 
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <div className="hidden space-y-6 md:block">
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="relative h-full">
+        <MapWorkspaceHeader title="Mapas y Navegación" drawerLabel="Lista de clientes" focusMode={mapFocusMode} onOpenDrawer={() => { setMapFocusMode(false); setDesktopDrawerOpen(true) }} onToggleFocusMode={() => { setMapFocusMode(active => !active); setDesktopDrawerOpen(false) }} />
+        <MapFocusButton active={mapFocusMode} onClick={() => setMapFocusMode(active => !active)} />
+        <MapDrawer open={desktopDrawerOpen && !mapFocusMode} onClose={() => setDesktopDrawerOpen(false)} title="Lista de clientes">
+          <div className="space-y-6 p-3">
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-3">
+              <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t.maps.searchPlaceholder} className="min-h-11 w-full rounded-lg border border-gray-200 py-2 pl-9 pr-10 text-sm outline-none focus:border-blue-500" /><span className="absolute right-2 top-1/2 -translate-y-1/2"><VoiceSearchButton onTranscript={setSearchTerm} /></span></div>
+              <div className="grid grid-cols-2 gap-2"><select value={selectedProvince} onChange={event => { setSelectedProvince(event.target.value); setSelectedCity(''); setCityDetailMode(false) }} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs"><option value="">Provincias</option>{provinces.map(province => <option key={province} value={province}>{province}</option>)}</select><select value={selectedCity} onChange={event => { setSelectedCity(event.target.value); setCityDetailMode(Boolean(event.target.value)) }} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs"><option value="">Ciudades</option>{getFilteredCities().map(city => <option key={city} value={city}>{city}</option>)}</select></div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 p-4">
               <h2 className="text-lg font-semibold text-gray-900">{t.maps.customerList}</h2>
               <p className="text-sm text-gray-600">
@@ -1724,12 +1734,13 @@ export default function Maps() {
               </div>
             </div>
           )}
-        </div>
+          </div>
+        </MapDrawer>
 
-        <div>
+        <div className="absolute inset-0">
           {/* En móvil el mapa ocupa toda la pantalla (debajo de la barra de pestañas) */}
-          <div className="map-container max-md:fixed max-md:inset-0 max-md:z-40 overflow-hidden md:rounded-xl md:border md:border-gray-200 bg-white md:shadow-sm">
-            <div className="relative h-[800px] max-md:h-full">
+          <div className="map-container h-full max-md:fixed max-md:inset-0 max-md:z-40 overflow-hidden bg-white">
+            <div className="relative h-full max-md:h-full">
               {selectedCity && (
                 <div className="absolute left-3 top-3 z-[1000] hidden max-w-[360px] items-center gap-3 rounded-lg border border-white/60 bg-white/90 px-3 py-2 shadow-md backdrop-blur md:flex">
                   <div className="min-w-0">
@@ -1746,6 +1757,13 @@ export default function Maps() {
                 </div>
               )}
 
+              <div className={`absolute right-20 top-4 z-[650] hidden w-[320px] lg:block ${mapFocusMode ? 'pointer-events-none opacity-0' : ''}`}>
+                <div className="flex h-11 items-center rounded-xl border border-white/70 bg-white/95 px-3 shadow-lg backdrop-blur-md">
+                  <Search className="mr-2 h-4 w-4 text-gray-400" />
+                  <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Buscar clientes" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
+                  <VoiceSearchButton onTranscript={setSearchTerm} />
+                </div>
+              </div>
               <MapContainer style={{ height: '100%', width: '100%' }} center={defaultCenter} zoom={8}>
                 <MapViewport
                   bounds={mapBounds}

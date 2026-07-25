@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
 import { useAuth } from '../hooks/useAuth'
@@ -15,6 +15,7 @@ import {
   Settings,
   LogOut,
   MoreHorizontal,
+  Menu,
   X,
   UserSearch,
 } from 'lucide-react'
@@ -86,6 +87,12 @@ export default function Layout({ children }: LayoutProps) {
   const { currentPage, sidebarOpen, setCurrentPage, setSidebarOpen } = useStore()
   const { user, signOut } = useAuth()
   const t = translations
+  const isMapWorkspace = currentPage === 'map' || currentPage === 'visits' || currentPage === 'prospectMap'
+  const [mapSidebarExpanded, setMapSidebarExpanded] = useState(() => localStorage.getItem('casmara-map-navigation-expanded') === 'true')
+
+  useEffect(() => {
+    localStorage.setItem('casmara-map-navigation-expanded', String(mapSidebarExpanded))
+  }, [mapSidebarExpanded])
 
   // En móvil el cajón no debe quedar abierto al cargar (lo sustituye la barra inferior)
   useEffect(() => {
@@ -123,22 +130,28 @@ export default function Layout({ children }: LayoutProps) {
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-[1200] w-64 bg-blue-900 transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-[1200] bg-blue-900 transform transition-[width,transform] duration-200 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        md:relative md:translate-x-0 md:z-auto
+        ${isMapWorkspace ? (mapSidebarExpanded ? 'md:w-60 md:translate-x-0' : 'md:w-16 md:translate-x-0') : 'w-64 md:relative md:translate-x-0 md:z-auto'}
+        max-md:w-64
       `}>
         <div className="flex flex-col h-full">
           {/* Header del sidebar */}
-          <div className="flex items-center justify-between p-4 border-b border-blue-800">
+          <div className={`flex items-center border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'justify-center p-3' : 'justify-between p-4'}`}>
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
                 <Users className="w-5 h-5 text-blue-900" />
               </div>
-              <div>
+              <div className={isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : ''}>
                 <h1 className="text-white font-bold text-lg">Casmara CRM</h1>
                 <p className="text-blue-200 text-xs">{t.nav.superSalesman}</p>
               </div>
             </div>
+            {isMapWorkspace && (
+              <button onClick={() => setMapSidebarExpanded(expanded => !expanded)} aria-label="Abrir navegación" title="Navegación" className="hidden h-8 w-8 items-center justify-center rounded-lg text-blue-100 transition hover:bg-blue-800 md:flex">
+                <Menu className="h-5 w-5" />
+              </button>
+            )}
             <button
               onClick={() => setSidebarOpen(false)}
               className="md:hidden text-white hover:text-blue-200"
@@ -148,7 +161,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Información del usuario */}
-          <div className="p-4 border-b border-blue-800">
+          <div className={`border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : 'p-4'}`}>
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center">
                 <span className="text-white font-medium">
@@ -167,7 +180,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Navegación */}
-          <nav className="flex-1 p-4 space-y-2">
+          <nav className={`flex-1 space-y-2 ${isMapWorkspace && !mapSidebarExpanded ? 'p-2' : 'p-4'}`}>
             {navigationItems.map((item) => {
               const Icon = item.icon
               const isActive = currentPage === item.id
@@ -176,16 +189,18 @@ export default function Layout({ children }: LayoutProps) {
                 <button
                   key={item.id}
                   onClick={() => handleNavigation(item.id)}
+                  aria-label={getNestedTranslation(item.label)}
+                  title={getNestedTranslation(item.label)}
                   className={`
-                    w-full flex items-center space-x-3 px-3 py-3 md:py-2 rounded-lg text-left transition-colors
+                    flex items-center rounded-lg text-left transition-colors ${isMapWorkspace && !mapSidebarExpanded ? 'w-12 justify-center px-0 py-3 md:py-2' : 'w-full space-x-3 px-3 py-3 md:py-2'}
                     ${isActive
                       ? 'bg-blue-800 text-white'
                       : 'text-blue-100 hover:bg-blue-800 hover:text-white'
                     }
                   `}
                 >
-                  <Icon className="w-5 h-5" />
-                  <span className="font-medium">{getNestedTranslation(item.label)}</span>
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : ''}`}>{getNestedTranslation(item.label)}</span>
                 </button>
               )
             })}
@@ -193,15 +208,17 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Botón de cerrar sesión */}
           <div
-            className="p-4 border-t border-blue-800"
+            className={`border-t border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'p-2' : 'p-4'}`}
             style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
           >
             <button
               onClick={handleSignOut}
-              className="w-full flex items-center space-x-3 px-3 py-2 text-blue-100 hover:bg-blue-800 hover:text-white rounded-lg transition-colors"
+              aria-label={t.nav.logout}
+              title={t.nav.logout}
+              className={`flex items-center rounded-lg text-blue-100 transition-colors hover:bg-blue-800 hover:text-white ${isMapWorkspace && !mapSidebarExpanded ? 'w-12 justify-center px-0 py-2' : 'w-full space-x-3 px-3 py-2'}`}
             >
               <LogOut className="w-5 h-5" />
-              <span className="font-medium">{t.nav.logout}</span>
+              <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : ''}`}>{t.nav.logout}</span>
             </button>
           </div>
         </div>
@@ -218,7 +235,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Contenido principal */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200">
+        <header className={isMapWorkspace ? 'hidden' : 'bg-white shadow-sm border-b border-gray-200'}>
           <div className="flex items-center justify-between px-4 py-2 md:py-3">
             <h2 className="text-lg md:text-xl font-semibold text-gray-900">
               {getNestedTranslation(navigationItems.find(item => item.id === currentPage)?.label || 'dashboard.title')}
@@ -235,7 +252,7 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         {/* Contenido */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 pb-24 md:p-6 md:pb-6">
+        <main onPointerDown={() => { if (isMapWorkspace && mapSidebarExpanded && window.innerWidth >= 768) setMapSidebarExpanded(false) }} className={isMapWorkspace ? 'flex-1 overflow-hidden' : 'flex-1 overflow-y-auto overflow-x-hidden p-3 pb-24 md:p-6 md:pb-6'}>
           {children}
         </main>
       </div>
