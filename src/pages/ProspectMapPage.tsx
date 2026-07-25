@@ -38,6 +38,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { VoiceSearchButton, type VoiceSearchStatus } from '../components/VoiceSearchButton'
+import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
 
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
@@ -1720,74 +1721,18 @@ export default function ProspectMapPage() {
             </MarkerClusterGroup>
           </MapContainer>
 
-          {/* Map legend + stats */}
-          <div className="absolute bottom-6 right-4 z-[1000] hidden min-w-[180px] space-y-1.5 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-md md:block">
-            <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Gestión de Clientes
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-pink-500 border-2 border-white shadow"></span> Clientes potenciales
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-pink-50 border-2 border-dashed border-pink-500 shadow"></span> Potencial aproximado
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-gray-400 border-2 border-gray-300 shadow"></span> Sin coordenadas
-            </div>
-            {/* Stats */}
-            <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-500">Clientes</span>
-                <span className="font-semibold text-blue-600">
-                  {mappableCustomers.length}
-                  {resolvedCustomers.length > mappableCustomers.length && (
-                    <span className="text-gray-400 font-normal"> / {resolvedCustomers.length}</span>
-                  )}
-                </span>
-              </div>
-              {resolvedCustomers.length > mappableCustomers.length && (
-                <div className="pl-3 space-y-0.5 text-[10px] text-gray-400">
-                  {(() => {
-                    const missing = resolvedCustomers.filter(
-                      (c): c is ResolvedMapClient => !hasRenderableCoordinates(c)
-                    )
-                    const noCoords = missing.filter(c => c.finalLat == null || c.finalLng == null).length
-                    const invalid = missing.filter(c => c.geocodeStatus === 'invalid').length
-                    const sea = missing.filter(c => c.geocodeStatus === 'sea_suspect').length
-                    return (
-                      <>
-                        {noCoords > 0 && <div>Sin coordenadas: {noCoords}</div>}
-                        {invalid > 0 && <div>Coord. inválidas: {invalid}</div>}
-                        {sea > 0 && <div>Sospecha mar: {sea}</div>}
-                      </>
-                    )
-                  })()}
-                </div>
-              )}
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-500">Clientes potenciales</span>
-                <span className="font-semibold text-pink-600">
-                  {mappable.filter(p => p.geocode_status !== 'approximate').length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-gray-500">Potencial aproximado</span>
-                <span className="font-semibold text-pink-400">
-                  {mappable.filter(p => p.geocode_status === 'approximate').length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1">
-                <span className="text-gray-600 font-medium">Total</span>
-                <span className="font-bold text-gray-800">
-                  {mappableCustomers.length + mappable.length}
-                  {resolvedCustomers.length > mappableCustomers.length && (
-                    <span className="text-gray-400 font-normal"> / {resolvedCustomers.length + mappable.length}</span>
-                  )}
-                </span>
-              </div>
-            </div>
-          </div>
+          <MapFloatingToolbar
+            actions={[
+              { id: 'new', label: 'Nuevo prospecto', icon: <PlusCircle className="h-5 w-5" />, onClick: () => { setEditProspect(null); setShowFormModal(true) } },
+              { id: 'capture', label: 'Auto captar', icon: <Search className="h-5 w-5" />, onClick: () => { setMobileCaptureConfirmationRequired(false); setShowAutoCaptureModal(true) } },
+              { id: 'geocode', label: 'Geocodificar', icon: <RefreshCw className={`h-5 w-5 ${geocoding ? 'animate-spin' : ''}`} />, onClick: handleGeocodeAll, disabled: geocoding },
+              { id: 'measure', label: measurementActive ? 'Salir de medición' : 'Medir distancia', icon: measurementActive ? <X className="h-5 w-5" /> : <Ruler className="h-5 w-5" />, onClick: startMeasurement, active: measurementActive },
+              { id: 'locate', label: 'Mi ubicación', icon: <LocateFixed className="h-5 w-5" />, onClick: locateMap },
+              { id: 'fit', label: 'Ver todos', icon: <Maximize2 className="h-5 w-5" />, onClick: fitMapToAll },
+            ]}
+            legend={<div className="space-y-1.5"><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-white bg-blue-600 shadow" />Gestión de Clientes</div><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-white bg-pink-500 shadow" />Clientes potenciales</div><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-dashed border-pink-500 bg-pink-50 shadow" />Potencial aproximado</div><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-gray-300 bg-gray-400 shadow" />Sin coordenadas</div></div>}
+            statistics={<div className="space-y-1.5"><div className="flex items-center justify-between gap-3"><span className="text-gray-500">Clientes</span><span className="font-semibold text-blue-600">{mappableCustomers.length} <span className="font-normal text-gray-400">/ {resolvedCustomers.length}</span></span></div><div className="flex items-center justify-between gap-3"><span className="text-gray-500">Prospectos</span><span className="font-semibold text-pink-600">{mappable.length}</span></div><div className="flex items-center justify-between gap-3"><span className="text-gray-500">Aproximados</span><span className="font-semibold text-pink-400">{mappable.filter(p => p.geocode_status === 'approximate').length}</span></div><div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1"><span className="font-medium text-gray-600">Total en mapa</span><span className="font-bold text-gray-800">{mappableCustomers.length + mappable.length}</span></div></div>}
+          />
 
           <div
             className="absolute inset-x-3 z-[1010] md:hidden"

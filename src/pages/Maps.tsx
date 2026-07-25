@@ -73,6 +73,7 @@ import {
   getLocationAccuracyLabel,
 } from '../components/map/VehicleLocationIcon'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
+import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
 import {
   OsrmRoutingProvider,
   formatRouteDistance,
@@ -1744,29 +1745,6 @@ export default function Maps() {
                   </div>
                 </div>
               )}
-              <div className="absolute right-3 top-3 z-[1000] hidden gap-2 md:flex">
-                <button
-                  onClick={fitToAll}
-                  title="Ver todos"
-                  disabled={fittingAll}
-                  aria-busy={fittingAll}
-                  className={`inline-flex items-center space-x-1 rounded-md border px-2 py-1.5 shadow transition-colors sm:space-x-2 sm:px-3 sm:py-2 ${
-                    fittingAll
-                      ? 'cursor-not-allowed bg-gray-100'
-                      : 'bg-white/90 backdrop-blur hover:bg-white'
-                  }`}
-                >
-                  <span className="text-xs text-gray-700">{fittingAll ? 'Ajustando…' : 'Ver todos'}</span>
-                </button>
-                <button
-                  onClick={locateMe}
-                  title="Mi ubicación"
-                  className="inline-flex items-center space-x-1 rounded-md border bg-white/90 px-2 py-1.5 shadow backdrop-blur hover:bg-white sm:px-3 sm:py-2"
-                >
-                  <LocateFixed className="h-4 w-4 text-blue-600" />
-                  <span className="text-xs text-gray-700">Mi ubicación</span>
-                </button>
-              </div>
 
               <MapContainer style={{ height: '100%', width: '100%' }} center={defaultCenter} zoom={8}>
                 <MapViewport
@@ -2268,38 +2246,15 @@ export default function Maps() {
                 </div>
               )}
 
-              {/* Map legend + stats (solo escritorio — en móvil lo sustituye la hoja inferior) */}
-              <div className="absolute bottom-4 right-3 hidden bg-white rounded-lg shadow-md border border-gray-200 p-3 text-xs space-y-1.5 z-[1000] min-w-[170px] md:block">
-                <div className="font-semibold text-gray-600 mb-1">Leyenda</div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-white shadow"></span> Cliente preciso
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-600 border-2 border-dashed border-amber-500 shadow"></span> Cliente aproximado
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="vehicle-location-legend-icon" aria-hidden="true" /> Mi ubicación
-                </div>
-                <div className="border-t border-gray-200 pt-1.5 mt-1.5 space-y-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-gray-500">En mapa</span>
-                    <span className="font-semibold text-blue-600">{markerClients.length}</span>
-                  </div>
-                  {resolvedCustomers.length > markerClients.length && (
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-gray-500">Sin coordenadas</span>
-                      <span className="font-semibold text-amber-600">{resolvedCustomers.length - markerClients.length}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1">
-                    <span className="text-gray-600 font-medium">Total</span>
-                    <span className="font-bold text-gray-800">{resolvedCustomers.length}</span>
-                  </div>
-                </div>
-                <div data-app-build={__APP_BUILD_VERSION__} className="border-t border-gray-100 pt-1 text-[10px] text-gray-400">
-                  Build {__APP_BUILD_VERSION__}
-                </div>
-              </div>
+              <MapFloatingToolbar
+                actions={[
+                  { id: 'locate', label: 'Mi ubicación', icon: <LocateFixed className="h-5 w-5" />, onClick: locateMe },
+                  { id: 'fit', label: fittingAll ? 'Ajustando mapa' : 'Ver todos', icon: <Expand className="h-5 w-5" />, onClick: fitToAll, disabled: fittingAll },
+                  { id: 'measure', label: distanceMode ? 'Salir de medición' : 'Medir distancia', icon: distanceMode ? <X className="h-5 w-5" /> : <Ruler className="h-5 w-5" />, onClick: () => setDistanceModeSafely(!distanceMode), active: distanceMode },
+                ]}
+                legend={<div className="space-y-1.5"><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-white bg-blue-600 shadow" />Cliente preciso</div><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-dashed border-amber-500 bg-blue-600 shadow" />Cliente aproximado</div><div className="flex items-center gap-2"><span className="vehicle-location-legend-icon" aria-hidden="true" />Mi ubicación</div></div>}
+                statistics={<div className="space-y-1.5"><div className="flex items-center justify-between gap-3"><span className="text-gray-500">En mapa</span><span className="font-semibold text-blue-600">{markerClients.length}</span></div>{resolvedCustomers.length > markerClients.length && <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Sin coordenadas</span><span className="font-semibold text-amber-600">{resolvedCustomers.length - markerClients.length}</span></div>}<div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1"><span className="font-medium text-gray-600">Total</span><span className="font-bold text-gray-800">{resolvedCustomers.length}</span></div></div>}
+              />
 
               {/* ── Superposiciones móviles (estilo app, solo <md) ── */}
 

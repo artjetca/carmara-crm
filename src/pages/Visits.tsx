@@ -57,6 +57,7 @@ import {
 } from '../services/routingProvider'
 import '../styles/casmara-marker.css'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
+import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
 
 interface RouteCustomer extends Customer {
   order: number
@@ -3530,55 +3531,6 @@ export default function Visits() {
               ) : (
                 mapProvider === 'leaflet' ? (
                   <div className="h-full relative">
-                    {/* Leaflet overlay controls */}
-                    <div className="absolute z-[1000] right-3 top-3 hidden md:flex flex-col sm:flex-row gap-2 print-hide">
-                      <button
-                        onClick={fitLeafletToAllStops}
-                        title="Ver todos"
-                        className="inline-flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
-                      >
-                        <span className="text-xs text-gray-700 hidden sm:inline">Ver todos</span>
-                        <span className="text-xs text-gray-700 sm:hidden">Todos</span>
-                      </button>
-                      <button
-                        onClick={getCurrentLocationLeaflet}
-                        title="Mi ubicación"
-                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
-                      >
-                        <LocateFixed className="w-4 h-4 text-blue-600" />
-                        <span className="text-xs text-gray-700 hidden sm:inline">Mi ubicación</span>
-                        <span className="text-xs text-gray-700 sm:hidden">Mi pos.</span>
-                      </button>
-                      <button
-                        onClick={resetLeafletMap}
-                        title="Reiniciar mapa"
-                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
-                      >
-                        <RefreshCcw className="w-4 h-4 text-gray-700" />
-                        <span className="text-xs text-gray-700 hidden sm:inline">Reiniciar</span>
-                        <span className="text-xs text-gray-700 sm:hidden">Reset</span>
-                      </button>
-                      <button
-                        onClick={toggleMapFullscreen}
-                        title={leafletFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa del mapa'}
-                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
-                      >
-                        {leafletFullscreen ? (
-                          <Minimize2 className="w-4 h-4 text-gray-700" />
-                        ) : (
-                          <Maximize2 className="w-4 h-4 text-gray-700" />
-                        )}
-                        <span className="text-xs text-gray-700 hidden sm:inline">{leafletFullscreen ? 'Salir' : 'Completa'}</span>
-                      </button>
-                      <button
-                        onClick={generateIndependentPdf}
-                        title="Generar PDF independiente"
-                        className="inline-flex items-center space-x-1 px-2 sm:px-3 py-1.5 sm:py-2 bg-white/90 backdrop-blur rounded-md shadow border hover:bg-white"
-                      >
-                        <FileDown className="w-4 h-4 text-gray-700" />
-                        <span className="text-xs text-gray-700 hidden sm:inline">PDF</span>
-                      </button>
-                    </div>
                     <div ref={mapRef} className="w-full h-full rounded-lg border print-map max-md:rounded-none max-md:border-0" />
                   </div>
                 ) : (!mapsApiKey ? (
@@ -3592,58 +3544,22 @@ export default function Visits() {
                 ) : (
                   <div className="h-full relative">
                     <div ref={mapRef} className="w-full h-full rounded-lg border max-md:rounded-none max-md:border-0" />
-                    {/* My Location button on map (Google only) */}
-                    <button
-                      onClick={getCurrentLocation}
-                      className="absolute right-4 top-16 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50 max-md:hidden"
-                      title="Mi Ubicación"
-                    >
-                      <MapPin className="w-5 h-5 text-blue-600" />
-                    </button>
-                    {/* Manual Map Refresh button (Google only) */}
-                    <button
-                      onClick={async () => {
-                        console.log('[MapRefresh] Manual refresh button clicked')
-                        try {
-                          // Clear map instance more gently - similar to Mi Ubicación logic
-                          if (mapInstanceRef.current) {
-                            // Clear my location marker first
-                            if (myLocationMarkerRef.current) {
-                              try { myLocationMarkerRef.current.setMap(null) } catch {}
-                              myLocationMarkerRef.current = null
-                            }
-                            if (myLocationInfoRef.current) {
-                              try { myLocationInfoRef.current.close() } catch {}
-                              myLocationInfoRef.current = null
-                            }
-                          }
-                          
-                          // Trigger map refresh event
-                          const event = new CustomEvent('mapRefresh')
-                          window.dispatchEvent(event)
-                          
-                          // Wait for map to be recreated, then recalculate route if needed
-                          setTimeout(() => {
-                            if (routeCustomers.length > 0) {
-                              console.log('[MapRefresh] Recalculating route after manual refresh')
-                              calculateRouteDistanceAndTime([...routeCustomers])
-                            }
-                          }, 300)
-                          
-                        } catch (error) {
-                          console.error('[MapRefresh] Manual refresh failed:', error)
-                        }
-                      }}
-                      className="absolute right-4 top-28 z-10 bg-white rounded-lg shadow-md p-2 hover:bg-gray-50 max-md:hidden"
-                      title="Refrescar Mapa"
-                    >
-                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
                   </div>
                 ))
               )}
+              <MapFloatingToolbar
+                actions={[
+                  { id: 'locate', label: 'Mi ubicación', icon: <LocateFixed className="h-5 w-5" />, onClick: mapProvider === 'leaflet' ? getCurrentLocationLeaflet : getCurrentLocation },
+                  { id: 'fit', label: 'Ver todos', icon: <Maximize2 className="h-5 w-5" />, onClick: mapProvider === 'leaflet' ? fitLeafletToAllStops : getCurrentLocation },
+                  { id: 'measure', label: measurementStep === 'idle' ? 'Medir distancia' : 'Cancelar medición', icon: measurementStep === 'idle' ? <Ruler className="h-5 w-5" /> : <X className="h-5 w-5" />, onClick: measurementStep === 'idle' ? startMeasurement : clearMeasurement, active: measurementStep !== 'idle' },
+                  { id: 'navigate', label: 'Navegar ruta', icon: <Navigation className="h-5 w-5" />, onClick: startNavigation, disabled: routeCustomers.length === 0 },
+                  { id: 'reset', label: 'Reiniciar mapa', icon: <RefreshCcw className="h-5 w-5" />, onClick: () => { if (mapProvider === 'leaflet') { resetLeafletMap(); return } if (mapInstanceRef.current) { if (myLocationMarkerRef.current) { try { myLocationMarkerRef.current.setMap(null) } catch {} myLocationMarkerRef.current = null } if (myLocationInfoRef.current) { try { myLocationInfoRef.current.close() } catch {} myLocationInfoRef.current = null } } window.dispatchEvent(new CustomEvent('mapRefresh')); window.setTimeout(() => { if (routeCustomers.length > 0) calculateRouteDistanceAndTime([...routeCustomers]) }, 300) } },
+                  { id: 'fullscreen', label: leafletFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa', icon: leafletFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />, onClick: toggleMapFullscreen },
+                  { id: 'pdf', label: 'Generar PDF', icon: <FileDown className="h-5 w-5" />, onClick: generateIndependentPdf },
+                ]}
+                legend={<div className="space-y-1.5"><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-white bg-blue-600 shadow" />Parada de ruta</div><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-white bg-emerald-600 shadow" />Mi ubicación</div></div>}
+                statistics={<div className="space-y-1.5"><div className="flex items-center justify-between gap-3"><span className="text-gray-500">Visitas planificadas</span><span className="font-semibold text-blue-600">{routeCustomers.length}</span></div><div className="flex items-center justify-between gap-3"><span className="text-gray-500">Clientes disponibles</span><span className="font-semibold text-gray-800">{filteredCustomers.length}</span></div>{totalDistance > 0 && <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1"><span className="font-medium text-gray-600">Distancia</span><span className="font-bold text-gray-800">{formatKm(totalDistance)}</span></div>}</div>}
+              />
               <div
                 className="absolute inset-x-3 z-[1010] md:hidden"
                 style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
