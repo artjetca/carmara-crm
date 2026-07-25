@@ -15,6 +15,7 @@ import {
   Phone,
   Search,
   Ruler,
+  Users,
   X,
 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
@@ -74,7 +75,7 @@ import {
 } from '../components/map/VehicleLocationIcon'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
-import { MapDrawer, MapFocusButton, MapWorkspaceHeader } from '../components/MapWorkspace'
+import { MapDrawer, MapFocusButton } from '../components/MapWorkspace'
 import {
   OsrmRoutingProvider,
   formatRouteDistance,
@@ -236,7 +237,8 @@ export default function Maps() {
   const [cityDetailMode, setCityDetailMode] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
   const [distanceMode, setDistanceMode] = useState(false)
-  const [desktopDrawerOpen, setDesktopDrawerOpen] = useState(false)
+  const [activeMapPanel, setActiveMapPanel] = useState<'clients' | null>(null)
+  const [clientDrawerCollapsed, setClientDrawerCollapsed] = useState(false)
   const [mapFocusMode, setMapFocusMode] = useState(false)
   const [distanceModeState, setDistanceModeState] = useState<MeasureState>('idle')
   const [mobileMapSheet, setMobileMapSheet] = useState<MobileMapSheet>('none')
@@ -1486,9 +1488,8 @@ export default function Maps() {
       </div>
 
       <div className="relative h-full">
-        <MapWorkspaceHeader title="Mapas y Navegación" drawerLabel="Lista de clientes" focusMode={mapFocusMode} onOpenDrawer={() => { setMapFocusMode(false); setDesktopDrawerOpen(true) }} onToggleFocusMode={() => { setMapFocusMode(active => !active); setDesktopDrawerOpen(false) }} />
-        <MapFocusButton active={mapFocusMode} onClick={() => setMapFocusMode(active => !active)} />
-        <MapDrawer open={desktopDrawerOpen && !mapFocusMode} onClose={() => setDesktopDrawerOpen(false)} title="Lista de clientes">
+        <MapFocusButton active={mapFocusMode} onClick={() => setMapFocusMode(false)} />
+        <MapDrawer open={activeMapPanel === 'clients' && !mapFocusMode} onClose={() => { setActiveMapPanel(null); setClientDrawerCollapsed(false) }} title="Lista de clientes" side="right" collapsed={clientDrawerCollapsed} onToggleCollapsed={() => setClientDrawerCollapsed(collapsed => !collapsed)} collapsedCount={resolvedCustomers.length}>
           <div className="space-y-6 p-3">
             <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-3">
               <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t.maps.searchPlaceholder} className="min-h-11 w-full rounded-lg border border-gray-200 py-2 pl-9 pr-10 text-sm outline-none focus:border-blue-500" /><span className="absolute right-2 top-1/2 -translate-y-1/2"><VoiceSearchButton onTranscript={setSearchTerm} /></span></div>
@@ -2266,12 +2267,17 @@ export default function Maps() {
 
               <MapFloatingToolbar
                 actions={[
+                  { id: 'clients', label: 'Lista de clientes', ariaLabel: 'Abrir lista de clientes', tooltip: 'Lista de clientes', icon: <Users className="h-5 w-5" />, onClick: () => { setMapFocusMode(false); setClientDrawerCollapsed(false); setActiveMapPanel('clients') } },
+                  { id: 'filters', label: 'Buscar y filtrar', icon: <Search className="h-5 w-5" />, onClick: () => { setMapFocusMode(false); setClientDrawerCollapsed(false); setActiveMapPanel('clients') } },
                   { id: 'locate', label: 'Mi ubicación', icon: <LocateFixed className="h-5 w-5" />, onClick: locateMe },
                   { id: 'fit', label: fittingAll ? 'Ajustando mapa' : 'Ver todos', icon: <Expand className="h-5 w-5" />, onClick: fitToAll, disabled: fittingAll },
-                  { id: 'measure', label: distanceMode ? 'Salir de medición' : 'Medir distancia', icon: distanceMode ? <X className="h-5 w-5" /> : <Ruler className="h-5 w-5" />, onClick: () => setDistanceModeSafely(!distanceMode), active: distanceMode },
+                  { id: 'measure', label: distanceMode ? 'Salir de medición' : 'Medir distancia', icon: distanceMode ? <X className="h-5 w-5" /> : <Ruler className="h-5 w-5" />, onClick: () => { setActiveMapPanel(null); setDistanceModeSafely(!distanceMode) }, active: distanceMode },
+                  { id: 'focus', label: 'Modo mapa', icon: <Expand className="h-5 w-5" />, onClick: () => { setActiveMapPanel(null); setMapFocusMode(true) } },
                 ]}
                 legend={<div className="space-y-1.5"><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-white bg-blue-600 shadow" />Cliente preciso</div><div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border-2 border-dashed border-amber-500 bg-blue-600 shadow" />Cliente aproximado</div><div className="flex items-center gap-2"><span className="vehicle-location-legend-icon" aria-hidden="true" />Mi ubicación</div></div>}
                 statistics={<div className="space-y-1.5"><div className="flex items-center justify-between gap-3"><span className="text-gray-500">En mapa</span><span className="font-semibold text-blue-600">{markerClients.length}</span></div>{resolvedCustomers.length > markerClients.length && <div className="flex items-center justify-between gap-3"><span className="text-gray-500">Sin coordenadas</span><span className="font-semibold text-amber-600">{resolvedCustomers.length - markerClients.length}</span></div>}<div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-1"><span className="font-medium text-gray-600">Total</span><span className="font-bold text-gray-800">{resolvedCustomers.length}</span></div></div>}
+                offsetRightClassName={activeMapPanel === 'clients' ? (clientDrawerCollapsed ? 'right-24' : 'right-[416px]') : 'right-4'}
+                className={mapFocusMode ? 'hidden' : ''}
               />
 
               {/* ── Superposiciones móviles (estilo app, solo <md) ── */}

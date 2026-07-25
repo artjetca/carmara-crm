@@ -6,6 +6,8 @@ export type MapFloatingToolbarAction = {
   label: string
   icon: React.ReactNode
   onClick: () => void
+  ariaLabel?: string
+  tooltip?: string
   disabled?: boolean
   active?: boolean
 }
@@ -15,9 +17,10 @@ type MapFloatingToolbarProps = {
   legend?: React.ReactNode
   statistics?: React.ReactNode
   className?: string
+  offsetRightClassName?: string
 }
 
-export function MapFloatingToolbar({ actions, legend, statistics, className = '' }: MapFloatingToolbarProps) {
+export function MapFloatingToolbar({ actions, legend, statistics, className = '', offsetRightClassName = 'right-4' }: MapFloatingToolbarProps) {
   const [expanded, setExpanded] = useState(false)
   const [activePanel, setActivePanel] = useState<'legend' | 'statistics' | null>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
@@ -62,7 +65,7 @@ export function MapFloatingToolbar({ actions, legend, statistics, className = ''
   }
 
   return (
-    <div ref={toolbarRef} className={`absolute bottom-9 right-4 z-[650] hidden flex-col items-end gap-2 md:flex ${className}`}>
+    <div ref={toolbarRef} className={`absolute bottom-9 ${offsetRightClassName} z-[650] hidden flex-col items-end gap-2 md:flex ${className}`}>
       <div
         aria-hidden={!expanded}
         className={`flex flex-col items-end gap-2 transition duration-200 ease-out ${expanded ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'}`}
@@ -119,10 +122,10 @@ export function MapFloatingToolbar({ actions, legend, statistics, className = ''
                 close()
               }}
               disabled={action.disabled}
-              aria-label={action.label}
+              aria-label={action.ariaLabel ?? action.label}
               aria-pressed={action.active}
               tabIndex={expanded ? 0 : -1}
-              title={action.label}
+              title={action.tooltip ?? action.label}
               className={`flex h-11 min-w-11 items-center justify-center rounded-full border shadow-lg transition focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 ${action.active ? 'border-blue-200 bg-blue-600 text-white' : 'border-white/70 bg-white/95 text-gray-700 hover:bg-white'}`}
             >
               {action.icon}
