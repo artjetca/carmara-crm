@@ -32,6 +32,7 @@ import {
   ChevronDown,
   LocateFixed,
   Maximize2,
+  Sparkles,
 } from 'lucide-react'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
 
@@ -100,6 +101,7 @@ const CUSTOMER_COORDS_STORAGE_KEY = 'prospect-map-customer-coords'
 type CoordinateCache = Record<string, ClientCoordinateAudit | MapCoordinates>
 type MobileProspectListMode = 'all' | 'mapped' | 'unmapped'
 type MobileSheetSize = 'half' | 'full'
+type MobileQuickActionStage = 'menu' | 'confirm-geocode'
 
 // ─── Marker icons ──────────────────────────────────────────────────────────────
 
@@ -396,6 +398,10 @@ export default function ProspectMapPage() {
   const [mobileSheetMode, setMobileSheetMode] = useState<MobileProspectListMode>('all')
   const [mobileSheetSize, setMobileSheetSize] = useState<MobileSheetSize>('half')
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+  const [mobileQuickActionsOpen, setMobileQuickActionsOpen] = useState(false)
+  const [mobileQuickActionStage, setMobileQuickActionStage] = useState<MobileQuickActionStage>('menu')
+  const [mobileCaptureConfirmationRequired, setMobileCaptureConfirmationRequired] = useState(false)
+  const [autoCapturing, setAutoCapturing] = useState(false)
   const [coordsByCustomerId, setCoordsByCustomerId] = useState<CoordinateCache>(() => {
     try {
       const saved = localStorage.getItem(CUSTOMER_COORDS_STORAGE_KEY)
@@ -412,6 +418,9 @@ export default function ProspectMapPage() {
   const geocodingCustomersRef = useRef(false)
   const persistedCoordinateSignaturesRef = useRef(new Map<string, string>())
   const mapInstanceRef = useRef<L.Map | null>(null)
+  const geocodeInFlightRef = useRef(false)
+  const autoCaptureInFlightRef = useRef(false)
+  const mobileActionSheetStartYRef = useRef<number | null>(null)
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   const loadProspects = useCallback(async () => {
@@ -865,25 +874,60 @@ export default function ProspectMapPage() {
     return filtered
   }, [filtered, mappable, mobileSheetMode])
 
+  const geocodeQueue = useMemo(
+    () => prospects.filter(prospect =>
+      prospect.geocode_status === 'pending' ||
+      prospect.geocode_status === 'invalid' ||
+      prospect.geocode_status === 'sea_suspect' ||
+      prospect.lat == null ||
+      prospect.lng == null
+    ),
+    [prospects]
+  )
+
   const handleGeocodeAll = useCallback(async () => {
-    const pending = prospects.filter((p) => p.geocode_status === 'pending')
+    if (geocodeInFlightRef.current) return
+    const pending = geocodeQueue
     if (pending.length === 0) {
       setGeocodeMsg('No hay prospectos pendientes de geocodificación.')
       return
     }
+
+    geocodeInFlightRef.current = true
     setGeocoding(true)
-    setGeocodeMsg(`Geocodificando 0/${pending.length}…`)
-    const updated = await geocodePendingProspects(pending, (done, total) => {
-      setGeocodeMsg(`Geocodificando ${done}/${total}…`)
-    })
-    setProspects((prev) => {
-      const map = Object.fromEntries(updated.map((p) => [p.id, p]))
-      return prev.map((p) => map[p.id] ?? p)
-    })
-    const ok = updated.filter((p) => p.geocode_status !== 'invalid').length
-    setGeocodeMsg(`✓ ${ok}/${pending.length} geocodificados correctamente.`)
-    setGeocoding(false)
-  }, [prospects])
+    setGeocodeMsg(`Geocodificando prospectos… 0/${pending.length}`)
+    try {
+      const updated = await geocodePendingProspects(pending, (done, total) => {
+        setGeocodeMsg(`Geocodificando prospectos… ${done}/${total}`)
+      })
+      setProspects((prev) => {
+        const map = Object.fromEntries(updated.map((prospect) => [prospect.id, prospect]))
+        return prev.map((prospect) => map[prospect.id] ?? prospect)
+      })
+      const succeeded = updated.filter(prospect => prospect.geocode_status !== 'invalid' && prospect.geocode_status !== 'sea_suspect').length
+      const failed = updated.filter(prospect => prospect.geocode_status === 'invalid' || prospect.geocode_status === 'sea_suspect').length
+      const remaining = Math.max(0, pending.length - updated.length) + failed
+      setGeocodeMsg(`✓ ${succeeded} geocodificados · ${failed} fallidos · ${remaining} pendientes.`)
+    } catch (error) {
+      console.error('Error geocoding prospects:', error)
+      setGeocodeMsg('No se pudieron geocodificar los prospectos. Inténtalo de nuevo.')
+    } finally {
+      geocodeInFlightRef.current = false
+      setGeocoding(false)
+    }
+  }, [geocodeQueue])
+
+  const closeMobileQuickActions = useCallback(() => {
+    if (geocoding || autoCapturing) return
+    setMobileQuickActionsOpen(false)
+    setMobileQuickActionStage('menu')
+  }, [autoCapturing, geocoding])
+
+  const handleMobileQuickActionTouchEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const startY = mobileActionSheetStartYRef.current
+    mobileActionSheetStartYRef.current = null
+    if (startY != null && event.clientY - startY > 72) closeMobileQuickActions()
+  }, [closeMobileQuickActions])
 
   const handleRepairCoordinates = useCallback(async () => {
     setGeocoding(true)
@@ -946,6 +990,9 @@ export default function ProspectMapPage() {
       limit: number
       mode?: 'single' | 'batch'
     }) => {
+      if (autoCaptureInFlightRef.current) return
+      autoCaptureInFlightRef.current = true
+      setAutoCapturing(true)
       setJobMessage('Captando prospectos…')
       try {
         // For batch mode with multiple keywords, we run sequentially
@@ -1055,10 +1102,25 @@ export default function ProspectMapPage() {
         const message = (error as Error).message || 'No se pudo completar la captación.'
         setJobMessage(message)
         throw error
+      } finally {
+        autoCaptureInFlightRef.current = false
+        setAutoCapturing(false)
       }
     },
     [profile?.id]
   )
+
+  const handleMobileAutoCaptureSubmit = useCallback(async (payload: {
+    province: string
+    city?: string
+    keyword: string
+    keywords?: string[]
+    limit: number
+    mode?: 'single' | 'batch'
+  }) => {
+    if (!window.confirm('¿Quieres iniciar la captación automática de prospectos?')) return
+    await handleAutoCapture(payload)
+  }, [handleAutoCapture])
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -1109,7 +1171,7 @@ export default function ProspectMapPage() {
           <Clock className="w-3.5 h-3.5" /> Jobs
         </button>
         <button
-          onClick={() => setShowAutoCaptureModal(true)}
+          onClick={() => { setMobileCaptureConfirmationRequired(false); setShowAutoCaptureModal(true) }}
           className={getProspectToolbarButtonClass('emerald')}
         >
           <Search className="w-3.5 h-3.5" /> Auto captar
@@ -1589,12 +1651,14 @@ export default function ProspectMapPage() {
             style={{ bottom: 'calc(env(safe-area-inset-bottom) + 170px)' }}
           >
             <button
-              onClick={() => { setEditProspect(null); setShowFormModal(true) }}
-              title="Nuevo prospecto"
-              aria-label="Nuevo prospecto"
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg transition active:scale-95"
+              onClick={() => { if (!geocoding && !autoCapturing) { setMobileQuickActionStage('menu'); setMobileQuickActionsOpen(true) } }}
+              disabled={geocoding || autoCapturing}
+              title="Acciones rápidas"
+              aria-label="Acciones rápidas"
+              aria-expanded={mobileQuickActionsOpen}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg transition active:scale-95 disabled:opacity-60"
             >
-              <PlusCircle className="h-6 w-6" />
+              {geocoding || autoCapturing ? <RefreshCw className="h-6 w-6 animate-spin" /> : <PlusCircle className="h-6 w-6" />}
             </button>
             <button
               onClick={locateMap}
@@ -1676,6 +1740,109 @@ export default function ProspectMapPage() {
         </div>
       </div>
 
+      {mobileQuickActionsOpen && (
+        <div className="fixed inset-0 z-[1250] md:hidden" role="dialog" aria-modal="true" aria-label="Acciones rápidas de prospectos">
+          <button
+            type="button"
+            aria-label="Cerrar acciones rápidas"
+            onClick={closeMobileQuickActions}
+            className="absolute inset-0 h-full w-full bg-slate-950/35"
+          />
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white shadow-2xl"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)' }}
+            onPointerDown={event => { mobileActionSheetStartYRef.current = event.clientY }}
+            onPointerUp={handleMobileQuickActionTouchEnd}
+          >
+            <div className="flex items-center justify-between px-5 pb-3 pt-3">
+              <span className="h-1.5 w-11 rounded-full bg-gray-300" />
+              <button
+                type="button"
+                onClick={closeMobileQuickActions}
+                disabled={geocoding || autoCapturing}
+                aria-label="Cerrar"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-40"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {mobileQuickActionStage === 'confirm-geocode' ? (
+              <div className="px-5 pb-2">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+                    <MapPin className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900">Geocodificar prospectos</h2>
+                    <p className="mt-1 text-sm leading-5 text-gray-600">
+                      {geocoding || geocodeMsg ? geocodeMsg : `Hay ${geocodeQueue.length} prospectos pendientes de geocodificación.`}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMobileQuickActionStage('menu')}
+                    disabled={geocoding}
+                    className="min-h-12 rounded-xl bg-gray-100 px-4 text-sm font-semibold text-gray-700 disabled:opacity-40"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void handleGeocodeAll() }}
+                    disabled={geocoding || geocodeQueue.length === 0}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {geocoding && <RefreshCw className="h-4 w-4 animate-spin" />}
+                    {geocoding ? 'Geocodificando…' : 'Geocodificar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="px-5 pb-2">
+                <h2 className="text-base font-bold text-gray-900">Acciones rápidas</h2>
+                <p className="mt-1 text-sm text-gray-500">Gestiona prospectos sin perder la vista actual del mapa.</p>
+                <div className="mt-4 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => { setMobileQuickActionsOpen(false); setEditProspect(null); setShowFormModal(true) }}
+                    className="flex min-h-[72px] w-full items-center gap-4 rounded-2xl border border-gray-100 bg-white px-4 text-left shadow-sm active:bg-emerald-50"
+                  >
+                    <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><PlusCircle className="h-5 w-5" /></span>
+                    <span><span className="block text-sm font-semibold text-gray-900">Nuevo prospecto</span><span className="mt-0.5 block text-xs leading-5 text-gray-500">Crear un prospecto manualmente</span></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMobileQuickActionsOpen(false); setMobileCaptureConfirmationRequired(true); setShowAutoCaptureModal(true) }}
+                    disabled={autoCapturing || geocoding}
+                    className="flex min-h-[72px] w-full items-center gap-4 rounded-2xl border border-gray-100 bg-white px-4 text-left shadow-sm active:bg-emerald-50 disabled:opacity-50"
+                  >
+                    <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span>
+                    <span><span className="block text-sm font-semibold text-gray-900">Auto captar</span><span className="mt-0.5 block text-xs leading-5 text-gray-500">Buscar y captar nuevos prospectos automáticamente</span></span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileQuickActionStage('confirm-geocode')}
+                    disabled={autoCapturing || geocoding}
+                    className="flex min-h-[72px] w-full items-center gap-4 rounded-2xl border border-gray-100 bg-white px-4 text-left shadow-sm active:bg-emerald-50 disabled:opacity-50"
+                  >
+                    <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-700"><MapPin className="h-5 w-5" /></span>
+                    <span><span className="block text-sm font-semibold text-gray-900">Geocodificar</span><span className="mt-0.5 block text-xs leading-5 text-gray-500">Geocodificar prospectos pendientes</span></span>
+                  </button>
+                </div>
+              </div>
+            )}
+            {(geocoding || autoCapturing) && (
+              <div className="mx-5 mt-4 flex items-center gap-3 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                {geocoding ? geocodeMsg : jobMessage || 'Captando prospectos…'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Modals ── */}
       {showFormModal && (
         <ProspectFormModal
@@ -1699,8 +1866,8 @@ export default function ProspectMapPage() {
 
       {showAutoCaptureModal && (
         <ProspectAutoCaptureModal
-          onClose={() => setShowAutoCaptureModal(false)}
-          onSubmit={handleAutoCapture}
+          onClose={() => { setShowAutoCaptureModal(false); setMobileCaptureConfirmationRequired(false) }}
+          onSubmit={mobileCaptureConfirmationRequired ? handleMobileAutoCaptureSubmit : handleAutoCapture}
         />
       )}
 
