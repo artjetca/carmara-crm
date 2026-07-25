@@ -1897,7 +1897,7 @@ export default function ProspectMapPage() {
             </button>
           </div>
 
-          {measurementActive && (
+          {measurementResult && (
             <div
               className="absolute bottom-0 left-3 z-[1010] max-w-[calc(100%-88px)] rounded-2xl border border-white/60 bg-white/95 p-3 shadow-xl backdrop-blur-md md:bottom-4 md:left-4 md:max-w-sm"
               style={{ bottom: 'calc(env(safe-area-inset-bottom) + 154px)' }}
