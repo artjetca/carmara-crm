@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
 import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
-import { getSidebarBrandClass } from './layoutStyles'
+import { getSidebarLayoutClasses } from './layoutStyles'
 import {
   LayoutDashboard,
   Users,
@@ -90,6 +90,7 @@ export default function Layout({ children }: LayoutProps) {
   const t = translations
   const isMapWorkspace = currentPage === 'map' || currentPage === 'visits' || currentPage === 'prospectMap'
   const [mapSidebarExpanded, setMapSidebarExpanded] = useState(() => localStorage.getItem('casmara-map-navigation-expanded') === 'true')
+  const sidebarClasses = getSidebarLayoutClasses(isMapWorkspace, mapSidebarExpanded)
 
   useEffect(() => {
     localStorage.setItem('casmara-map-navigation-expanded', String(mapSidebarExpanded))
@@ -138,8 +139,8 @@ export default function Layout({ children }: LayoutProps) {
       `}>
         <div className="flex flex-col h-full">
           {/* Header del sidebar */}
-          <div className={`flex items-center border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:justify-center md:p-3' : 'justify-between p-4'}`}>
-            <div className={getSidebarBrandClass(isMapWorkspace, mapSidebarExpanded)}>
+          <div className={sidebarClasses.header}>
+            <div className={sidebarClasses.brand}>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
                 <Users className="w-5 h-5 text-blue-900" />
               </div>
@@ -162,7 +163,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Información del usuario */}
-          <div className={`border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : 'p-4'}`}>
+          <div className={sidebarClasses.userInfo}>
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center">
                 <span className="text-white font-medium">
@@ -181,7 +182,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Navegación */}
-          <nav className={`flex-1 space-y-2 ${isMapWorkspace && !mapSidebarExpanded ? 'md:p-2' : 'p-4'}`}>
+          <nav className={sidebarClasses.navigation}>
             {navigationItems.map((item) => {
               const Icon = item.icon
               const isActive = currentPage === item.id
@@ -193,7 +194,7 @@ export default function Layout({ children }: LayoutProps) {
                   aria-label={getNestedTranslation(item.label)}
                   title={getNestedTranslation(item.label)}
                   className={`
-                    flex items-center rounded-lg text-left transition-colors ${isMapWorkspace && !mapSidebarExpanded ? 'md:w-12 md:justify-center md:px-0 md:py-2' : 'w-full space-x-3 px-3 py-3 md:py-2'}
+                    ${sidebarClasses.navigationItem}
                     ${isActive
                       ? 'bg-blue-800 text-white'
                       : 'text-blue-100 hover:bg-blue-800 hover:text-white'
@@ -201,7 +202,7 @@ export default function Layout({ children }: LayoutProps) {
                   `}
                 >
                   <Icon className="w-5 h-5 shrink-0" />
-                  <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : ''}`}>{getNestedTranslation(item.label)}</span>
+                  <span className={sidebarClasses.navigationLabel}>{getNestedTranslation(item.label)}</span>
                 </button>
               )
             })}
@@ -209,17 +210,17 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Botón de cerrar sesión */}
           <div
-            className={`border-t border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:p-2' : 'p-4'}`}
+            className={sidebarClasses.footer}
             style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
           >
             <button
               onClick={handleSignOut}
               aria-label={t.nav.logout}
               title={t.nav.logout}
-              className={`flex items-center rounded-lg text-blue-100 transition-colors hover:bg-blue-800 hover:text-white ${isMapWorkspace && !mapSidebarExpanded ? 'md:w-12 md:justify-center md:px-0 md:py-2' : 'w-full space-x-3 px-3 py-2'}`}
+              className={sidebarClasses.logout}
             >
               <LogOut className="w-5 h-5" />
-              <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : ''}`}>{t.nav.logout}</span>
+              <span className={sidebarClasses.navigationLabel}>{t.nav.logout}</span>
             </button>
           </div>
         </div>
