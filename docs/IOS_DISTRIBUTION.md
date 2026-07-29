@@ -6,6 +6,7 @@
 - Bundle ID: `com.casmara.crm`
 - Minimum iOS version: iOS 15
 - Apple Team: `U8TWFHY6S5`
+- App icon master: `resources/ios/AppIcon-logo.png`
 
 ## Sync web changes into Xcode
 
