@@ -15,7 +15,7 @@ const appBuildVersion = process.env.COMMIT_REF || (() => {
 })()
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   define: {
     __APP_BUILD_VERSION__: JSON.stringify(appBuildVersion),
   },
@@ -23,7 +23,7 @@ export default defineConfig({
     react({
       babel: {
         plugins: [
-          'react-dev-locator',
+          ...(command === 'serve' ? ['react-dev-locator'] : []),
         ],
       },
     }),
@@ -50,4 +50,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))
