@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
 import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
+import { getSidebarBrandClass } from './layoutStyles'
 import {
   LayoutDashboard,
   Users,
@@ -138,7 +139,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="flex flex-col h-full">
           {/* Header del sidebar */}
           <div className={`flex items-center border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:justify-center md:p-3' : 'justify-between p-4'}`}>
-            <div className="flex items-center space-x-3">
+            <div className={getSidebarBrandClass(isMapWorkspace, mapSidebarExpanded)}>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
                 <Users className="w-5 h-5 text-blue-900" />
               </div>
