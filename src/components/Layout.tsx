@@ -137,12 +137,12 @@ export default function Layout({ children }: LayoutProps) {
       `}>
         <div className="flex flex-col h-full">
           {/* Header del sidebar */}
-          <div className={`flex items-center border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'justify-center p-3' : 'justify-between p-4'}`}>
+          <div className={`flex items-center border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:justify-center md:p-3' : 'justify-between p-4'}`}>
             <div className="flex items-center space-x-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
                 <Users className="w-5 h-5 text-blue-900" />
               </div>
-              <div className={isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : ''}>
+              <div className={isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : ''}>
                 <h1 className="text-white font-bold text-lg">Casmara CRM</h1>
                 <p className="text-blue-200 text-xs">{t.nav.superSalesman}</p>
               </div>
@@ -161,7 +161,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Información del usuario */}
-          <div className={`border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : 'p-4'}`}>
+          <div className={`border-b border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : 'p-4'}`}>
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center">
                 <span className="text-white font-medium">
@@ -180,7 +180,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           {/* Navegación */}
-          <nav className={`flex-1 space-y-2 ${isMapWorkspace && !mapSidebarExpanded ? 'p-2' : 'p-4'}`}>
+          <nav className={`flex-1 space-y-2 ${isMapWorkspace && !mapSidebarExpanded ? 'md:p-2' : 'p-4'}`}>
             {navigationItems.map((item) => {
               const Icon = item.icon
               const isActive = currentPage === item.id
@@ -192,7 +192,7 @@ export default function Layout({ children }: LayoutProps) {
                   aria-label={getNestedTranslation(item.label)}
                   title={getNestedTranslation(item.label)}
                   className={`
-                    flex items-center rounded-lg text-left transition-colors ${isMapWorkspace && !mapSidebarExpanded ? 'w-12 justify-center px-0 py-3 md:py-2' : 'w-full space-x-3 px-3 py-3 md:py-2'}
+                    flex items-center rounded-lg text-left transition-colors ${isMapWorkspace && !mapSidebarExpanded ? 'md:w-12 md:justify-center md:px-0 md:py-2' : 'w-full space-x-3 px-3 py-3 md:py-2'}
                     ${isActive
                       ? 'bg-blue-800 text-white'
                       : 'text-blue-100 hover:bg-blue-800 hover:text-white'
@@ -200,7 +200,7 @@ export default function Layout({ children }: LayoutProps) {
                   `}
                 >
                   <Icon className="w-5 h-5 shrink-0" />
-                  <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : ''}`}>{getNestedTranslation(item.label)}</span>
+                  <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : ''}`}>{getNestedTranslation(item.label)}</span>
                 </button>
               )
             })}
@@ -208,17 +208,17 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Botón de cerrar sesión */}
           <div
-            className={`border-t border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'p-2' : 'p-4'}`}
+            className={`border-t border-blue-800 ${isMapWorkspace && !mapSidebarExpanded ? 'md:p-2' : 'p-4'}`}
             style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
           >
             <button
               onClick={handleSignOut}
               aria-label={t.nav.logout}
               title={t.nav.logout}
-              className={`flex items-center rounded-lg text-blue-100 transition-colors hover:bg-blue-800 hover:text-white ${isMapWorkspace && !mapSidebarExpanded ? 'w-12 justify-center px-0 py-2' : 'w-full space-x-3 px-3 py-2'}`}
+              className={`flex items-center rounded-lg text-blue-100 transition-colors hover:bg-blue-800 hover:text-white ${isMapWorkspace && !mapSidebarExpanded ? 'md:w-12 md:justify-center md:px-0 md:py-2' : 'w-full space-x-3 px-3 py-2'}`}
             >
               <LogOut className="w-5 h-5" />
-              <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'hidden md:hidden' : ''}`}>{t.nav.logout}</span>
+              <span className={`font-medium ${isMapWorkspace && !mapSidebarExpanded ? 'md:hidden' : ''}`}>{t.nav.logout}</span>
             </button>
           </div>
         </div>
