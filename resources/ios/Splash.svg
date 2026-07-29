@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
+  <rect width="2732" height="2732" fill="#1E3A8A"/>
+  <circle cx="1366" cy="1220" r="420" fill="#FFFFFF" fill-opacity="0.10"/>
+  <circle cx="1366" cy="1120" r="150" fill="#FFFFFF"/>
+  <path d="M1045 1515c26-182 151-298 321-298s295 116 321 298c7 50-31 94-82 94h-478c-51 0-89-44-82-94Z" fill="#FFFFFF"/>
+  <text x="1366" y="1860" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="150" font-weight="700" text-anchor="middle">Casmara CRM</text>
+  <text x="1366" y="2000" fill="#BFDBFE" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="64" font-weight="500" text-anchor="middle" letter-spacing="8">BELLEZA SIN LÍMITES</text>
+</svg>
