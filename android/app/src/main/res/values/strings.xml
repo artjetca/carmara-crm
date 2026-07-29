@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Casmara CRM</string>
+    <string name="title_activity_main">Casmara CRM</string>
+    <string name="package_name">com.casmara.crm</string>
+    <string name="custom_url_scheme">com.casmara.crm</string>
+</resources>

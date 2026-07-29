@@ -6,6 +6,9 @@
   "scripts": {
     "client:dev": "vite",
     "build": "tsc -b && vite build",
+    "android:sync": "PATH=/usr/local/bin:$PATH npm run build && cap sync android",
+    "android:apk": "npm run android:sync && cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew assembleDebug",
+    "android:bundle": "npm run android:sync && cd android && JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew bundleRelease",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
     "lint": "eslint .",
@@ -15,6 +18,7 @@
     "dev": "concurrently \"npm run client:dev\" \"npm run server:dev\""
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
     "@capacitor/core": "^8.4.2",
     "@capacitor/ios": "^8.4.2",
     "@changey/react-leaflet-markercluster": "^4.0.0-rc1",
