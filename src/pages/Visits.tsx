@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
@@ -356,47 +357,31 @@ export default function Visits() {
     }
   }
 
-  // Helpers for tel: links and safe HTML in InfoWindow
+  // Helper for tel: links
   const sanitizePhone = (phone?: string) => String(phone || '').replace(/\D+/g, '')
   const telHref = (phone?: string) => {
     const digits = sanitizePhone(phone)
     return digits ? `tel:${digits}` : ''
   }
-  const escapeHtml = (str?: string) =>
-    String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;')
-
-  const buildGoogleMapsSearchUrl = (customer: Customer) => {
-    const q = getAddress(customer)
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
-  }
-  const buildGoogleMapsDirectionsUrl = (customer: Customer) => {
-    const dest = getAddress(customer)
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`
-  }
 
   // Build a custom numbered SVG marker icon to avoid default label outlines
   const createNumberedMarkerIcon = (n: number) => {
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'>
+<svg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='0 0 44 44'>
   <defs>
     <filter id='shadow' x='-20%' y='-20%' width='140%' height='140%'>
       <feDropShadow dx='0' dy='1' stdDeviation='1' flood-color='rgba(0,0,0,0.25)'/>
     </filter>
   </defs>
-  <circle cx='17' cy='17' r='14' fill='#2563EB' filter='url(#shadow)' />
-  <text x='17' y='21' text-anchor='middle' font-family='system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif' font-size='14' font-weight='700' fill='#FFFFFF'>${n}</text>
+  <circle cx='22' cy='22' r='18' fill='#2563EB' filter='url(#shadow)' />
+  <text x='22' y='27' text-anchor='middle' font-family='system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif' font-size='15' font-weight='700' fill='#FFFFFF'>${n}</text>
 </svg>`
     const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
     const g = (window as any).google
     return {
       url,
-      scaledSize: new g.maps.Size(34, 34),
-      anchor: new g.maps.Point(17, 17),
+      scaledSize: new g.maps.Size(44, 44),
+      anchor: new g.maps.Point(22, 22),
     }
   }
 
@@ -465,6 +450,23 @@ export default function Visits() {
     window.setTimeout(refresh, 800)
   }, [])
 
+  // iOS WKWebView can leave Leaflet's canvas/tile panes blank after the mobile
+  // bottom sheet is opened, closed, or changes tabs. Refresh after each stage
+  // of the sheet animation and after the route marker count changes.
+  useEffect(() => {
+    if (mapProvider !== 'leaflet') return
+
+    const frameId = window.requestAnimationFrame(refreshLeafletTiles)
+    const timeoutIds = [180, 420, 850].map(delay =>
+      window.setTimeout(refreshLeafletTiles, delay)
+    )
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      timeoutIds.forEach(timeoutId => window.clearTimeout(timeoutId))
+    }
+  }, [mobileSheetTab, refreshLeafletTiles, routeCustomers.length, showDetails])
+
   // ── Unified distance recalculation (single entry point) ────
   const recalcRouteDistances = useCallback((
     customers?: RouteCustomer[],
@@ -532,16 +534,6 @@ export default function Visits() {
     setShowDetails(false)
   }, [])
 
-  const startMeasurementFromPoint = useCallback((point: RoutePoint) => {
-    setMeasurementOrigin(point)
-    setMeasurementDestination(null)
-    setMeasurementResult(null)
-    setMeasurementError(null)
-    setMeasurementStep('selecting-b')
-    setMobileSheetTab('clients')
-    setShowDetails(false)
-  }, [])
-
   const selectMeasurementPoint = useCallback((point: RoutePoint) => {
     if (measurementStep === 'selecting-a') {
       setMeasurementOrigin(point)
@@ -559,6 +551,11 @@ export default function Visits() {
       setShowDetails(false)
     }
   }, [measurementStep])
+
+  const openCustomerDetails = useCallback((customer: Customer) => {
+    setSelectedCustomer(customer)
+    setShowDetails(false)
+  }, [])
 
   const swapMeasurementPoints = useCallback(() => {
     if (!measurementOrigin || !measurementDestination) return
@@ -773,26 +770,13 @@ export default function Visits() {
               icon: createNumberedMarkerIcon(1),
               title: `${single.name}${single.phone ? ' • ' + single.phone : ''}`
             })
-            const infoHtml = `
-              <div class="space-y-3 text-[13px]">
-                <div class="border-b border-gray-200 pb-2">
-                  <div class="font-semibold text-gray-900">1. ${escapeHtml(single.name)}</div>
-                  ${single.company ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(single.company)}</div>` : ''}
-                </div>
-                <div class="space-y-2">
-                  ${single.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(single.address)}</div>` : ''}
-                  <div class="text-xs text-gray-500">${escapeHtml(displayCity(single) || single.city || single.province || '')}</div>
-                  ${(single.phone || (single as any).mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(single.phone || (single as any).mobile_phone)}</div>` : ''}
-                  ${single.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(single.email)}</div>` : ''}
-                </div>
-                <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
-                  ${(single.phone || (single as any).mobile_phone) ? `<a href="${telHref(single.phone || (single as any).mobile_phone)}" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md\">Llamar</a>` : ''}
-                  <a href="${buildGoogleMapsDirectionsUrl(single)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md">Direcciones</a>
-                  <a href="${buildGoogleMapsSearchUrl(single)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md">Google Maps</a>
-                </div>
-              </div>`
-            const info = new (window as any).google.maps.InfoWindow({ content: infoHtml })
-            marker.addListener('click', () => info.open({ anchor: marker, map }))
+            marker.addListener('click', () => {
+              if (measurementStep === 'selecting-a' || measurementStep === 'selecting-b') {
+                selectMeasurementPoint(routePointFromCoordinates('customer', single.name, position, single.id))
+                return
+              }
+              if (measurementStep === 'idle') openCustomerDetails(single)
+            })
             markersRef.current.push(marker)
             map.setCenter(position)
             map.setZoom(13)
@@ -874,27 +858,13 @@ export default function Visits() {
             icon: createNumberedMarkerIcon(idx + 1),
             title: `${c.name}${(c as any).phone ? ' • ' + (c as any).phone : ''}`
           })
-          const rc: any = c
-          const infoHtml = `
-            <div class="space-y-3 text-[13px]">
-              <div class="border-b border-gray-200 pb-2">
-                <div class="font-semibold text-gray-900">${idx + 1}. ${escapeHtml(rc.name)}</div>
-                ${rc.company ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(rc.company)}</div>` : ''}
-              </div>
-              <div class="space-y-2">
-                ${rc.address ? `<div class=\"text-xs text-gray-700\">${escapeHtml(rc.address)}</div>` : ''}
-                <div class="text-xs text-gray-500">${escapeHtml(displayCity(rc) || rc.city || rc.province || '')}</div>
-                ${(rc.phone || rc.mobile_phone) ? `<div class=\"text-xs text-gray-700\">${escapeHtml(rc.phone || rc.mobile_phone)}</div>` : ''}
-                ${rc.email ? `<div class=\"text-xs text-gray-700\">${escapeHtml(rc.email)}</div>` : ''}
-              </div>
-              <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
-                ${(rc.phone || rc.mobile_phone) ? `<a href="${telHref(rc.phone || rc.mobile_phone)}" class=\"inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md\">Llamar</a>` : ''}
-                <a href="${buildGoogleMapsDirectionsUrl(rc)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-green-50 text-green-600 hover:bg-green-100 rounded-md">Direcciones</a>
-                <a href="${buildGoogleMapsSearchUrl(rc)}" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-1 text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md">Google Maps</a>
-              </div>
-            </div>`
-          const info = new (window as any).google.maps.InfoWindow({ content: infoHtml })
-          marker.addListener('click', () => info.open({ anchor: marker, map }))
+          marker.addListener('click', () => {
+            if (measurementStep === 'selecting-a' || measurementStep === 'selecting-b') {
+              selectMeasurementPoint(routePointFromCoordinates('customer', c.name, position, c.id))
+              return
+            }
+            if (measurementStep === 'idle') openCustomerDetails(c)
+          })
           markersRef.current.push(marker)
           bounds.extend(position)
         })
@@ -914,7 +884,7 @@ export default function Visits() {
     }
     render()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapsApiKey, routeCustomers, mapProvider])
+  }, [mapsApiKey, routeCustomers, mapProvider, measurementStep, openCustomerDetails, selectMeasurementPoint])
 
   // Render route on Leaflet (OSM) with numbered markers and polyline
   useEffect(() => {
@@ -1067,10 +1037,10 @@ export default function Visits() {
         // Helper: numbered divIcon
         const createLeafletNumberedIcon = (n: number) =>
           L.divIcon({
-            html: `<div style="width:34px;height:34px;border-radius:17px;background:#2563EB;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,0.25)">${n}</div>`,
+            html: `<div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center"><div style="width:38px;height:38px;border-radius:19px;background:#2563EB;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 2px 5px rgba(0,0,0,0.3)">${n}</div></div>`,
             className: '',
-            iconSize: [34, 34],
-            iconAnchor: [17, 17],
+            iconSize: [44, 44],
+            iconAnchor: [22, 22],
           })
 
         // Place markers and build polyline path
@@ -1082,12 +1052,14 @@ export default function Visits() {
           marker.addTo(map)
           marker.on('click', (event) => {
             L.DomEvent.stopPropagation(event)
-            const point = routePointFromCoordinates('customer', c.name, pos, c.id)
-            if (measurementStep === 'idle') {
-              startMeasurementFromPoint(point)
+            const originalEvent = event.originalEvent as MouseEvent | undefined
+            originalEvent?.preventDefault()
+            originalEvent?.stopPropagation()
+            if (measurementStep === 'selecting-a' || measurementStep === 'selecting-b') {
+              selectMeasurementPoint(routePointFromCoordinates('customer', c.name, pos, c.id))
               return
             }
-            selectMeasurementPoint(point)
+            if (measurementStep === 'idle') openCustomerDetails(c)
           })
           leafletMarkersRef.current.push(marker)
         })
@@ -1124,7 +1096,7 @@ export default function Visits() {
 
     renderLeaflet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapProvider, routeCustomers, leafletReset, measurementStep])
+  }, [mapProvider, routeCustomers, leafletReset, measurementStep, openCustomerDetails, selectMeasurementPoint, loading])
 
   // 地圖真正全螢幕切換（使用瀏覽器 Fullscreen API）
   const toggleMapFullscreen = async () => {
@@ -2957,16 +2929,40 @@ export default function Visits() {
 
   // 打開客戶位置在 Google Maps
   const openInGoogleMaps = (customer: Customer) => {
-    const address = getAddress(customer)
-    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    const destination = getCustomerNavigationDestination(customer)
+    if (!destination) return
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`
     window.open(url, '_blank')
   }
 
   // 獲取到客戶的導航
   const getDirections = (customer: Customer) => {
-    const address = getAddress(customer)
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving`
+    const destination = getCustomerNavigationDestination(customer)
+    if (!destination) return
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`
     window.open(url, '_blank')
+  }
+
+  const hasCustomerNavigationData = (customer: Customer) => {
+    return Boolean(getCustomerNavigationDestination(customer))
+  }
+
+  const getCustomerDetailAddress = (customer: Customer) => {
+    const parts = [
+      customer.address,
+      (customer as any).cp || (customer as any).postal_code,
+      displayCity(customer),
+      displayProvince(customer),
+    ].filter(Boolean)
+    return parts.join(', ')
+  }
+
+  const getCustomerNavigationDestination = (customer: Customer) => {
+    const latitude = Number((customer as any).latitude ?? (customer as any).lat)
+    const longitude = Number((customer as any).longitude ?? (customer as any).lng)
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) return `${latitude},${longitude}`
+    const address = getCustomerDetailAddress(customer)
+    return address ? `${address}, España` : ''
   }
 
   // 格式化地址
@@ -3632,7 +3628,11 @@ export default function Visits() {
               >
                 {measurementStep === 'idle' ? (
                   <button
-                    onClick={startMeasurement}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      startMeasurement()
+                    }}
                     title="Medir distancia"
                     aria-label="Medir distancia"
                     className="flex h-12 w-12 items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
@@ -3712,7 +3712,15 @@ export default function Visits() {
                       <button onClick={openMeasurementNavigation} className="min-h-11 border-r border-gray-100 text-xs font-medium text-emerald-700">Navegar</button>
                       <button onClick={swapMeasurementPoints} className="min-h-11 border-r border-gray-100 text-xs font-medium text-gray-700">Cambiar</button>
                       <button onClick={() => { setMeasurementDestination(null); setMeasurementResult(null); setMeasurementError(null); setMeasurementStep('selecting-b'); setMobileSheetTab('clients'); setShowDetails(true) }} className="min-h-11 border-r border-gray-100 text-xs font-medium text-gray-700">Cambiar B</button>
-                      <button onClick={startMeasurement} className="flex min-h-11 items-center justify-center text-blue-700" aria-label="Nueva medición">
+                      <button
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          startMeasurement()
+                        }}
+                        className="flex min-h-11 items-center justify-center text-blue-700"
+                        aria-label="Nueva medición"
+                      >
                         <Ruler className="h-5 w-5" />
                       </button>
                     </div>
@@ -3929,25 +3937,35 @@ export default function Visits() {
                       </div>
                     ) : (
                       (measurementStep === 'idle' ? filteredCustomers : measurementCustomers).slice(0, 80).map((customer) => (
-                        <div key={customer.id} className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
-                          <div className="min-w-0 flex-1">
+                        <div
+                          key={customer.id}
+                          className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm"
+                        >
+                          <button
+                            type="button"
+                            aria-label={measurementStep === 'idle'
+                              ? `Abrir ficha de ${customer.name}`
+                              : `Seleccionar ${customer.name} para medir`}
+                            onClick={() => {
+                              if (measurementStep === 'selecting-a' || measurementStep === 'selecting-b') {
+                                selectCustomerForMeasurement(customer)
+                                return
+                              }
+                              if (measurementStep === 'idle') openCustomerDetails(customer)
+                            }}
+                            className="min-h-11 min-w-0 flex-1 rounded-lg text-left transition active:scale-[0.99] active:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          >
                             <div className="truncate text-sm font-medium text-gray-900">{customer.name}</div>
                             <div className="truncate text-xs text-gray-500">{customer.company}</div>
                             <div className="mt-1 truncate text-xs text-gray-500">
                               {[displayCity(customer), displayProvince(customer)].filter(Boolean).join(', ')}
                             </div>
-                          </div>
-                          {(customer.phone || (customer as any).mobile_phone) && (
-                            <a
-                              href={telHref(customer.phone || (customer as any).mobile_phone)}
-                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600"
-                              aria-label="Llamar"
-                            >
-                              <Phone className="h-4 w-4" />
-                            </a>
-                          )}
+                          </button>
                           <button
-                            onClick={() => {
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
                               if (measurementStep !== 'idle') {
                                 selectCustomerForMeasurement(customer)
                               } else {
@@ -3955,8 +3973,8 @@ export default function Visits() {
                                 setMobileSheetTab('route')
                               }
                             }}
-                            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
-                            aria-label={measurementStep === 'idle' ? 'Agregar a ruta' : 'Elegir para medir'}
+                            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                            aria-label={measurementStep === 'idle' ? `Agregar ${customer.name} a la ruta` : `Medir distancia hasta ${customer.name}`}
                           >
                             {measurementStep === 'idle' ? <Plus className="h-4 w-4" /> : <Ruler className="h-4 w-4" />}
                           </button>
@@ -3969,6 +3987,94 @@ export default function Visits() {
             </div>
           </div>
         </div>
+      )}
+
+      {selectedCustomer && createPortal(
+        <div className="fixed inset-0 z-[1300] flex items-end md:hidden" role="dialog" aria-modal="true" aria-labelledby="mobile-customer-detail-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/45"
+            onClick={() => setSelectedCustomer(null)}
+            aria-label="Cerrar detalles del cliente"
+          />
+          <section className="relative z-10 max-h-[85vh] w-full overflow-y-auto rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white/95 px-4 py-3 backdrop-blur">
+              <div className="min-w-0">
+                <div className="text-xs font-medium uppercase tracking-wide text-blue-600">Detalles del cliente</div>
+                <h2 id="mobile-customer-detail-title" className="truncate text-lg font-semibold text-gray-900">{selectedCustomer.name}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCustomer(null)}
+                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600 transition active:scale-95"
+                aria-label="Cerrar detalles del cliente"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4 px-4 py-4">
+              {selectedCustomer.company && <p className="text-sm font-medium text-gray-700">{selectedCustomer.company}</p>}
+              <dl className="space-y-3 rounded-xl bg-gray-50 p-4 text-sm">
+                {(selectedCustomer.phone || (selectedCustomer as any).mobile_phone) && (
+                  <div>
+                    <dt className="text-xs text-gray-500">Teléfono</dt>
+                    <dd className="mt-0.5 font-medium text-gray-800">{selectedCustomer.phone || (selectedCustomer as any).mobile_phone}</dd>
+                  </div>
+                )}
+                {selectedCustomer.email && (
+                  <div>
+                    <dt className="text-xs text-gray-500">Email</dt>
+                    <dd className="mt-0.5 break-all text-gray-800">{selectedCustomer.email}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-xs text-gray-500">Dirección</dt>
+                  <dd className="mt-0.5 text-gray-800">{getCustomerDetailAddress(selectedCustomer) || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-gray-500">Contrato</dt>
+                  <dd className="mt-0.5 text-gray-800">{selectedCustomer.contrato || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-gray-500">Notas</dt>
+                  <dd className="mt-0.5 whitespace-pre-wrap text-gray-800">{selectedCustomer.notes || '—'}</dd>
+                </div>
+              </dl>
+              <div className="flex flex-wrap gap-3">
+                {(selectedCustomer.phone || (selectedCustomer as any).mobile_phone) && (
+                  <a
+                    href={telHref(selectedCustomer.phone || (selectedCustomer as any).mobile_phone)}
+                    className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white active:bg-blue-700"
+                    aria-label={`Llamar a ${selectedCustomer.name}`}
+                  >
+                    <Phone className="h-4 w-4" /> Llamar
+                  </a>
+                )}
+                {hasCustomerNavigationData(selectedCustomer) && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openInGoogleMaps(selectedCustomer)}
+                      className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-50 px-3 text-sm font-semibold text-blue-700 active:bg-blue-100"
+                      aria-label={`Abrir ${selectedCustomer.name} en el mapa`}
+                    >
+                      <ExternalLink className="h-4 w-4" /> Abrir mapa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => getDirections(selectedCustomer)}
+                      className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white active:bg-emerald-700"
+                      aria-label={`Navegar hasta ${selectedCustomer.name}`}
+                    >
+                      <Navigation className="h-4 w-4" /> Cómo llegar
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>,
+        document.body
       )}
 
       {/* Modal para guardar ruta */}
