@@ -245,6 +245,7 @@ export default function Visits() {
       leafletTileLayerRef.current = null
       leafletMarkersRef.current.forEach(m => { try { m.remove() } catch {} })
       leafletMarkersRef.current = []
+      leafletLastFitKeyRef.current = ''
       if (leafletPolylineRef.current) {
         try { leafletPolylineRef.current.remove() } catch {}
         leafletPolylineRef.current = null
@@ -432,6 +433,9 @@ export default function Visits() {
   const isManualResetRef = useRef(false)
   // Cache coords per customer id when in Leaflet mode to avoid re-geocoding
   const leafletCoordsRef = useRef<Record<string, { lat: number; lng: number }>>({})
+  // Last viewport-fit key: avoids re-fitting the map when only distances were
+  // enriched (same route composition) — repeated fitBounds = visible jumping
+  const leafletLastFitKeyRef = useRef<string>('')
   // Calculation guards to prevent loops / redundant recalculations in Leaflet mode
   const isCalculatingRef = useRef(false)
   const lastCalcKeyRef = useRef<string>('')
@@ -952,6 +956,10 @@ export default function Visits() {
           positionsByIdx[i] = { lat: base.lat + delta, lng: base.lng + delta }
         }
 
+        // Snapshot pre-jitter positions: dispersion below mutates positionsByIdx,
+        // and only pre-jitter coords may be cached as the source of truth
+        const preJitterPositions = positionsByIdx.map(p => (p ? { ...p } : p))
+
         // 城市內近距離聚合 + 徑向分散，避免遮擋，提升同城識別度
         const mapObj = leafletMapInstanceRef.current
         if (mapObj) {
@@ -992,6 +1000,15 @@ export default function Visits() {
             cityGroups.set(key, list)
           })
 
+          // Deterministic dispersion radius derived from the route's own extent.
+          // Using the map's CURRENT bounds here fed back into itself: every
+          // re-render (e.g. after distance enrichment) produced a different
+          // radius and fitBounds moved the map again — visible jumping.
+          const routeLatSpan = (() => {
+            const lats = positionsByIdx.filter(Boolean).map(p => p!.lat)
+            return lats.length ? Math.max(...lats) - Math.min(...lats) : 0
+          })()
+
           cityGroups.forEach((idxs) => {
             const clusters = fromGroup(idxs)
             clusters.forEach((cl) => {
@@ -1006,9 +1023,7 @@ export default function Visits() {
 
               const baseLatRad = center.lat * Math.PI / 180
               const step = (2 * Math.PI) / cl.length
-              const b = mapObj.getBounds?.()
-              const latSpan = b ? Math.abs(b.getNorth() - b.getSouth()) : 0.0
-              const base = Math.max(0.0015, latSpan * 0.0025) // 比此前略大，城市內更易分辨
+              const base = Math.max(0.0015, routeLatSpan * 0.0025) // 比此前略大，城市內更易分辨
               const radius = base + 0.0002 * Math.max(0, cl.length - 1)
               cl.forEach((idx, i) => {
                 const angle = step * i
@@ -1022,7 +1037,10 @@ export default function Visits() {
         // 生成最終條目並寫入內存快取
         const jittered: Array<{ c: RouteCustomer; idx: number; pos: { lat: number; lng: number } }> = positionsByIdx.map((pos, idx) => {
           const c = routeCustomers[idx]
-          try { leafletCoordsRef.current[c.id] = { lat: pos!.lat, lng: pos!.lng } } catch {}
+          // Cache the PRE-jitter position: jittered display coords must not
+          // become the source of truth or each render drifts further
+          const realPos = preJitterPositions[idx]
+          if (realPos) { try { leafletCoordsRef.current[c.id] = { lat: realPos.lat, lng: realPos.lng } } catch {} }
           return { c, idx, pos: pos! }
         })
 
@@ -1070,11 +1088,16 @@ export default function Visits() {
           leafletPolylineRef.current.addTo(map)
         }
 
-        // Fit bounds with padding
+        // Fit bounds with padding — only when the route composition changed.
+        // Distance enrichment re-renders must not move the viewport again.
         if (measurementStep === 'idle') {
           try {
-            const bounds = L.latLngBounds(latlngs as any)
-            map.fitBounds(bounds, { padding: [16, 16] })
+            const fitKey = jittered.map(e => `${e.idx}:${e.pos.lat.toFixed(5)},${e.pos.lng.toFixed(5)}`).join('>')
+            if (leafletLastFitKeyRef.current !== fitKey) {
+              leafletLastFitKeyRef.current = fitKey
+              const bounds = L.latLngBounds(latlngs as any)
+              map.fitBounds(bounds, { padding: [16, 16] })
+            }
           } catch {}
         }
 
