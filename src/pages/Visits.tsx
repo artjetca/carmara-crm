@@ -963,7 +963,12 @@ export default function Visits() {
         // 城市內近距離聚合 + 徑向分散，避免遮擋，提升同城識別度
         const mapObj = leafletMapInstanceRef.current
         if (mapObj) {
-          const toPoint = (p: { lat: number; lng: number }) => mapObj.latLngToLayerPoint([p.lat, p.lng])
+          // Project at a FIXED zoom so clustering is independent of the map's
+          // current zoom. Using layer points meant fitBounds changed the zoom,
+          // the next re-render clustered differently, markers moved, the fit
+          // key changed and fitBounds ran again — visible jumping on device.
+          const CLUSTER_ZOOM = 12
+          const toPoint = (p: { lat: number; lng: number }) => mapObj.project([p.lat, p.lng], CLUSTER_ZOOM)
           const fromGroup = (idxs: number[]) => {
             // 根據像素距離做簡單聚類（單鏈法）
             const clusters: number[][] = []
