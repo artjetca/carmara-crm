@@ -2365,7 +2365,18 @@ export default function Maps() {
                     {!searchLoading && !searchError && searchSuggestions.map(client => (
                       <button key={client.id} onClick={() => {
                         if (distanceMode) selectDistanceCustomer(client)
-                        else { setSheetOpen(true); flyToCustomer(client) }
+                        else {
+                          // Picking a customer: dismiss the search list and the
+                          // sheet so the map (and neighbouring markers) is visible
+                          setSearchTerm('')
+                          setMobileListMode('all')
+                          if (cityDetailMode) {
+                            setCityDetailMode(false)
+                            setSelectedCity('')
+                          }
+                          setSheetOpen(false)
+                          flyToCustomer(client)
+                        }
                       }} className="flex w-full items-center justify-between border-b border-gray-100 px-4 py-3 text-left last:border-0 active:bg-blue-50">
                         <span className="min-w-0"><span className="block truncate text-sm font-medium text-gray-900">{client.name}</span><span className="block truncate text-xs text-gray-500">{[client.city, client.province].filter(Boolean).join(', ')}</span></span>
                         <span className="ml-3 text-xs text-gray-500">{client.phone ? String(client.phone).slice(-4) : hasRenderableCoordinates(client) ? 'en mapa' : 'sin mapa'}</span>
@@ -2554,6 +2565,14 @@ export default function Maps() {
                           onClick={() => {
                             setSheetOpen(false)
                             setMobileListMode('all')
+                            // Clear the search filter so neighbouring markers
+                            // reappear and the suggestion list stops covering
+                            // the map once a customer is picked
+                            setSearchTerm('')
+                            if (cityDetailMode) {
+                              setCityDetailMode(false)
+                              setSelectedCity('')
+                            }
                             flyToCustomer(client)
                           }}
                           className="flex w-full items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition-colors active:bg-blue-50"
