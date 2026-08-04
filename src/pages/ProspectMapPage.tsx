@@ -38,6 +38,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { VoiceSearchButton, type VoiceSearchStatus } from '../components/VoiceSearchButton'
+import { rankProspectsForVisit, type ProspectSuggestion } from '../services/aiAssistClient'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
 import { MapDrawer, MapFocusButton, MapWorkspaceHeader } from '../components/MapWorkspace'
 
@@ -427,6 +428,13 @@ export default function ProspectMapPage() {
   const [filterProvince, setFilterProvince]   = useState<string>('')
   const [filterCity, setFilterCity]           = useState<string>('')
 
+  // AI ranking of the prospects currently on screen.
+  const [aiRanking, setAiRanking] = useState<ProspectSuggestion[]>([])
+  const [aiSummary, setAiSummary] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [showAiPanel, setShowAiPanel] = useState(false)
+
   // Modals
   const [showFormModal, setShowFormModal]     = useState(false)
   const [editProspect, setEditProspect]       = useState<Prospect | null>(null)
@@ -667,6 +675,50 @@ export default function ProspectMapPage() {
       return true
     })
   }, [prospects, filterProvince, filterCity, searchTerm])
+
+  /**
+   * Ask which of the prospects currently on screen deserve a visit first.
+   * Only the fields needed to prioritise are sent; notes and private data
+   * stay in the CRM.
+   */
+  const runAiRanking = useCallback(async () => {
+    if (aiLoading || filtered.length === 0) return
+
+    setAiLoading(true)
+    setAiError('')
+    setShowAiPanel(true)
+
+    try {
+      const result = await rankProspectsForVisit({
+        prospects: filtered.slice(0, 40).map(prospect => ({
+          id: prospect.id,
+          business_name: prospect.business_name,
+          category: prospect.category,
+          city: prospect.city,
+          rating: prospect.rating ?? null,
+          reviews_count: prospect.reviews_count ?? null,
+          phone: prospect.phone,
+          website: prospect.website,
+        })),
+        city: filterCity || filterProvince,
+      })
+
+      if (result.status !== 'ok' || result.ranking.length === 0) {
+        setAiError('No se ha podido priorizar la lista. Inténtalo de nuevo.')
+        setAiRanking([])
+        setAiSummary('')
+        return
+      }
+
+      setAiRanking(result.ranking)
+      setAiSummary(result.summary)
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'No se pudo analizar los prospectos.')
+      setAiRanking([])
+    } finally {
+      setAiLoading(false)
+    }
+  }, [aiLoading, filterCity, filterProvince, filtered])
 
   const filteredCustomers = useMemo(() => {
     const q = searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -1433,7 +1485,99 @@ export default function ProspectMapPage() {
             <X className="w-3 h-3" /> Limpiar filtros
           </button>
         )}
+
+        {/* Prioritise the visible prospects with the assistant */}
+        <button
+          onClick={() => void runAiRanking()}
+          disabled={aiLoading || filtered.length === 0}
+          title="¿A quién visito primero?"
+          className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 disabled:opacity-50"
+        >
+          {aiLoading ? (
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" />
+          )}
+          ¿A quién visito primero?
+        </button>
       </div>
+
+      {/* Sugerencias del asistente: a quién visitar primero */}
+      {showAiPanel && (
+        <div className="border-b border-emerald-100 bg-emerald-50/60 px-3 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-emerald-900">
+                <Sparkles className="h-4 w-4" /> Prioridad de visitas
+              </h3>
+              {aiSummary && <p className="mt-1 text-xs text-emerald-800">{aiSummary}</p>}
+            </div>
+            <button
+              onClick={() => setShowAiPanel(false)}
+              aria-label="Cerrar sugerencias"
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-emerald-700 hover:bg-emerald-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {aiLoading && (
+            <p className="mt-2 flex items-center gap-2 text-xs text-emerald-800">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Analizando {filtered.length} prospectos…
+            </p>
+          )}
+
+          {aiError && <p className="mt-2 text-xs text-red-700">{aiError}</p>}
+
+          {!aiLoading && aiRanking.length > 0 && (
+            <ol className="mt-2 space-y-2">
+              {aiRanking.map((item, index) => (
+                <li
+                  key={item.prospect_id}
+                  className="rounded-lg border border-emerald-100 bg-white p-2.5 shadow-sm"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => {
+                            // Selecting from here reuses the normal flow, so
+                            // the map and the detail card stay in sync.
+                            setSelectedId(item.prospect_id)
+                            const target = prospects.find(p => p.id === item.prospect_id)
+                            if (target?.lat && target?.lng) setFlyTo([target.lat, target.lng])
+                          }}
+                          className="truncate text-sm font-medium text-gray-900 hover:text-emerald-700"
+                        >
+                          {item.business_name}
+                        </button>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            item.priority === 'high'
+                              ? 'bg-red-100 text-red-700'
+                              : item.priority === 'low'
+                                ? 'bg-gray-100 text-gray-600'
+                                : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {item.priority === 'high' ? 'Alta' : item.priority === 'low' ? 'Baja' : 'Media'}
+                        </span>
+                      </div>
+                      {item.reason && <p className="mt-1 text-xs text-gray-600">{item.reason}</p>}
+                      {item.opening_line && (
+                        <p className="mt-1 text-xs italic text-emerald-800">«{item.opening_line}»</p>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
 
       {/* ── Main content ── */}
       <div className="relative flex flex-1 overflow-hidden">

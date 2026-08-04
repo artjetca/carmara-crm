@@ -8,6 +8,7 @@ import {
   Crosshair,
   Expand,
   ExternalLink,
+  Loader2,
   LocateFixed,
   Mail,
   MapPin,
@@ -15,6 +16,7 @@ import {
   Phone,
   Search,
   Ruler,
+  Sparkles,
   Users,
   X,
 } from 'lucide-react'
@@ -74,6 +76,7 @@ import {
   getLocationAccuracyLabel,
 } from '../components/map/VehicleLocationIcon'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
+import { interpretMapRequest } from '../services/aiAssistClient'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
 import { MapDrawer, MapFocusButton } from '../components/MapWorkspace'
 import {
@@ -291,6 +294,9 @@ export default function Maps() {
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   // Customer whose popup should open as soon as its marker is (re)mounted.
   const pendingPopupClientIdRef = useRef<string | null>(null)
+  // Natural-language map search ("clientes de Huelva sin ubicación").
+  const [aiSearchLoading, setAiSearchLoading] = useState(false)
+  const [aiSearchNote, setAiSearchNote] = useState('')
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
   const searchAbortRef = useRef<AbortController | null>(null)
@@ -976,6 +982,50 @@ export default function Maps() {
     setSheetOpen(true)
     invalidateMapSoon()
   }, [invalidateMapSoon])
+
+  /**
+   * Interpret a free-text request ("clientes de Huelva sin ubicación") and
+   * apply it to the filters the map already supports. The backend only ever
+   * returns provinces/cities that exist, so this cannot point the map at a
+   * place with no customers.
+   */
+  const runAiSearch = useCallback(async () => {
+    const query = searchTerm.trim()
+    if (!query || aiSearchLoading) return
+
+    setAiSearchLoading(true)
+    setAiSearchNote('')
+
+    try {
+      const result = await interpretMapRequest({
+        query,
+        provinces,
+        cities: getFilteredCities(),
+      })
+
+      if (result.status !== 'ok') {
+        setAiSearchNote('No he entendido la búsqueda. Prueba con una ciudad o un nombre.')
+        return
+      }
+
+      const { filters } = result
+      setCityDetailMode(false)
+      setSelectedProvince(filters.province)
+      setSelectedCity(filters.city)
+      setSearchTerm(filters.search_terms)
+      setMobileListMode(filters.only_unmapped ? 'unmapped' : 'all')
+      setSheetSize('half')
+      setSheetOpen(true)
+      setAiSearchNote(filters.notes)
+      invalidateMapSoon()
+    } catch (error) {
+      setAiSearchNote(
+        error instanceof Error ? error.message : 'No se pudo interpretar la búsqueda.'
+      )
+    } finally {
+      setAiSearchLoading(false)
+    }
+  }, [aiSearchLoading, getFilteredCities, invalidateMapSoon, searchTerm])
 
   useEffect(() => {
     invalidateMapSoon()
@@ -2440,8 +2490,31 @@ export default function Maps() {
                           setSheetOpen(true)
                         }
                       }}
+                      onKeyDown={event => {
+                        // Enter runs the natural-language interpretation so the
+                        // salesperson can just say what they want and confirm.
+                        if (event.key === 'Enter' && !distanceMode) {
+                          event.preventDefault()
+                          void runAiSearch()
+                        }
+                      }}
                       className="h-[52px] w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
                     />
+                    {!distanceMode && searchTerm.trim() && (
+                      <button
+                        onClick={() => void runAiSearch()}
+                        disabled={aiSearchLoading}
+                        aria-label="Buscar con asistente"
+                        title="Buscar con asistente"
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700 active:bg-blue-100 disabled:opacity-50"
+                      >
+                        {aiSearchLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" />
+                        )}
+                      </button>
+                    )}
                     <VoiceSearchButton onTranscript={setSearchTerm} />
                     <button
                       onClick={() => {
@@ -2468,6 +2541,19 @@ export default function Maps() {
                   >
                     <Search className="h-5 w-5 text-gray-600" />
                   </button>
+                )}
+                {aiSearchNote && !distanceMode && (
+                  <div className="mt-2 flex items-start gap-2 rounded-xl border border-blue-100 bg-white/95 px-3 py-2 text-xs text-blue-800 shadow-md backdrop-blur-md">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="min-w-0 flex-1">{aiSearchNote}</span>
+                    <button
+                      onClick={() => setAiSearchNote('')}
+                      aria-label="Cerrar aviso"
+                      className="-mr-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-blue-700 active:bg-blue-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 )}
                 {mapPointSelectionMode && (
                   <div className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-full border border-blue-100 bg-white/95 px-3 text-xs font-medium text-blue-700 shadow-md backdrop-blur-md">
