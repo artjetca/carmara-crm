@@ -21,6 +21,7 @@
     "@capacitor/android": "^8.4.2",
     "@capacitor/core": "^8.4.2",
     "@capacitor/ios": "^8.4.2",
+    "@capgo/capacitor-speech-recognition": "^8.1.10",
     "@changey/react-leaflet-markercluster": "^4.0.0-rc1",
     "@react-google-maps/api": "^2.20.7",
     "@supabase/auth-ui-react": "^0.4.7",

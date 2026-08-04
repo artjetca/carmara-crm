@@ -28,6 +28,10 @@
 	<false/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Casmara CRM utiliza tu ubicación para ordenar clientes cercanos, calcular rutas y mostrar tu posición en el mapa.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Casmara CRM utiliza el micrófono para buscar clientes dictando su nombre, teléfono o ciudad.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Casmara CRM convierte tu voz en texto para buscar clientes sin escribir.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
