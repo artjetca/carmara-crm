@@ -1771,7 +1771,7 @@ export default function Maps() {
                   defaultCenter={defaultCenter as [number, number]}
                   filterProvince={selectedProvince}
                   filterCity={selectedCity}
-                  suspendAutoFit={distanceMode}
+                  suspendAutoFit={distanceMode || Boolean(selectedCustomerId)}
                 />
                 <TileLayer
                   url={mapTileProvider.url}
