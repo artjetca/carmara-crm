@@ -280,6 +280,9 @@ export default function Maps() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetSize, setSheetSize] = useState<MobileSheetSize>('half')
   const [mobileListMode, setMobileListMode] = useState<MobileListMode>('all')
+  // Mobile search stays as a single icon until tapped; when a customer is
+  // selected it collapses again so the marker popup keeps the whole header.
+  const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false)
   const mapRef = useRef<LeafletMap | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
   const geocodeAttemptedRef = useRef(new Set<string>())
@@ -943,6 +946,13 @@ export default function Maps() {
     setSheetOpen(true)
   }, [])
 
+  const expandMobileSearch = useCallback(() => {
+    setMobileSearchExpanded(true)
+    setSheetSize('half')
+    setSheetOpen(true)
+    invalidateMapSoon()
+  }, [invalidateMapSoon])
+
   useEffect(() => {
     invalidateMapSoon()
   }, [invalidateMapSoon, sheetOpen, selectedCustomerId])
@@ -1191,6 +1201,9 @@ export default function Maps() {
   const flyToCustomer = useCallback(
     async (customer: ResolvedMapClient) => {
       setSelectedCustomerId(customer.id)
+      // Collapse the mobile search bar back to its icon so the header area
+      // is free for the marker popup above the pin.
+      setMobileSearchExpanded(false)
 
       let target = customer
       if (!getClientRenderableCoordinates(customer)) {
@@ -1224,7 +1237,9 @@ export default function Maps() {
     const onlyClient = resolvedCustomers[0]
     if (!onlyClient || !hasRenderableCoordinates(onlyClient) || autoFocusedSearchRef.current === searchTerm) return
     autoFocusedSearchRef.current = searchTerm
-    setSheetOpen(true)
+    // The marker popup already shows the customer's info; keep the sheet
+    // closed so it does not cover the map after flying to the result.
+    setSheetOpen(false)
     flyToCustomer(onlyClient).catch(console.error)
   }, [flyToCustomer, resolvedCustomers, searchActive, searchTerm])
 
@@ -2282,39 +2297,43 @@ export default function Maps() {
 
               {/* ── Superposiciones móviles (estilo app, solo <md) ── */}
 
-              {/* Barra de búsqueda flotante */}
+              {/* Búsqueda flotante: solo un icono hasta que se toca; cuando
+                  hay un cliente seleccionado permanece colapsada para que el
+                  popup del marcador tenga libre la parte superior. */}
               <div
-                className="absolute inset-x-3 z-[1010] md:hidden"
+                className={`absolute z-[1010] md:hidden ${mobileSearchExpanded && !selectedCustomer ? 'inset-x-3' : 'left-3'}`}
                 style={{ top: 'calc(env(safe-area-inset-top) + 12px)' }}
               >
-                <div className="flex min-h-[52px] items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
-                  <Search className="h-5 w-5 flex-shrink-0 text-gray-500" />
-                  <input
-                    type="text"
-                    placeholder={distanceMode
-                      ? distanceModeState === 'selecting-a'
-                        ? 'Buscar punto A'
-                        : 'Buscar punto B'
-                      : 'Buscar por nombre, teléfono, ciudad…'}
-                    value={searchTerm}
-                    onChange={event => {
-                      if (cityDetailMode) {
-                        setCityDetailMode(false)
-                        setSelectedCity('')
-                      }
-                      setMobileListMode('all')
-                      setSearchTerm(event.target.value)
-                    }}
-                    onFocus={() => {
-                      if (distanceMode) {
-                        setMobileMapSheet('none')
-                      } else {
-                        setSheetOpen(true)
-                      }
-                    }}
-                    className="h-[52px] w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
-                  />
-                  {searchTerm && (
+                {mobileSearchExpanded && !selectedCustomer ? (
+                  <div className="flex min-h-[52px] items-center gap-2 rounded-full border border-white/60 bg-white/85 px-4 shadow-lg backdrop-blur-md">
+                    <Search className="h-5 w-5 flex-shrink-0 text-gray-500" />
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder={distanceMode
+                        ? distanceModeState === 'selecting-a'
+                          ? 'Buscar punto A'
+                          : 'Buscar punto B'
+                        : 'Buscar por nombre, teléfono, ciudad…'}
+                      value={searchTerm}
+                      onChange={event => {
+                        if (cityDetailMode) {
+                          setCityDetailMode(false)
+                          setSelectedCity('')
+                        }
+                        setMobileListMode('all')
+                        setSearchTerm(event.target.value)
+                      }}
+                      onFocus={() => {
+                        if (distanceMode) {
+                          setMobileMapSheet('none')
+                        } else {
+                          setSheetOpen(true)
+                        }
+                      }}
+                      className="h-[52px] w-full bg-transparent text-[15px] text-gray-900 placeholder-gray-500 focus:outline-none"
+                    />
+                    <VoiceSearchButton onTranscript={setSearchTerm} />
                     <button
                       onClick={() => {
                         setMobileListMode('all')
@@ -2323,14 +2342,24 @@ export default function Maps() {
                           setSelectedCity('')
                         }
                         setSearchTerm('')
+                        setMobileSearchExpanded(false)
                       }}
+                      aria-label="Cerrar búsqueda"
                       className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
                     >
                       <X className="h-4 w-4" />
                     </button>
-                  )}
-                  <VoiceSearchButton onTranscript={setSearchTerm} />
-                </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={expandMobileSearch}
+                    aria-label="Abrir búsqueda de clientes"
+                    title="Buscar"
+                    className="flex h-[52px] w-[52px] items-center justify-center rounded-full border border-white/60 bg-white/85 shadow-lg backdrop-blur-md transition active:scale-95"
+                  >
+                    <Search className="h-5 w-5 text-gray-600" />
+                  </button>
+                )}
                 {mapPointSelectionMode && (
                   <div className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-full border border-blue-100 bg-white/95 px-3 text-xs font-medium text-blue-700 shadow-md backdrop-blur-md">
                     <Crosshair className="h-4 w-4" />
@@ -2470,71 +2499,14 @@ export default function Maps() {
                 </div>
               )}
 
-              {/* Píldora resumen / hoja inferior */}
-              {/* Ficha del cliente seleccionado (móvil): al elegir un cliente en
-                  la búsqueda o tocar su marcador, mostramos sus datos aquí sin
-                  tapar el mapa ni sus vecinos. */}
-              {!distanceMode && !sheetOpen && !pendingMapPoint && selectedCustomer && (
-                <div
-                  className="absolute inset-x-3 z-[1012] md:hidden"
-                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
-                >
-                  <div className="overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-2xl backdrop-blur-md">
-                    <div className="flex items-start justify-between gap-3 px-4 pt-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-[15px] font-semibold text-gray-900">{selectedCustomer.name}</div>
-                        {selectedCustomer.company && (
-                          <div className="truncate text-xs text-gray-600">{selectedCustomer.company}</div>
-                        )}
-                        <div className="truncate text-xs text-gray-500">
-                          {[selectedCustomer.city, selectedCustomer.province].filter(Boolean).join(', ')}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setSelectedCustomerId(null)}
-                        aria-label="Cerrar ficha del cliente"
-                        className="-mr-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
-                    </div>
-                    <div className="px-4 pb-1 pt-2 text-xs text-gray-700">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-                        <span className="min-w-0">{selectedCustomer.address}</span>
-                      </div>
-                      {selectedCustomer.distanceFromUser !== null && (
-                        <div className="mt-1 text-blue-700">
-                          {formatDistanceKm(selectedCustomer.distanceFromUser, '')} desde mi ubicación
-                        </div>
-                      )}
-                      {selectedCustomer.geocodeStatus === 'approximate' && (
-                        <div className="mt-1 text-amber-700">Ubicación aproximada</div>
-                      )}
-                    </div>
-                    <div className="flex gap-2 px-4 pb-3 pt-2">
-                      {selectedCustomer.phone && (
-                        <a
-                          href={`tel:${selectedCustomer.phone}`}
-                          className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 text-sm font-semibold text-white active:bg-blue-700"
-                        >
-                          <Phone className="h-4 w-4" /> Llamar
-                        </a>
-                      )}
-                      <button
-                        onClick={() => window.open(buildMapsDirectionsUrl(selectedCustomer), '_blank')}
-                        className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-600 text-sm font-semibold text-white active:bg-green-700"
-                      >
-                        <Navigation className="h-4 w-4" /> Navegar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Píldora resumen / hoja inferior
+                  Nota: en móvil la información del cliente seleccionado la
+                  muestra el popup del marcador (sobre el pin); no hay ficha
+                  flotante adicional. */}
 
               {!distanceMode && (!sheetOpen && !pendingMapPoint ? (
                 <div
-                  className={`absolute inset-x-0 z-[1010] flex justify-center md:hidden ${selectedCustomer ? 'hidden' : ''}`}
+                  className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
                 >
                   <div className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-white/60 bg-white/90 text-xs font-medium text-gray-800 shadow-xl backdrop-blur-md">
