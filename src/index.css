@@ -20,6 +20,8 @@ body {
   position: fixed;
   inset: 0;
   -webkit-text-size-adjust: 100%;
+  /* Stops iOS double-tap-to-zoom without intercepting taps */
+  touch-action: pan-x pan-y;
 }
 
 #root {

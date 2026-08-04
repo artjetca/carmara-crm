@@ -2471,9 +2471,70 @@ export default function Maps() {
               )}
 
               {/* Píldora resumen / hoja inferior */}
+              {/* Ficha del cliente seleccionado (móvil): al elegir un cliente en
+                  la búsqueda o tocar su marcador, mostramos sus datos aquí sin
+                  tapar el mapa ni sus vecinos. */}
+              {!distanceMode && !sheetOpen && !pendingMapPoint && selectedCustomer && (
+                <div
+                  className="absolute inset-x-3 z-[1012] md:hidden"
+                  style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
+                >
+                  <div className="overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-2xl backdrop-blur-md">
+                    <div className="flex items-start justify-between gap-3 px-4 pt-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-[15px] font-semibold text-gray-900">{selectedCustomer.name}</div>
+                        {selectedCustomer.company && (
+                          <div className="truncate text-xs text-gray-600">{selectedCustomer.company}</div>
+                        )}
+                        <div className="truncate text-xs text-gray-500">
+                          {[selectedCustomer.city, selectedCustomer.province].filter(Boolean).join(', ')}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setSelectedCustomerId(null)}
+                        aria-label="Cerrar ficha del cliente"
+                        className="-mr-1 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-gray-500 active:bg-gray-100"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="px-4 pb-1 pt-2 text-xs text-gray-700">
+                      <div className="flex items-start gap-2">
+                        <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+                        <span className="min-w-0">{selectedCustomer.address}</span>
+                      </div>
+                      {selectedCustomer.distanceFromUser !== null && (
+                        <div className="mt-1 text-blue-700">
+                          {formatDistanceKm(selectedCustomer.distanceFromUser, '')} desde mi ubicación
+                        </div>
+                      )}
+                      {selectedCustomer.geocodeStatus === 'approximate' && (
+                        <div className="mt-1 text-amber-700">Ubicación aproximada</div>
+                      )}
+                    </div>
+                    <div className="flex gap-2 px-4 pb-3 pt-2">
+                      {selectedCustomer.phone && (
+                        <a
+                          href={`tel:${selectedCustomer.phone}`}
+                          className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 text-sm font-semibold text-white active:bg-blue-700"
+                        >
+                          <Phone className="h-4 w-4" /> Llamar
+                        </a>
+                      )}
+                      <button
+                        onClick={() => window.open(buildMapsDirectionsUrl(selectedCustomer), '_blank')}
+                        className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-600 text-sm font-semibold text-white active:bg-green-700"
+                      >
+                        <Navigation className="h-4 w-4" /> Navegar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {!distanceMode && (!sheetOpen && !pendingMapPoint ? (
                 <div
-                  className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
+                  className={`absolute inset-x-0 z-[1010] flex justify-center md:hidden ${selectedCustomer ? 'hidden' : ''}`}
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
                 >
                   <div className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-white/60 bg-white/90 text-xs font-medium text-gray-800 shadow-xl backdrop-blur-md">
