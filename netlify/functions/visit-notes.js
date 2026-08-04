@@ -26,7 +26,8 @@ const NOTE_COLUMNS =
   'id, customer_id, customer_name, salesperson_id, visit_date, raw_transcript, visit_summary, ' +
   'interested_products, customer_feedback, customer_issues, next_action, follow_up_date, ' +
   'follow_up_priority, missing_information, structuring_status, created_by, updated_by, ' +
-  'created_at, updated_at, review_status, match_method, match_confidence'
+  'created_at, updated_at, review_status, match_method, match_confidence, ' +
+  'captured_lat, captured_lng'
 
 const MAX_TRANSCRIPT_CHARS = 8000
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, Check, CloudOff, Loader2, Mic, Square } from 'lucide-react'
+import { useStore } from '../../store/useStore'
 import {
   captureNote,
   flushCaptureQueue,
@@ -11,18 +12,28 @@ import { countPendingCaptures } from '../../services/quickCaptureQueue'
 
 type CaptureStage = 'idle' | 'recording' | 'sending' | 'done' | 'queued' | 'error'
 
+// Pages where the button would only get in the way: the review screen is used
+// parked, with both hands, and its Confirmar button sits exactly here.
+const HIDDEN_ON_PAGES = ['pendingNotes']
+
 /**
  * Always-available record button for a salesperson who is driving.
  *
  * One tap starts, one tap stops. Nothing else is required: the note is
  * transcribed, matched to a customer and stored as a draft server side, and
  * reviewed later when the car is parked.
+ *
+ * It shrinks to a translucent dot while the page is being scrolled so it never
+ * covers the field or button underneath, and comes back as soon as scrolling
+ * stops. Driving still needs a single deliberate tap.
  */
 export default function QuickCaptureButton() {
+  const { currentPage, sidebarOpen } = useStore()
   const [stage, setStage] = useState<CaptureStage>('idle')
   const [seconds, setSeconds] = useState(0)
   const [message, setMessage] = useState('')
   const [pendingCount, setPendingCount] = useState(0)
+  const [dimmed, setDimmed] = useState(false)
 
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -55,6 +66,24 @@ export default function QuickCaptureButton() {
       if (resetRef.current !== null) window.clearTimeout(resetRef.current)
     }
   }, [refreshPending, releaseStream, stopTimer])
+
+  // Fade to a small dot while the page moves, so the button never sits on top
+  // of the field or button the salesperson is scrolling towards.
+  useEffect(() => {
+    let restore: number | null = null
+
+    const onScroll = () => {
+      setDimmed(true)
+      if (restore !== null) window.clearTimeout(restore)
+      restore = window.setTimeout(() => setDimmed(false), 1200)
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions)
+      if (restore !== null) window.clearTimeout(restore)
+    }
+  }, [])
 
   // Anything recorded without signal is sent as soon as the phone is back
   // online, and also on a slow timer for flaky rural coverage.
@@ -190,16 +219,26 @@ export default function QuickCaptureButton() {
   const recording = stage === 'recording'
   const busy = stage === 'sending'
 
+  // Never cover the review screen (its Confirmar button sits right here) and
+  // step aside while the drawer is open.
+  const hiddenHere = HIDDEN_ON_PAGES.includes(currentPage) || sidebarOpen
+  if (hiddenHere && !recording && !busy) return null
+
+  // While scrolling we shrink to a dot; recording always stays full size so
+  // stopping is never a small target.
+  const shrunk = dimmed && !recording && !busy
+
   const label = recording
     ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
     : ''
 
   return createPortal(
     <div
-      className="fixed right-4 z-[1120] flex flex-col items-end gap-2 md:hidden"
-      style={{ bottom: 'calc(max(0.5rem, env(safe-area-inset-bottom)) + 76px)' }}
+      className="fixed right-3 z-[1120] flex flex-col items-end gap-2 md:hidden"
+      // Clear of the tab bar and of the iOS home-indicator gesture area.
+      style={{ bottom: 'calc(max(0.5rem, env(safe-area-inset-bottom)) + 96px)' }}
     >
-      {(message || pendingCount > 0) && (
+      {(message || pendingCount > 0) && !shrunk && (
         <div className="flex max-w-[70vw] items-center gap-1.5 rounded-full border border-gray-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-lg backdrop-blur">
           {stage === 'done' && <Check className="h-3.5 w-3.5 flex-shrink-0 text-green-600" />}
           {stage === 'queued' && <CloudOff className="h-3.5 w-3.5 flex-shrink-0 text-amber-600" />}
@@ -215,7 +254,9 @@ export default function QuickCaptureButton() {
         onClick={handleTap}
         disabled={busy}
         aria-label={recording ? 'Detener y guardar la nota' : 'Grabar nota rápida de visita'}
-        className={`flex h-16 w-16 items-center justify-center rounded-full shadow-2xl transition active:scale-95 ${
+        className={`relative flex items-center justify-center rounded-full shadow-2xl transition-all duration-300 active:scale-95 ${
+          shrunk ? 'h-11 w-11 opacity-40' : 'h-16 w-16 opacity-100'
+        } ${
           recording
             ? 'bg-rose-600 text-white'
             : busy
@@ -232,7 +273,7 @@ export default function QuickCaptureButton() {
             <span className="mt-0.5 text-[10px] font-semibold tabular-nums">{label}</span>
           </span>
         ) : (
-          <Mic className="h-7 w-7" />
+          <Mic className={shrunk ? 'h-5 w-5' : 'h-7 w-7'} />
         )}
       </button>
     </div>,
