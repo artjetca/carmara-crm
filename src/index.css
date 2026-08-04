@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── App shell lock ──────────────────────────────────────────────────
+   In the iOS/Android WebView the document itself could still scroll and
+   rubber-band. Because the tab bar, search bar and map buttons are
+   position:fixed, any document scroll dragged the WHOLE UI sideways and
+   up/down. Pin the document so only inner panes scroll. */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  -webkit-text-size-adjust: 100%;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   line-height: 1.5;
