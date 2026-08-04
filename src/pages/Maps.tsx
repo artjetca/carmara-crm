@@ -2358,7 +2358,10 @@ export default function Maps() {
                     </div>
                   </div>
                 )}
-                {(searchLoading || searchError || searchSuggestions.length > 0) && (
+                {/* Suggestion dropdown is only for distance mode, where the bottom
+                    sheet stays closed. In normal search the bottom sheet already
+                    lists every match, so showing both duplicated the results. */}
+                {distanceMode && (searchLoading || searchError || searchSuggestions.length > 0) && (
                   <div className="mt-2 overflow-hidden rounded-xl border border-white/60 bg-white/95 shadow-xl backdrop-blur-md">
                     {searchLoading && <p className="px-4 py-3 text-sm text-gray-500">Buscando clientes…</p>}
                     {searchError && <p className="px-4 py-3 text-sm text-red-600">{searchError}</p>}
