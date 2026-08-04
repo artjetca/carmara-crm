@@ -37,6 +37,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/voice-speak"
+  to = "/.netlify/functions/voice-speak"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200

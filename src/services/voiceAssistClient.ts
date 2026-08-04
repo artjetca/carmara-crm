@@ -88,32 +88,92 @@ export async function askVoiceAssistant(params: {
   return payload.data as VoiceAnswer
 }
 
+let currentAudio: HTMLAudioElement | null = null
+
+/** Stop whatever is playing so answers never overlap. */
+function stopCurrentAudio(): void {
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio.src = ''
+    currentAudio = null
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel()
+  }
+}
+
 /**
- * Read the answer out loud.
- *
- * Uses the browser voice: it needs no extra plugin and works offline. iOS only
- * allows it after a user gesture, which we always have because the answer
- * follows a tap.
+ * Last-resort robotic voice. Only used when the natural one cannot be
+ * fetched, because hearing something beats hearing nothing while driving.
  */
-export function speak(sentence: string): void {
+function speakWithBrowser(sentence: string): void {
   if (typeof window === 'undefined' || !window.speechSynthesis) return
-  if (!sentence) return
 
   try {
-    // Cancel anything queued so answers never pile up on top of each other.
-    window.speechSynthesis.cancel()
-
     const utterance = new SpeechSynthesisUtterance(sentence)
     utterance.lang = 'es-ES'
     utterance.rate = 1
     window.speechSynthesis.speak(utterance)
   } catch {
-    // Speaking is a convenience: the text is on screen either way.
+    // The answer is on screen either way.
   }
 }
 
-export function isSpeechSupported(): boolean {
-  return typeof window !== 'undefined' && Boolean(window.speechSynthesis)
+/**
+ * Read the answer out loud with a natural Spanish voice.
+ *
+ * The audio is synthesised server side: the browser's built-in voice sounds
+ * robotic and is frequently silent inside the iOS WebView, which defeats the
+ * whole point of not looking at the phone.
+ */
+export async function speak(sentence: string): Promise<void> {
+  if (!sentence || typeof window === 'undefined') return
+
+  stopCurrentAudio()
+
+  try {
+    const headers = await authHeaders()
+    const response = await fetch('/api/voice-speak', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text: sentence, voice: getPreferredVoice() }),
+    })
+
+    if (!response.ok) throw new Error('tts-failed')
+
+    const payload = await response.json()
+    if (!payload.success || !payload.data?.audio_base64) throw new Error('tts-empty')
+
+    const audio = new Audio(
+      `data:${payload.data.mime_type || 'audio/mpeg'};base64,${payload.data.audio_base64}`
+    )
+    currentAudio = audio
+
+    // Playing follows a tap, so autoplay restrictions do not apply.
+    await audio.play()
+  } catch {
+    speakWithBrowser(sentence)
+  }
+}
+
+export function stopSpeaking(): void {
+  stopCurrentAudio()
+}
+
+export type AssistantVoice = 'nova' | 'shimmer' | 'alloy' | 'echo' | 'fable' | 'onyx'
+
+const VOICE_PREFERENCE_KEY = 'casmara-assistant-voice'
+
+export function getPreferredVoice(): AssistantVoice {
+  if (typeof localStorage === 'undefined') return 'nova'
+  const stored = localStorage.getItem(VOICE_PREFERENCE_KEY)
+  const allowed: AssistantVoice[] = ['nova', 'shimmer', 'alloy', 'echo', 'fable', 'onyx']
+  return allowed.includes(stored as AssistantVoice) ? (stored as AssistantVoice) : 'nova'
+}
+
+export function setPreferredVoice(voice: AssistantVoice): void {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(VOICE_PREFERENCE_KEY, voice)
 }
 
 export type NavigationApp = 'google' | 'waze' | 'apple'
