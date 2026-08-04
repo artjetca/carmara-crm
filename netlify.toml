@@ -12,6 +12,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/visit-notes/transcribe"
+  to = "/.netlify/functions/visit-notes-transcribe"
+  status = 200
+
+[[redirects]]
+  from = "/api/visit-notes/structure"
+  to = "/.netlify/functions/visit-notes-structure"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200

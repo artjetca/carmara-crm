@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Upload, Download, Trash2, Plus, Search, Building, Edit, Navigation, Phone, X } from 'lucide-react'
+import { ArrowLeft, Upload, Download, Trash2, Plus, Search, Building, Edit, Mic, Navigation, Phone, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useStore } from '../store/useStore'
 import { supabase, Customer } from '../lib/supabase'
 import { translations } from '../lib/translations'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
+import VoiceVisitNoteModal from '../components/visitNotes/VoiceVisitNoteModal'
 
 export default function Customers() {
   const { user } = useAuth()
@@ -22,6 +23,8 @@ export default function Customers() {
   const [editData, setEditData] = useState<Partial<Customer>>({})
   const [editProvince, setEditProvince] = useState<string>('')
   const [editMunicipio, setEditMunicipio] = useState<string>('')
+  // Customer whose voice visit note is being recorded.
+  const [voiceNoteCustomer, setVoiceNoteCustomer] = useState<Customer | null>(null)
   const headerCheckboxRef = useRef<HTMLInputElement>(null)
   const t = translations
 
@@ -897,6 +900,15 @@ export default function Customers() {
                       </button>
                     </div>
                     <div className="absolute bottom-3 right-2 flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setVoiceNoteCustomer(customer)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-100 bg-emerald-50 text-emerald-700 transition active:scale-95"
+                        aria-label={`Nota de visita por voz para ${customer.name}`}
+                        title="Nota de visita por voz"
+                      >
+                        <Mic className="h-4 w-4" />
+                      </button>
                       {phone && (
                         <a
                           href={`tel:${phone}`}
@@ -1031,6 +1043,14 @@ export default function Customers() {
                             className="text-blue-600 hover:text-blue-900"
                           >
                             <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setVoiceNoteCustomer(customer)}
+                            className="text-emerald-600 hover:text-emerald-800"
+                            title="Nota de visita por voz"
+                            aria-label={`Nota de visita por voz para ${customer.name}`}
+                          >
+                            <Mic className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => deleteCustomer(customer.id)}
@@ -1190,6 +1210,15 @@ export default function Customers() {
             setCustomers([newCustomer, ...customers])
             setShowAddModal(false)
           }}
+        />
+      )}
+
+      {/* Voice visit note */}
+      {voiceNoteCustomer && (
+        <VoiceVisitNoteModal
+          customerId={voiceNoteCustomer.id}
+          customerName={voiceNoteCustomer.name}
+          onClose={() => setVoiceNoteCustomer(null)}
         />
       )}
 
