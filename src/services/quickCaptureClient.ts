@@ -29,6 +29,22 @@ export interface CaptureResult {
   match?: CaptureMatchInfo
 }
 
+/**
+ * A recording turns out to be either a visit note or a spoken question.
+ * The server decides, because it is the one that reads the transcript.
+ */
+export interface CaptureAnswer {
+  kind: 'question'
+  speech: string
+  intent: string
+  navigation: { google: string; waze: string; apple: string } | null
+  stop: { id: string; name: string } | null
+}
+
+export type CaptureOutcome =
+  | ({ kind: 'note' } & CaptureResult)
+  | CaptureAnswer
+
 async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
@@ -64,7 +80,7 @@ export function getQuickPosition(timeoutMs = 6000): Promise<{ lat: number; lng: 
   })
 }
 
-async function uploadCapture(entry: PendingCapture): Promise<CaptureResult> {
+async function uploadCapture(entry: PendingCapture): Promise<CaptureOutcome> {
   const headers = await authHeaders()
   const response = await fetch('/api/visit-notes/capture', {
     method: 'POST',
@@ -94,7 +110,19 @@ async function uploadCapture(entry: PendingCapture): Promise<CaptureResult> {
   }
 
   const data = (payload.data || {}) as Record<string, unknown>
+
+  if (payload.kind === 'question') {
+    return {
+      kind: 'question',
+      speech: String(data.speech || ''),
+      intent: String(data.intent || 'unknown'),
+      navigation: (data.navigation as CaptureAnswer['navigation']) || null,
+      stop: (data.stop as CaptureAnswer['stop']) || null,
+    }
+  }
+
   return {
+    kind: 'note',
     id: String(data.id || ''),
     customer_name: String(data.customer_name || ''),
     match: payload.match as CaptureMatchInfo | undefined,
@@ -110,7 +138,7 @@ export async function captureNote(params: {
   blob: Blob
   lat: number | null
   lng: number | null
-}): Promise<CaptureResult | null> {
+}): Promise<CaptureOutcome | null> {
   const entry: PendingCapture = {
     id: createRequestId(),
     blob: params.blob,

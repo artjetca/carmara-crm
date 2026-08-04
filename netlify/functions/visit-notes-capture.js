@@ -19,6 +19,12 @@ const {
   validateStructuredNote,
 } = require('./_shared/visitNotesCore.cjs')
 const { resolveCaptureCustomer, stripLeadIn } = require('./_shared/quickCaptureCore.cjs')
+const {
+  classifyRecording,
+  parseRouteCustomers,
+  completedIds,
+  answerQuestion,
+} = require('./_shared/voiceAssistCore.cjs')
 
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024
 const STT_TIMEOUT_MS = 60000
@@ -218,6 +224,68 @@ exports.handler = async event => {
       success: false,
       error: 'No se ha detectado voz en la grabacion.',
       code: 'empty_transcript',
+    })
+  }
+
+  // One button has to serve both jobs, because the salesperson is driving and
+  // cannot pick a mode: a short "¿cuál es mi siguiente cliente?" is answered
+  // out loud, anything longer is filed as a visit note.
+  const classified = classifyRecording(transcript)
+  if (classified.kind === 'question') {
+    const today = new Date().toISOString().slice(0, 10)
+
+    const { data: todays } = await auth.supabase
+      .from('saved_routes')
+      .select('id, name, route_date, customers, completed, completed_visits')
+      .eq('created_by', auth.user.id)
+      .eq('route_date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    let route = todays && todays.length > 0 ? todays[0] : null
+    let isToday = Boolean(route)
+
+    if (!route) {
+      // Routes are often saved the night before, so fall back to the most
+      // recent unfinished plan rather than claiming there is nothing.
+      const { data: recent } = await auth.supabase
+        .from('saved_routes')
+        .select('id, name, route_date, customers, completed, completed_visits')
+        .eq('created_by', auth.user.id)
+        .eq('completed', false)
+        .order('route_date', { ascending: false, nullsFirst: false })
+        .limit(1)
+
+      route = recent && recent.length > 0 ? recent[0] : null
+      isToday = false
+    }
+
+    const stops = parseRouteCustomers(route)
+    const answer = answerQuestion({
+      intent: classified.intent,
+      route,
+      stops,
+      done: completedIds(route),
+      coords,
+    })
+
+    let speech = answer.speech
+    if (route && !isToday && stops.length > 0) {
+      speech = `No hay ruta para hoy, te respondo con la ultima ruta pendiente. ${speech}`
+    }
+
+    return jsonResponse(200, {
+      success: true,
+      kind: 'question',
+      data: {
+        question: transcript,
+        intent: answer.intent,
+        speech,
+        stop: answer.stop,
+        navigation: answer.navigation,
+        route_name: route ? route.name : null,
+        is_today: isToday,
+      },
     })
   }
 

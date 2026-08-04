@@ -2701,7 +2701,9 @@ export default function Maps() {
 
               {!distanceMode && (!sheetOpen && !pendingMapPoint ? (
                 <div
-                  className="absolute inset-x-0 z-[1010] flex justify-center md:hidden"
+                  // Right padding keeps the pill clear of the floating record
+                  // button, which shares this band of the screen.
+                  className="absolute inset-x-0 z-[1010] flex justify-center pl-3 pr-[72px] md:hidden"
                   style={{ bottom: 'calc(env(safe-area-inset-bottom) + 92px)' }}
                 >
                   <div className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-white/60 bg-white/90 text-xs font-medium text-gray-800 shadow-xl backdrop-blur-md">

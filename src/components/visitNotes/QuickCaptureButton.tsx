@@ -6,9 +6,10 @@ import {
   captureNote,
   flushCaptureQueue,
   getQuickPosition,
-  type CaptureResult,
+  type CaptureOutcome,
 } from '../../services/quickCaptureClient'
 import { countPendingCaptures } from '../../services/quickCaptureQueue'
+import { openNavigation, speak } from '../../services/voiceAssistClient'
 
 type CaptureStage = 'idle' | 'recording' | 'sending' | 'done' | 'queued' | 'error'
 
@@ -127,7 +128,7 @@ export default function QuickCaptureButton() {
 
       setStage('sending')
 
-      let result: CaptureResult | null = null
+      let result: CaptureOutcome | null = null
       try {
         result = await captureNote({
           blob,
@@ -142,13 +143,24 @@ export default function QuickCaptureButton() {
         return
       }
 
-      if (result) {
-        setStage('done')
-        setMessage(result.customer_name || 'Nota guardada')
-      } else {
+      if (!result) {
         // Saved locally: it will go out when there is coverage again.
         setStage('queued')
         setMessage('Sin cobertura · se enviará sola')
+      } else if (result.kind === 'question') {
+        // The recording was a question, not a note: say the answer out loud so
+        // the salesperson never looks at the phone, and open the map when they
+        // asked to be taken somewhere.
+        setStage('done')
+        setMessage(result.speech)
+        speak(result.speech)
+
+        if (result.intent === 'navigate_next' && result.navigation) {
+          openNavigation(result.navigation)
+        }
+      } else {
+        setStage('done')
+        setMessage(result.customer_name || 'Nota guardada')
       }
 
       await refreshPending()
@@ -235,8 +247,10 @@ export default function QuickCaptureButton() {
   return createPortal(
     <div
       className="fixed right-3 z-[1120] flex flex-col items-end gap-2 md:hidden"
-      // Clear of the tab bar and of the iOS home-indicator gesture area.
-      style={{ bottom: 'calc(max(0.5rem, env(safe-area-inset-bottom)) + 96px)' }}
+      // Sits at the foot of the map's floating button column (right-3, 48 px,
+      // 12 px gaps) so it reads as one aligned stack instead of an odd extra
+      // circle, and stays clear of the tab bar.
+      style={{ bottom: 'calc(env(safe-area-inset-bottom) + 110px)' }}
     >
       {(message || pendingCount > 0) && !shrunk && (
         <div className="flex max-w-[70vw] items-center gap-1.5 rounded-full border border-gray-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-lg backdrop-blur">
@@ -255,7 +269,7 @@ export default function QuickCaptureButton() {
         disabled={busy}
         aria-label={recording ? 'Detener y guardar la nota' : 'Grabar nota rápida de visita'}
         className={`relative flex items-center justify-center rounded-full shadow-2xl transition-all duration-300 active:scale-95 ${
-          shrunk ? 'h-11 w-11 opacity-40' : 'h-16 w-16 opacity-100'
+          shrunk ? 'h-9 w-9 opacity-40' : 'h-12 w-12 opacity-100'
         } ${
           recording
             ? 'bg-rose-600 text-white'
@@ -264,16 +278,16 @@ export default function QuickCaptureButton() {
               : 'bg-emerald-600 text-white'
         }`}
       >
-        {recording && <span className="absolute h-16 w-16 animate-ping rounded-full bg-rose-400 opacity-40" />}
+        {recording && <span className="absolute h-12 w-12 animate-ping rounded-full bg-rose-400 opacity-40" />}
         {busy ? (
-          <Loader2 className="h-7 w-7 animate-spin" />
+          <Loader2 className="h-5 w-5 animate-spin" />
         ) : recording ? (
           <span className="relative flex flex-col items-center">
-            <Square className="h-5 w-5 fill-current" />
-            <span className="mt-0.5 text-[10px] font-semibold tabular-nums">{label}</span>
+            <Square className="h-4 w-4 fill-current" />
+            <span className="text-[9px] font-semibold leading-tight tabular-nums">{label}</span>
           </span>
         ) : (
-          <Mic className={shrunk ? 'h-5 w-5' : 'h-7 w-7'} />
+          <Mic className={shrunk ? 'h-4 w-4' : 'h-5 w-5'} />
         )}
       </button>
     </div>,
