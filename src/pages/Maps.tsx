@@ -864,6 +864,10 @@ export default function Maps() {
       if (pendingPopupClientIdRef.current === client.id) {
         window.setTimeout(() => {
           if (pendingPopupClientIdRef.current !== client.id) return
+          // Clear before opening: otherwise this pending request keeps
+          // reopening the same popup and steals it back from any other
+          // customer the user taps afterwards.
+          pendingPopupClientIdRef.current = null
           marker.openPopup()
         }, 0)
       }
@@ -1316,10 +1320,16 @@ export default function Maps() {
           mapRef.current?.invalidateSize()
           const marker = markerRegistryRef.current.get(target.id)
           if (marker) {
+            pendingPopupClientIdRef.current = null
             marker.openPopup()
             return
           }
-          if (attempt < 10) openWhenReady(attempt + 1)
+          if (attempt < 10) {
+            openWhenReady(attempt + 1)
+            return
+          }
+          // Give up instead of leaving a request that could fire much later.
+          pendingPopupClientIdRef.current = null
         }, attempt === 0 ? 300 : 120)
       }
       openWhenReady(0)
@@ -1965,6 +1975,9 @@ export default function Maps() {
                               selectDistanceCustomer(client)
                               return
                             }
+                            // Tapping another marker cancels any popup we
+                            // still owed the previously searched customer.
+                            pendingPopupClientIdRef.current = null
                             setSelectedCustomerId(client.id)
                           },
                         }}
