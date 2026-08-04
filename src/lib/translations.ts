@@ -190,6 +190,11 @@ export const translations = {
     title: 'Prospectos',
   },
 
+  // Notas de voz pendientes de revisar
+  pendingNotes: {
+    title: 'Notas por revisar',
+  },
+
   // Mapas
   maps: {
     title: 'Mapas y Navegación',

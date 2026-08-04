@@ -10,6 +10,7 @@ import Communications from './pages/Communications'
 import DataImport from './pages/DataImport'
 import Settings from './pages/Settings'
 import ProspectMapPage from './pages/ProspectMapPage'
+import PendingNotes from './pages/PendingNotes'
 import { useStore } from './store/useStore'
 
 // Componente para renderizar la página actual
@@ -27,6 +28,8 @@ function CurrentPage() {
       return <Maps />
     case 'prospectMap':
       return <ProspectMapPage />
+    case 'pendingNotes':
+      return <PendingNotes />
     case 'communications':
       return <Communications />
     case 'dataImport':

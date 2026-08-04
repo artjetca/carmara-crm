@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore'
 import { useAuth } from '../hooks/useAuth'
 import { translations } from '../lib/translations'
 import { getSidebarLayoutClasses } from './layoutStyles'
+import QuickCaptureButton from './visitNotes/QuickCaptureButton'
 import {
   LayoutDashboard,
   Users,
@@ -19,6 +20,7 @@ import {
   Menu,
   X,
   UserSearch,
+  Mic,
 } from 'lucide-react'
 
 interface LayoutProps {
@@ -55,6 +57,12 @@ const navigationItems = [
     label: 'prospectMap.title',
     icon: UserSearch,
     path: '/prospect-map'
+  },
+  {
+    id: 'pendingNotes',
+    label: 'pendingNotes.title',
+    icon: Mic,
+    path: '/pending-notes'
   },
   {
     id: 'communications',
@@ -258,6 +266,9 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* Nota rápida de visita: siempre accesible, pensada para el coche */}
+      <QuickCaptureButton />
 
       {/* Barra de pestañas inferior (solo móvil) — cápsula flotante estilo app */}
       {createPortal(

@@ -27,6 +27,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/visit-notes/capture"
+  to = "/.netlify/functions/visit-notes-capture"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200

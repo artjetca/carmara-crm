@@ -26,7 +26,7 @@ const NOTE_COLUMNS =
   'id, customer_id, customer_name, salesperson_id, visit_date, raw_transcript, visit_summary, ' +
   'interested_products, customer_feedback, customer_issues, next_action, follow_up_date, ' +
   'follow_up_priority, missing_information, structuring_status, created_by, updated_by, ' +
-  'created_at, updated_at'
+  'created_at, updated_at, review_status, match_method, match_confidence'
 
 const MAX_TRANSCRIPT_CHARS = 8000
 
@@ -41,6 +41,10 @@ function badRequest(message, code) {
  */
 async function syncFollowUpTask(supabase, note) {
   try {
+    // A draft recorded from the car has not been checked by anyone yet, so we
+    // do not create reminders from it. The date is confirmed on review.
+    if (note && note.review_status === 'pending_review') return null
+
     const task = buildFollowUpTask(note)
 
     if (!task) {
@@ -116,6 +120,11 @@ exports.handler = async event => {
         query = query.eq(column, value)
       }
 
+      // The review screen asks for the drafts recorded from the car.
+      if (params.review_status === 'pending_review' || params.review_status === 'reviewed') {
+        query = query.eq('review_status', params.review_status)
+      }
+
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
@@ -171,6 +180,9 @@ exports.handler = async event => {
       }
 
       const now = new Date().toISOString()
+      // Notes dictated from the car arrive as drafts; everything confirmed on
+      // screen is stored as reviewed.
+      const reviewStatus = body.review_status === 'pending_review' ? 'pending_review' : 'reviewed'
       const payload = {
         customer_id: body.customer_id || null,
         customer_name: customerName,
@@ -179,6 +191,11 @@ exports.handler = async event => {
         raw_transcript: transcript,
         ...validated.value,
         structuring_status: body.structuring_status === 'manual' ? 'manual' : 'ok',
+        review_status: reviewStatus,
+        match_method: body.match_method || null,
+        match_confidence: body.match_confidence || null,
+        captured_lat: Number.isFinite(Number(body.captured_lat)) ? Number(body.captured_lat) : null,
+        captured_lng: Number.isFinite(Number(body.captured_lng)) ? Number(body.captured_lng) : null,
         client_request_id: clientRequestId,
         created_by: auth.user.id,
         updated_by: auth.user.id,
@@ -238,6 +255,13 @@ exports.handler = async event => {
       const transcript = String(body.raw_transcript ?? existing.raw_transcript).trim()
       if (!transcript) return badRequest('Falta la transcripción.', 'missing_transcript')
 
+      // Confirming a draft is what turns it into a real note and, only then,
+      // creates its follow-up reminder.
+      const reviewStatus =
+        body.review_status === 'reviewed' || body.review_status === 'pending_review'
+          ? body.review_status
+          : existing.review_status
+
       const { data, error } = await supabase
         .from('sales_visit_notes')
         .update({
@@ -245,6 +269,8 @@ exports.handler = async event => {
           visit_date: visitDate,
           raw_transcript: transcript,
           customer_name: String(body.customer_name || existing.customer_name).trim(),
+          customer_id: body.customer_id !== undefined ? body.customer_id : existing.customer_id,
+          review_status: reviewStatus,
           updated_by: auth.user.id,
           updated_at: new Date().toISOString(),
         })
