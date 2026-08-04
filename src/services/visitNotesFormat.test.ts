@@ -5,6 +5,8 @@ import {
   EMPTY_STRUCTURED_NOTE,
   buildSavePayload,
   canStartRecording,
+  countSelectedDrafts,
+  findUncoveredStops,
   formatDuration,
   formatProductsInput,
   hasUnsavedWork,
@@ -13,6 +15,8 @@ import {
   normalizeStructured,
   parseProductsInput,
   todayIso,
+  toRouteDrafts,
+  toRouteStops,
 } from './visitNotesFormat'
 
 test('stages with unsaved work are guarded before leaving', () => {
@@ -146,4 +150,84 @@ test('a failed AI structuring still keeps the transcript in the payload', () => 
   assert.equal(payload.structuring_status, 'manual')
   assert.equal(payload.raw_transcript, 'lo que dijo el comercial')
   assert.equal(payload.visit_summary, '')
+})
+
+// -- Whole-route dictation --------------------------------------------------
+
+test('route stops drop entries without an id or a name', () => {
+  const stops = toRouteStops([
+    { id: 'c1', name: 'Clínica Rosa', city: 'Jerez' },
+    { id: '', name: 'Sin id' },
+    { id: 'c3', name: '   ' },
+    { id: 'c4', name: 'Perfumería Luz' },
+  ])
+
+  assert.equal(stops.length, 2)
+  assert.deepEqual(
+    stops.map(stop => stop.id),
+    ['c1', 'c4']
+  )
+})
+
+test('drafts arrive pre-selected and normalised', () => {
+  const drafts = toRouteDrafts([
+    {
+      customer_id: 'c1',
+      customer_name: 'Clínica Rosa',
+      visit_summary: '  Todo bien  ',
+      interested_products: [' Green Mask ', ''],
+      follow_up_priority: 'ALTA' as never,
+    },
+  ])
+
+  assert.equal(drafts.length, 1)
+  assert.equal(drafts[0].selected, true)
+  assert.equal(drafts[0].visit_summary, 'Todo bien')
+  assert.deepEqual(drafts[0].interested_products, ['Green Mask'])
+  assert.equal(drafts[0].follow_up_priority, 'medium')
+})
+
+test('drafts without a resolved customer are discarded', () => {
+  const drafts = toRouteDrafts([
+    { customer_name: 'Sin id', visit_summary: 'algo' },
+    { customer_id: 'c2', visit_summary: 'sin nombre' },
+    { customer_id: 'c3', customer_name: 'Perfumería Luz', visit_summary: 'ok' },
+  ])
+
+  assert.equal(drafts.length, 1)
+  assert.equal(drafts[0].customer_id, 'c3')
+})
+
+test('only ticked drafts are counted for saving', () => {
+  const drafts = toRouteDrafts([
+    { customer_id: 'c1', customer_name: 'Uno' },
+    { customer_id: 'c2', customer_name: 'Dos' },
+  ])
+
+  assert.equal(countSelectedDrafts(drafts), 2)
+
+  drafts[0].selected = false
+  assert.equal(countSelectedDrafts(drafts), 1)
+})
+
+test('stops the salesperson did not mention are reported back', () => {
+  const stops = toRouteStops([
+    { id: 'c1', name: 'Clínica Rosa' },
+    { id: 'c2', name: 'Perfumería Luz' },
+    { id: 'c3', name: 'Centro Marina' },
+  ])
+  const drafts = toRouteDrafts([{ customer_id: 'c1', customer_name: 'Clínica Rosa' }])
+
+  const uncovered = findUncoveredStops(stops, drafts)
+  assert.deepEqual(
+    uncovered.map(stop => stop.id),
+    ['c2', 'c3']
+  )
+})
+
+test('no stop is reported missing when every one has a note', () => {
+  const stops = toRouteStops([{ id: 'c1', name: 'Clínica Rosa' }])
+  const drafts = toRouteDrafts([{ customer_id: 'c1', customer_name: 'Clínica Rosa' }])
+
+  assert.deepEqual(findUncoveredStops(stops, drafts), [])
 })

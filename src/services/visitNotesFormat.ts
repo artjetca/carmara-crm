@@ -147,3 +147,60 @@ export function buildSavePayload(input: SaveVisitNoteInput): Record<string, unkn
     client_request_id: input.client_request_id,
   }
 }
+
+// -- Whole-route dictation --------------------------------------------------
+
+/** One customer's note extracted from a whole-day dictation. */
+export interface RouteVisitDraft extends StructuredVisitNote {
+  customer_id: string
+  customer_name: string
+  /** Unchecked drafts are skipped when saving. */
+  selected: boolean
+}
+
+export interface RouteStopInput {
+  id: string
+  name: string
+  city?: string
+}
+
+export function toRouteStops(
+  customers: Array<{ id?: string; name?: string; city?: string }>
+): RouteStopInput[] {
+  return (customers || [])
+    .map(customer => ({
+      id: String(customer?.id || ''),
+      name: String(customer?.name || '').trim(),
+      city: String(customer?.city || '').trim(),
+    }))
+    .filter(customer => customer.id && customer.name)
+}
+
+export function toRouteDrafts(
+  visits: Array<Partial<RouteVisitDraft>> | null | undefined
+): RouteVisitDraft[] {
+  if (!Array.isArray(visits)) return []
+
+  return visits
+    .filter(visit => visit && visit.customer_id && visit.customer_name)
+    .map(visit => ({
+      ...normalizeStructured(visit),
+      customer_id: String(visit.customer_id),
+      customer_name: String(visit.customer_name),
+      // Everything the AI matched starts checked; the user unticks what is wrong.
+      selected: true,
+    }))
+}
+
+export function countSelectedDrafts(drafts: RouteVisitDraft[]): number {
+  return drafts.filter(draft => draft.selected).length
+}
+
+/** Stops the AI did not mention, so the user can see what is missing. */
+export function findUncoveredStops(
+  stops: RouteStopInput[],
+  drafts: RouteVisitDraft[]
+): RouteStopInput[] {
+  const covered = new Set(drafts.map(draft => draft.customer_id))
+  return stops.filter(stop => !covered.has(stop.id))
+}

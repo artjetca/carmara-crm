@@ -10,8 +10,11 @@ import { supabase } from '../lib/supabase'
 import {
   buildSavePayload,
   normalizeStructured,
+  toRouteDrafts,
   type SaveVisitNoteInput,
   type StructuredVisitNote,
+  type RouteStopInput,
+  type RouteVisitDraft,
   type VisitNoteRecord,
 } from './visitNotesFormat'
 
@@ -136,4 +139,95 @@ export async function listVisitNotes(customerId: string): Promise<VisitNoteRecor
     throw new Error(payload.error || 'No se pudieron cargar las notas.')
   }
   return (payload.data || []) as VisitNoteRecord[]
+}
+
+// -- Whole-route dictation --------------------------------------------------
+
+export interface RouteStructureResult {
+  drafts: RouteVisitDraft[]
+  unmatched: string[]
+  structuring_status: 'ok' | 'manual'
+  visit_date: string
+}
+
+/** Split one spoken summary of the day into one draft per route stop. */
+export async function structureRouteTranscript(params: {
+  transcript: string
+  routeCustomers: RouteStopInput[]
+  visitDate: string
+}): Promise<RouteStructureResult> {
+  const headers = await authHeaders()
+  const response = await fetch('/api/visit-notes/route', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      transcript: params.transcript,
+      route_customers: params.routeCustomers,
+      visit_date: params.visitDate,
+    }),
+  })
+
+  const payload = await readJson(response)
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || 'No se pudo organizar la jornada.')
+  }
+
+  const data = payload.data || {}
+  return {
+    drafts: toRouteDrafts(data.visits as Array<Partial<RouteVisitDraft>>),
+    unmatched: Array.isArray(data.unmatched) ? data.unmatched.map(String) : [],
+    structuring_status: data.structuring_status === 'manual' ? 'manual' : 'ok',
+    visit_date: String(data.visit_date || params.visitDate),
+  }
+}
+
+export interface BatchSaveOutcome {
+  saved: VisitNoteRecord[]
+  failed: Array<{ customerName: string; error: string }>
+}
+
+/**
+ * Save one note per selected stop. A stop that fails does not abort the rest:
+ * a whole day of fieldwork must not be lost because one row was rejected.
+ */
+export async function saveRouteVisitNotes(params: {
+  drafts: RouteVisitDraft[]
+  transcript: string
+  visitDate: string
+  structuringStatus: 'ok' | 'manual'
+  batchRequestId: string
+}): Promise<BatchSaveOutcome> {
+  const outcome: BatchSaveOutcome = { saved: [], failed: [] }
+
+  for (const draft of params.drafts) {
+    if (!draft.selected) continue
+
+    try {
+      const record = await saveVisitNote({
+        visit_summary: draft.visit_summary,
+        interested_products: draft.interested_products,
+        customer_feedback: draft.customer_feedback,
+        customer_issues: draft.customer_issues,
+        next_action: draft.next_action,
+        follow_up_date: draft.follow_up_date,
+        follow_up_priority: draft.follow_up_priority,
+        missing_information: draft.missing_information,
+        customer_id: draft.customer_id,
+        customer_name: draft.customer_name,
+        visit_date: params.visitDate,
+        raw_transcript: params.transcript,
+        structuring_status: params.structuringStatus,
+        // Deterministic per stop, so retrying the batch cannot duplicate rows.
+        client_request_id: `${params.batchRequestId}:${draft.customer_id}`,
+      })
+      outcome.saved.push(record)
+    } catch (error) {
+      outcome.failed.push({
+        customerName: draft.customer_name,
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      })
+    }
+  }
+
+  return outcome
 }

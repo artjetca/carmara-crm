@@ -12,6 +12,8 @@ const {
   resolveRelativeDate,
   validateStructuredNote,
   structureWithRetry,
+  matchRouteCustomer,
+  structureRouteWithRetry,
   buildRemindAt,
   buildFollowUpTask,
   checkRateLimit,
@@ -336,6 +338,204 @@ test('follow-up task is only built when there is a valid date', () => {
 
   assert.equal(buildFollowUpTask({ follow_up_date: null }), null)
   assert.equal(buildFollowUpTask(null), null)
+})
+
+// -- Whole-route dictation --------------------------------------------------
+
+const ROUTE = [
+  { id: 'c1', name: 'Clínica Rosa S.L.', city: 'Jerez' },
+  { id: 'c2', name: 'Perfumería Luz', city: 'Cádiz' },
+  { id: 'c3', name: 'Centro de Estética Marina', city: 'Huelva' },
+]
+
+test('a spoken customer name is matched against the real route stops', () => {
+  // Exact, partial and distinctive-word matches all resolve to the CRM row.
+  assert.equal(matchRouteCustomer('Clínica Rosa S.L.', ROUTE).id, 'c1')
+  assert.equal(matchRouteCustomer('clinica rosa', ROUTE).id, 'c1')
+  assert.equal(matchRouteCustomer('Rosa', ROUTE).id, 'c1')
+  assert.equal(matchRouteCustomer('perfumeria luz', ROUTE).id, 'c2')
+  assert.equal(matchRouteCustomer('Marina', ROUTE).id, 'c3')
+})
+
+test('a customer that is not on the route is never invented', () => {
+  assert.equal(matchRouteCustomer('Farmacia Central', ROUTE), null)
+  assert.equal(matchRouteCustomer('', ROUTE), null)
+  assert.equal(matchRouteCustomer('Rosa', []), null)
+})
+
+test('an ambiguous name is left unmatched rather than guessed', () => {
+  const ambiguous = [
+    { id: 'a', name: 'Centro Estética Norte' },
+    { id: 'b', name: 'Centro Estética Sur' },
+  ]
+  // "Centro" and "Estética" are generic, so neither stop wins.
+  assert.equal(matchRouteCustomer('Centro Estética', ambiguous), null)
+})
+
+test('one dictation is split into a note per route stop', async () => {
+  const answer = JSON.stringify({
+    visits: [
+      {
+        customer_name: 'Clínica Rosa S.L.',
+        visit_summary: 'Interesados en Green Mask.',
+        interested_products: ['Green Mask'],
+        follow_up_date: '2026-08-12',
+        follow_up_priority: 'high',
+      },
+      {
+        customer_name: 'Perfumería Luz',
+        visit_summary: 'Quieren muestras del serum.',
+        interested_products: ['Serum'],
+        follow_up_date: null,
+      },
+    ],
+    unmatched_notes: [],
+  })
+
+  const result = await structureRouteWithRetry(async () => answer, {
+    transcript: 'jornada completa',
+    today: TUESDAY,
+    routeCustomers: ROUTE,
+  })
+
+  assert.equal(result.status, 'ok')
+  assert.equal(result.visits.length, 2)
+  // The CRM id comes from the route, not from speech recognition.
+  assert.equal(result.visits[0].customer_id, 'c1')
+  assert.equal(result.visits[0].customer_name, 'Clínica Rosa S.L.')
+  assert.equal(result.visits[0].follow_up_priority, 'high')
+  assert.equal(result.visits[1].customer_id, 'c2')
+})
+
+test('comments about a customer outside the route are kept, not attached', async () => {
+  const answer = JSON.stringify({
+    visits: [
+      { customer_name: 'Clínica Rosa S.L.', visit_summary: 'Todo bien.' },
+      { customer_name: 'Farmacia Central', visit_summary: 'Preguntaron precios.' },
+    ],
+    unmatched_notes: [],
+  })
+
+  const result = await structureRouteWithRetry(async () => answer, {
+    transcript: 'jornada',
+    today: TUESDAY,
+    routeCustomers: ROUTE,
+  })
+
+  assert.equal(result.visits.length, 1)
+  assert.equal(result.visits[0].customer_id, 'c1')
+  // The unknown customer's content survives instead of being dropped.
+  assert.equal(result.unmatched.length, 1)
+  assert.ok(result.unmatched[0].includes('Farmacia Central'))
+})
+
+test('the same customer mentioned twice produces a single note', async () => {
+  const answer = JSON.stringify({
+    visits: [
+      { customer_name: 'Clínica Rosa S.L.', visit_summary: 'Primera mención.' },
+      { customer_name: 'clinica rosa', visit_summary: 'Segunda mención.' },
+    ],
+  })
+
+  const result = await structureRouteWithRetry(async () => answer, {
+    transcript: 'jornada',
+    today: TUESDAY,
+    routeCustomers: ROUTE,
+  })
+
+  assert.equal(result.visits.length, 1)
+  assert.equal(result.visits[0].visit_summary, 'Primera mención.')
+})
+
+test('route dictation retries once and then degrades to manual', async () => {
+  let calls = 0
+  const result = await structureRouteWithRetry(
+    async () => {
+      calls += 1
+      return 'esto no es JSON'
+    },
+    { transcript: 'jornada', today: TUESDAY, routeCustomers: ROUTE }
+  )
+
+  assert.equal(calls, 2)
+  assert.equal(result.status, 'manual')
+  assert.deepEqual(result.visits, [])
+})
+
+test('route dictation resolves relative dates per stop', async () => {
+  const answer = JSON.stringify({
+    visits: [
+      {
+        customer_name: 'Clínica Rosa S.L.',
+        visit_summary: 'Volver a pasar.',
+        next_action: 'Llamar',
+        // Wrong weekday on purpose: our calculator must win.
+        follow_up_date: '2026-08-10',
+      },
+    ],
+  })
+
+  const result = await structureRouteWithRetry(async () => answer, {
+    transcript: 'jornada',
+    today: TUESDAY,
+    routeCustomers: ROUTE,
+  })
+
+  // Without a resolvable expression in the per-stop text the model date stays.
+  assert.equal(result.visits[0].follow_up_date, '2026-08-10')
+})
+
+test('a wrong model date is corrected from that stop own text', async () => {
+  // Real failure seen in testing: for "el miércoles que viene" the model
+  // answered 2026-08-10, which is a Monday. The correct date is 2026-08-12.
+  const answer = JSON.stringify({
+    visits: [
+      {
+        customer_name: 'Clínica Rosa S.L.',
+        visit_summary: 'Interesados en Green Mask.',
+        next_action: 'Les llamo el miércoles que viene.',
+        follow_up_date: '2026-08-10',
+      },
+    ],
+  })
+
+  const result = await structureRouteWithRetry(async () => answer, {
+    transcript: 'jornada completa con varias paradas',
+    today: TUESDAY,
+    routeCustomers: ROUTE,
+  })
+
+  assert.equal(result.visits[0].follow_up_date, '2026-08-12')
+})
+
+test('one stop date never leaks into the other stops', async () => {
+  // The day transcript mentions "el miércoles que viene" for the first client
+  // only; the second one must keep its own (absent) date.
+  const answer = JSON.stringify({
+    visits: [
+      {
+        customer_name: 'Clínica Rosa S.L.',
+        visit_summary: 'Volver a pasar.',
+        next_action: 'Les llamo el miércoles que viene.',
+        follow_up_date: null,
+      },
+      {
+        customer_name: 'Perfumería Luz',
+        visit_summary: 'Solo querían muestras.',
+        next_action: '',
+        follow_up_date: null,
+      },
+    ],
+  })
+
+  const result = await structureRouteWithRetry(async () => answer, {
+    transcript: 'En Clínica Rosa les llamo el miércoles que viene. En Perfumería Luz nada.',
+    today: TUESDAY,
+    routeCustomers: ROUTE,
+  })
+
+  assert.equal(result.visits[0].follow_up_date, '2026-08-12')
+  assert.equal(result.visits[1].follow_up_date, null)
 })
 
 test('rate limit blocks once the window is full and recovers afterwards', () => {

@@ -395,6 +395,204 @@ async function structureWithRetry(callLlm, { transcript, today, customerName, ma
   }
 }
 
+// -- Whole-route dictation --------------------------------------------------
+
+/**
+ * Normalise a name for fuzzy matching: lowercase, strip accents and any
+ * punctuation, collapse whitespace. Speech-to-text rarely reproduces the
+ * exact CRM spelling, so we compare on this simplified form.
+ */
+function normalizeName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const NAME_STOPWORDS = new Set([
+  'clinica', 'clinicas', 'centro', 'centros', 'estetica', 'esthetic',
+  'peluqueria', 'salon', 'spa', 'farmacia', 'perfumeria', 'instituto',
+  'de', 'del', 'la', 'las', 'el', 'los', 'y', 'sl', 'slu', 'sa', 'cb',
+])
+
+function significantTokens(name) {
+  return normalizeName(name)
+    .split(' ')
+    .filter(token => token.length > 2 && !NAME_STOPWORDS.has(token))
+}
+
+/**
+ * Match a spoken customer name against the stops actually on the route.
+ * We only ever return a customer that is already in the route, so the model
+ * cannot invent a client. Ambiguous matches return null on purpose.
+ */
+function matchRouteCustomer(spokenName, routeCustomers) {
+  if (!spokenName || !Array.isArray(routeCustomers) || routeCustomers.length === 0) {
+    return null
+  }
+
+  const spoken = normalizeName(spokenName)
+  if (!spoken) return null
+
+  const exact = routeCustomers.filter(customer => normalizeName(customer.name) === spoken)
+  if (exact.length === 1) return exact[0]
+
+  const contains = routeCustomers.filter(customer => {
+    const candidate = normalizeName(customer.name)
+    return candidate.includes(spoken) || spoken.includes(candidate)
+  })
+  if (contains.length === 1) return contains[0]
+
+  // Fall back to distinctive word overlap ("Rosa" for "Clínica Rosa S.L.").
+  const spokenTokens = significantTokens(spokenName)
+  if (spokenTokens.length === 0) return null
+
+  const scored = routeCustomers
+    .map(customer => {
+      const tokens = significantTokens(customer.name)
+      const shared = tokens.filter(token => spokenTokens.includes(token))
+      return { customer, score: shared.length }
+    })
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  if (scored.length === 0) return null
+  // A tie means we cannot be sure which stop was meant.
+  if (scored.length > 1 && scored[0].score === scored[1].score) return null
+
+  return scored[0].customer
+}
+
+function buildRoutePrompt({ transcript, today, routeCustomers }) {
+  const roster = (routeCustomers || [])
+    .map((customer, index) => `${index + 1}. ${customer.name}${customer.city ? ` (${customer.city})` : ''}`)
+    .join('\n')
+
+  const system = [
+    'Eres un asistente que separa el resumen hablado de una jornada comercial',
+    'en una nota por cada cliente visitado.',
+    'Devuelve EXCLUSIVAMENTE un objeto JSON valido. Sin markdown, sin explicaciones.',
+    'Formato exacto:',
+    '{"visits":[{"customer_name":"","visit_summary":"","interested_products":[],"customer_feedback":"","customer_issues":"","next_action":"","follow_up_date":null,"follow_up_priority":"medium","missing_information":[]}],"unmatched_notes":[]}',
+    'Reglas:',
+    '- Crea un elemento en "visits" por cada cliente del que hable el comercial.',
+    '- customer_name debe copiarse EXACTAMENTE de la lista de paradas de la ruta.',
+    '- Si menciona un cliente que no esta en la lista, no lo inventes: pon ese comentario en "unmatched_notes".',
+    '- No repitas el mismo cliente dos veces: agrupa todo lo que diga de el.',
+    '- Nunca inventes productos, cantidades, fechas ni compromisos.',
+    '- Si un dato no aparece, deja el campo vacio o null y anadelo a missing_information.',
+    `- La jornada es el ${today}. Convierte fechas relativas a formato ISO YYYY-MM-DD.`,
+    '- Si no puedes convertir la fecha con seguridad, usa null.',
+    '- follow_up_priority solo puede ser low, medium o high.',
+    '- Redacta SIEMPRE en espanol, aunque el comercial hable en chino o mezcle idiomas.',
+    '- Manten los nombres de producto tal y como se dicen, sin traducirlos.',
+  ].join('\n')
+
+  const user = [
+    'Paradas de la ruta (usa estos nombres exactos):',
+    roster || '(sin paradas)',
+    '',
+    `Fecha de la jornada: ${today}`,
+    'Transcripcion de la jornada:',
+    transcript,
+  ].join('\n')
+
+  return { system, user }
+}
+
+/**
+ * Split one spoken summary of a whole day into per-customer notes.
+ *
+ * Each note is validated with the same schema as a single visit, and the
+ * customer is resolved against the real route stops so the CRM link is never
+ * based on speech recognition alone.
+ */
+async function structureRouteWithRetry(
+  callLlm,
+  { transcript, today, routeCustomers = [], maxAttempts = 2 }
+) {
+  const prompt = buildRoutePrompt({ transcript, today, routeCustomers })
+  const attemptErrors = []
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let raw
+    try {
+      raw = await callLlm({ ...prompt, attempt })
+    } catch (error) {
+      attemptErrors.push(`llm-error:${error && error.message ? error.message : 'unknown'}`)
+      continue
+    }
+
+    const parsed = extractJson(raw)
+    if (!parsed || !Array.isArray(parsed.visits)) {
+      attemptErrors.push('invalid-json')
+      continue
+    }
+
+    const seen = new Set()
+    const visits = []
+    const unmatched = toStringArray(parsed.unmatched_notes)
+
+    for (const entry of parsed.visits) {
+      if (!entry || typeof entry !== 'object') continue
+
+      const spokenName = toCleanString(entry.customer_name)
+      const matched = matchRouteCustomer(spokenName, routeCustomers)
+
+      if (!matched) {
+        // Keep the content instead of dropping it, but never guess the client.
+        if (spokenName || toCleanString(entry.visit_summary)) {
+          unmatched.push(
+            `${spokenName || 'Cliente no identificado'}: ${toCleanString(entry.visit_summary)}`.trim()
+          )
+        }
+        continue
+      }
+
+      if (seen.has(matched.id)) continue
+      seen.add(matched.id)
+
+      // Resolve dates from THIS customer's own text only. Using the whole-day
+      // transcript here would apply one stop's date to every other stop.
+      const entryText = [
+        toCleanString(entry.next_action),
+        toCleanString(entry.visit_summary),
+        toCleanString(entry.customer_feedback),
+      ]
+        .filter(Boolean)
+        .join('. ')
+
+      const validated = validateStructuredNote(entry, { today, transcript: entryText })
+      if (!validated.value) continue
+
+      visits.push({
+        customer_id: matched.id,
+        customer_name: matched.name,
+        ...validated.value,
+      })
+    }
+
+    return {
+      status: visits.length > 0 ? 'ok' : 'manual',
+      visits,
+      unmatched,
+      attempts: attempt,
+      errors: attemptErrors,
+    }
+  }
+
+  return {
+    status: 'manual',
+    visits: [],
+    unmatched: [],
+    attempts: maxAttempts,
+    errors: attemptErrors,
+  }
+}
+
 // -- Follow-up task ---------------------------------------------------------
 
 function timeZoneOffsetMinutes(instant, timeZone) {
@@ -479,6 +677,10 @@ module.exports = {
   validateStructuredNote,
   buildStructurePrompt,
   structureWithRetry,
+  buildRoutePrompt,
+  structureRouteWithRetry,
+  matchRouteCustomer,
+  normalizeName,
   buildRemindAt,
   buildFollowUpTask,
   checkRateLimit,

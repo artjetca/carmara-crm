@@ -39,7 +39,8 @@ import {
   Maximize2,
   Minimize2,
   FileDown,
-  Ruler
+  Ruler,
+  Mic
 } from 'lucide-react'
 
 // Leaflet (OpenStreetMap) imports for zero-Google-cost rendering
@@ -58,6 +59,7 @@ import {
 } from '../services/routingProvider'
 import '../styles/casmara-marker.css'
 import { VoiceSearchButton } from '../components/VoiceSearchButton'
+import RouteVoiceNotesModal from '../components/visitNotes/RouteVoiceNotesModal'
 import { MapFloatingToolbar } from '../components/MapFloatingToolbar'
 import { MapDrawer, MapFocusButton, MapWorkspaceHeader } from '../components/MapWorkspace'
 
@@ -198,6 +200,8 @@ export default function Visits() {
   const [routeTime, setRouteTime] = useState('')
   const [savedRoutes, setSavedRoutes] = useState<any[]>([])
   const [routeName, setRouteName] = useState('')
+  // Whole-day voice dictation for the current route.
+  const [showRouteVoiceNotes, setShowRouteVoiceNotes] = useState(false)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [showLoadModal, setShowLoadModal] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
@@ -3209,6 +3213,14 @@ export default function Visits() {
           <div className="space-y-6 p-3">
             <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-3"><div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Buscar clientes" className="min-h-11 w-full rounded-lg border border-gray-200 py-2 pl-9 pr-10 text-sm outline-none focus:border-blue-500" /><span className="absolute right-2 top-1/2 -translate-y-1/2"><VoiceSearchButton onTranscript={setSearchTerm} /></span></div><div className="grid grid-cols-2 gap-2"><select value={selectedProvince} onChange={event => { setSelectedProvince(event.target.value); setSelectedCity('') }} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs"><option value="">Provincias</option>{provinces.map(province => <option key={province} value={province}>{province}</option>)}</select><select value={selectedCity} onChange={event => setSelectedCity(event.target.value)} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs"><option value="">Ciudades</option>{getFilteredCities().map(city => <option key={city} value={city}>{city}</option>)}</select></div></div>
             <div className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-white p-3"><input type="date" value={routeDate} onChange={event => setRouteDate(event.target.value)} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs" /><input type="time" value={routeTime} onChange={event => setRouteTime(event.target.value)} className="min-h-10 rounded-lg border border-gray-200 px-2 text-xs" /><button onClick={() => setShowSaveModal(true)} disabled={routeCustomers.length === 0} className="min-h-10 rounded-lg bg-emerald-600 px-2 text-xs font-semibold text-white disabled:opacity-50">Guardar ruta</button><button onClick={() => setShowLoadModal(true)} className="min-h-10 rounded-lg bg-blue-50 px-2 text-xs font-semibold text-blue-700">Cargar ruta</button></div>
+            {/* Dictar toda la jornada: crea una nota por parada mencionada */}
+            <button
+              onClick={() => setShowRouteVoiceNotes(true)}
+              disabled={routeCustomers.length === 0}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 disabled:opacity-50"
+            >
+              <Mic className="h-4 w-4" /> Resumen de la jornada por voz
+            </button>
             {/* Lista de clientes disponibles */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 print-hide">
               <div className="p-4 border-b border-gray-200">
@@ -3876,6 +3888,15 @@ export default function Visits() {
                         <span>Cargar</span>
                       </button>
                     </div>
+                    {/* Dictar toda la jornada: una nota por parada mencionada */}
+                    <button
+                      onClick={() => setShowRouteVoiceNotes(true)}
+                      disabled={routeCustomers.length === 0}
+                      className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50"
+                    >
+                      <Mic className="w-4 h-4 mr-1" />
+                      <span>Resumen de la jornada por voz</span>
+                    </button>
                     <div className="mt-4 space-y-2">
                       {routeCustomers.length === 0 ? (
                         <div className="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
@@ -4103,6 +4124,15 @@ export default function Visits() {
           </section>
         </div>,
         document.body
+      )}
+
+      {/* Resumen de la jornada por voz: una nota por parada mencionada */}
+      {showRouteVoiceNotes && (
+        <RouteVoiceNotesModal
+          routeName={routeName}
+          routeCustomers={routeCustomers}
+          onClose={() => setShowRouteVoiceNotes(false)}
+        />
       )}
 
       {/* Modal para guardar ruta */}
