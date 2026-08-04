@@ -285,6 +285,8 @@ export default function Maps() {
   const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false)
   const mapRef = useRef<LeafletMap | null>(null)
   const markerRegistryRef = useRef(new Map<string, LeafletMarker>())
+  // Customer whose popup should open as soon as its marker is (re)mounted.
+  const pendingPopupClientIdRef = useRef<string | null>(null)
   const geocodeAttemptedRef = useRef(new Set<string>())
   const isGeocodingRef = useRef(false)
   const searchAbortRef = useRef<AbortController | null>(null)
@@ -852,6 +854,15 @@ export default function Maps() {
   const upsertMarkerForClient = useCallback((client: ResolvedMapClient, marker: LeafletMarker | null) => {
     if (marker) {
       markerRegistryRef.current.set(client.id, marker)
+      // Selecting a customer clears the search filter, which remounts the
+      // markers. If we are waiting to show this customer's popup, open it as
+      // soon as its (possibly brand new) marker instance registers itself.
+      if (pendingPopupClientIdRef.current === client.id) {
+        window.setTimeout(() => {
+          if (pendingPopupClientIdRef.current !== client.id) return
+          marker.openPopup()
+        }, 0)
+      }
       return
     }
 
@@ -947,6 +958,11 @@ export default function Maps() {
   }, [])
 
   const expandMobileSearch = useCallback(() => {
+    // Clearing the selection matters: the search bar is hidden while a
+    // customer is selected, so without this the second tap would expand
+    // the state but keep rendering just the icon.
+    pendingPopupClientIdRef.current = null
+    setSelectedCustomerId(null)
     setMobileSearchExpanded(true)
     setSheetSize('half')
     setSheetOpen(true)
@@ -1204,6 +1220,9 @@ export default function Maps() {
       // Collapse the mobile search bar back to its icon so the header area
       // is free for the marker popup above the pin.
       setMobileSearchExpanded(false)
+      // Remember which popup we owe the user: clearing the search filter
+      // remounts the markers, so the instance we have now may be discarded.
+      pendingPopupClientIdRef.current = customer.id
 
       let target = customer
       if (!getClientRenderableCoordinates(customer)) {
@@ -1220,13 +1239,30 @@ export default function Maps() {
       }
 
       const coords = getClientRenderableCoordinates(target)
-      if (!coords) return
+      if (!coords) {
+        pendingPopupClientIdRef.current = null
+        return
+      }
+
+      pendingPopupClientIdRef.current = target.id
 
       mapRef.current?.flyTo([coords.lat, coords.lng], 14, { duration: 0.8 })
-      window.setTimeout(() => {
-        mapRef.current?.invalidateSize()
-        markerRegistryRef.current.get(target.id)?.openPopup()
-      }, 300)
+
+      // The marker may still be remounting while the map flies, so retry for
+      // a short window instead of relying on a single fixed delay.
+      const openWhenReady = (attempt: number) => {
+        window.setTimeout(() => {
+          if (pendingPopupClientIdRef.current !== target.id) return
+          mapRef.current?.invalidateSize()
+          const marker = markerRegistryRef.current.get(target.id)
+          if (marker) {
+            marker.openPopup()
+            return
+          }
+          if (attempt < 10) openWhenReady(attempt + 1)
+        }, attempt === 0 ? 300 : 120)
+      }
+      openWhenReady(0)
     },
     [ensureCustomerCoordinates, persistCoordinateCache]
   )
