@@ -268,6 +268,10 @@ export default function Maps() {
   const [pendingMapPoint, setPendingMapPoint] = useState<RoutePoint | null>(null)
   const [mapPointHint, setMapPointHint] = useState<string | null>(null)
   const [fittingAll, setFittingAll] = useState(false)
+  // While we are following the user's position the map must not be pulled
+  // back to the bounds of every customer.
+  const [followingLocation, setFollowingLocation] = useState(false)
+  const locationWatchRef = useRef<number | null>(null)
   const [locatingAllPrecise, setLocatingAllPrecise] = useState(false)
   const [repairingCoordinates, setRepairingCoordinates] = useState(false)
   const [repairStats, setRepairStats] = useState<{
@@ -1164,7 +1168,30 @@ export default function Maps() {
       return
     }
 
-    navigator.geolocation.getCurrentPosition(
+    // A single GPS sample is usually the coarse network fix, and the next one
+    // lands somewhere else — that is what made the blue dot jump around. We
+    // follow the position for a few seconds and only move the map when a
+    // reading is genuinely more accurate than the one already shown.
+    if (locationWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(locationWatchRef.current)
+      locationWatchRef.current = null
+    }
+
+    setFollowingLocation(true)
+    setLocationMessage('Buscando tu ubicación…')
+
+    let bestAccuracy = Number.POSITIVE_INFINITY
+    let receivedAnyFix = false
+
+    const stopWatching = () => {
+      if (locationWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(locationWatchRef.current)
+        locationWatchRef.current = null
+      }
+      setFollowingLocation(false)
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
       position => {
         const coords = {
           lat: position.coords.latitude,
@@ -1178,6 +1205,16 @@ export default function Maps() {
           setLocationMessage('Tu ubicación está fuera de la zona de trabajo. Se mantiene el mapa actual.')
           return
         }
+
+        const accuracy = Number.isFinite(position.coords.accuracy)
+          ? Number(position.coords.accuracy)
+          : Number.POSITIVE_INFINITY
+
+        // Ignore readings that are clearly worse than what we already have.
+        if (receivedAnyFix && accuracy > bestAccuracy * 1.5) return
+
+        receivedAnyFix = true
+        bestAccuracy = Math.min(bestAccuracy, accuracy)
 
         const rawHeading = position.coords.heading
         const heading = Number.isFinite(rawHeading)
@@ -1199,14 +1236,37 @@ export default function Maps() {
           updatedAt: new Date(position.timestamp),
         })
         setLocationMessage('Distancias actualizadas desde tu ubicación.')
-        mapRef.current?.flyTo([coords.lat, coords.lng], 13, { duration: 0.8 })
+        mapRef.current?.flyTo([coords.lat, coords.lng], 16, { duration: 0.8 })
+
+        // A fix this precise will not improve much; stop early to save battery.
+        if (accuracy <= 20) stopWatching()
       },
       error => {
         console.debug('Geolocation error:', error.message)
-        setLocationMessage('No se pudo obtener tu ubicación. Se mantiene la base actual.')
+        if (!receivedAnyFix) {
+          setLocationMessage('No se pudo obtener tu ubicación. Se mantiene la base actual.')
+        }
+        stopWatching()
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     )
+
+    locationWatchRef.current = watchId
+
+    // Stop refining after a few seconds so the map settles instead of
+    // drifting with every new GPS sample.
+    window.setTimeout(() => {
+      if (locationWatchRef.current === watchId) stopWatching()
+    }, 12000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (locationWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(locationWatchRef.current)
+        locationWatchRef.current = null
+      }
+    }
   }, [])
 
   const centerOnMyLocation = useCallback(() => {
@@ -1822,7 +1882,7 @@ export default function Maps() {
                   defaultCenter={defaultCenter as [number, number]}
                   filterProvince={selectedProvince}
                   filterCity={selectedCity}
-                  suspendAutoFit={distanceMode || Boolean(selectedCustomerId)}
+                  suspendAutoFit={distanceMode || Boolean(selectedCustomerId) || followingLocation}
                 />
                 <TileLayer
                   url={mapTileProvider.url}
