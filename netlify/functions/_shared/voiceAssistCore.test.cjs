@@ -84,9 +84,12 @@ test('anything else is answered with help instead of a guess', () => {
   assert.equal(detectIntent(''), 'unknown')
   assert.equal(detectIntent(null), 'unknown')
 
-  const answer = answerQuestion({ intent: 'unknown', ...setup() })
-  assert.ok(answer.speech.includes('siguiente cliente'))
-  assert.equal(answer.stop, null)
+  // Every wording must tell the driver what they can ask.
+  for (const seed of [0, 1000, 2000]) {
+    const answer = answerQuestion({ intent: 'unknown', ...setup(), seed })
+    assert.ok(/siguiente|cuántos|lleve/i.test(answer.speech), answer.speech)
+    assert.equal(answer.stop, null)
+  }
 })
 
 test('a short recording that asks something is treated as a question', () => {
@@ -193,8 +196,9 @@ test('cities are listed once each, in route order', () => {
 test('the next-customer answer names the client, the place and the distance', () => {
   const answer = answerQuestion({ intent: 'next_customer', ...setup(ROUTE, AT_ROSA) })
 
-  assert.ok(answer.speech.startsWith('Tu siguiente cliente es Clínica Rosa'))
-  assert.ok(answer.speech.includes('Calle Larga 10'))
+  // Wording varies; the facts must not.
+  assert.ok(answer.speech.includes('Clínica Rosa'), answer.speech)
+  assert.ok(answer.speech.includes('Calle Larga 10'), answer.speech)
   assert.equal(answer.stop.id, 'c1')
   // Navigation links come along so "take me there" needs no second question.
   assert.ok(answer.navigation.google.includes('google.com/maps/dir'))
@@ -202,12 +206,57 @@ test('the next-customer answer names the client, the place and the distance', ()
 
 test('the count answer says how many are left, not just the total', () => {
   const route = { ...ROUTE, completed_visits: [{ customer_id: 'c1' }] }
-  const answer = answerQuestion({ intent: 'today_count', ...setup(route) })
 
-  assert.ok(answer.speech.includes('3 clientes'))
-  assert.ok(answer.speech.includes('Jerez de la Frontera y Sanlúcar de Barrameda'))
-  assert.ok(answer.speech.includes('1 ya visitados'))
-  assert.ok(answer.speech.includes('Te quedan 2'))
+  // Wording varies by design, so check every variant carries the same facts.
+  for (const seed of [0, 1000, 2000]) {
+    const answer = answerQuestion({ intent: 'today_count', ...setup(route), seed })
+
+    assert.ok(answer.speech.includes('Jerez de la Frontera y Sanlúcar de Barrameda'), answer.speech)
+    // One visited, two to go.
+    assert.ok(/\b1\b/.test(answer.speech), answer.speech)
+    assert.ok(/\b2\b/.test(answer.speech), answer.speech)
+  }
+})
+
+test('at the start of the day the answer does not talk about progress', () => {
+  const answer = answerQuestion({ intent: 'today_count', ...setup(ROUTE) })
+
+  assert.ok(answer.speech.includes('3'), answer.speech)
+  // Nothing visited yet: claiming "0 visitados" would sound like a report.
+  assert.ok(!/quedan/i.test(answer.speech), answer.speech)
+})
+
+test('the same question gives different wordings over time', () => {
+  const wordings = new Set(
+    [0, 1000, 2000, 3000, 4000].map(
+      seed => answerQuestion({ intent: 'next_customer', ...setup(ROUTE), seed }).speech
+    )
+  )
+
+  // Hearing the identical sentence all day is what made it feel robotic.
+  assert.ok(wordings.size > 1, `esperaba varias formulaciones, hubo ${wordings.size}`)
+})
+
+test('every wording still names the same customer', () => {
+  for (const seed of [0, 1000, 2000, 3000]) {
+    const answer = answerQuestion({ intent: 'next_customer', ...setup(ROUTE), seed })
+    assert.ok(answer.speech.includes('Clínica Rosa'), answer.speech)
+    assert.equal(answer.stop.id, 'c1')
+  }
+})
+
+test('the next-customer answer says what is left after this one', () => {
+  const twoLeft = answerQuestion({
+    intent: 'next_customer',
+    ...setup({ ...ROUTE, completed_visits: [{ customer_id: 'c1' }] }),
+  })
+  assert.ok(/queda uno más/i.test(twoLeft.speech), twoLeft.speech)
+
+  const lastOne = answerQuestion({
+    intent: 'next_customer',
+    ...setup({ ...ROUTE, completed_visits: [{ customer_id: 'c1' }, { customer_id: 'c2' }] }),
+  })
+  assert.ok(/último de hoy/i.test(lastOne.speech), lastOne.speech)
 })
 
 test('a finished route is reported as finished, not as zero clients', () => {
@@ -217,24 +266,26 @@ test('a finished route is reported as finished, not as zero clients', () => {
   }
 
   const count = answerQuestion({ intent: 'today_count', ...setup(route) })
-  assert.ok(count.speech.includes('Has terminado'))
+  assert.ok(/terminada|cerrado|Todo hecho/i.test(count.speech), count.speech)
 
   const next = answerQuestion({ intent: 'next_customer', ...setup(route) })
-  assert.ok(next.speech.includes('Ya has visitado todos'))
+  assert.ok(/no queda|visitado a todos|completa/i.test(next.speech), next.speech)
   assert.equal(next.stop, null)
 })
 
 test('without a route the assistant says so plainly', () => {
   const answer = answerQuestion({ intent: 'next_customer', route: null, stops: [], done: new Set() })
-  assert.equal(answer.speech, 'No tienes ninguna ruta guardada para hoy.')
+  assert.ok(/ruta/i.test(answer.speech), answer.speech)
+  // And points at how to fix it, the way a colleague would.
+  assert.ok(/Visitas|guardes|prepara/i.test(answer.speech), answer.speech)
   assert.equal(answer.navigation, null)
 })
 
 test('the navigate answer confirms out loud before opening the map', () => {
   const answer = answerQuestion({ intent: 'navigate_next', ...setup(ROUTE, AT_ROSA) })
 
-  assert.ok(answer.speech.startsWith('Vamos a Clínica Rosa'))
-  assert.ok(answer.speech.includes('Abriendo la navegación'))
+  assert.ok(answer.speech.includes('Clínica Rosa'), answer.speech)
+  assert.ok(/navegación|mapa|ruta/i.test(answer.speech), answer.speech)
   assert.ok(answer.navigation.waze.includes('waze.com'))
   assert.ok(answer.navigation.apple.includes('maps.apple.com'))
 })

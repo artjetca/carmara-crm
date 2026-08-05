@@ -79,6 +79,38 @@ function detectIntent(text) {
 // well contain the words "el siguiente cliente" while describing what happened.
 const MAX_QUESTION_CHARS = 70
 
+// Words that mark a sentence as a question rather than a story about a visit.
+const QUESTION_MARKERS = [
+  /^\s*¿/,
+  /\bdonde\b/,
+  /\bcual\b/,
+  /\bcuales\b/,
+  /\bcuanto\b/,
+  /\bcuantos\b/,
+  /\bcuantas\b/,
+  /\bquien\b/,
+  /\bque\b/,
+  /\bcomo\b/,
+  /\bcuando\b/,
+  /\btiene\b/,
+  /\btelefono\b/,
+  /\bdireccion\b/,
+  /\bbusca\b/,
+  /\bbuscar\b/,
+  /\bdime\b/,
+  /\bdame\b/,
+  /\bllevame\b/,
+  /\bnavega\b/,
+  /\bmas cercano\b/,
+  /\bmas cerca\b/,
+]
+
+function looksLikeQuestion(text) {
+  const haystack = fold(text)
+  if (!haystack) return false
+  return QUESTION_MARKERS.some(pattern => pattern.test(haystack))
+}
+
 /**
  * Decide whether a recording is a question to answer or a visit note to file.
  *
@@ -90,13 +122,17 @@ function classifyRecording(text) {
   const trimmed = String(text || '').trim()
   if (!trimmed) return { kind: 'note', intent: 'unknown' }
 
-  const intent = detectIntent(trimmed)
-  if (intent === 'unknown') return { kind: 'note', intent }
-
-  // Long enough to be a story about a visit, even if it mentions "el siguiente".
+  // Anything long is a visit note, whatever words it happens to contain.
   if (trimmed.length > MAX_QUESTION_CHARS) return { kind: 'note', intent: 'unknown' }
 
-  return { kind: 'question', intent }
+  const intent = detectIntent(trimmed)
+  if (intent !== 'unknown') return { kind: 'question', intent }
+
+  // Short and phrased as a question, but not one of the three we answer
+  // instantly: hand it to the model so any wording works.
+  if (looksLikeQuestion(trimmed)) return { kind: 'customer-question', intent: 'unknown' }
+
+  return { kind: 'note', intent: 'unknown' }
 }
 
 /** Metres between two coordinates (haversine). */
@@ -213,6 +249,57 @@ function listCities(stops) {
   return seen
 }
 
+// -- Talking like an assistant, not a form -----------------------------------
+
+/**
+ * Pick one of several wordings.
+ *
+ * A colleague does not answer with the identical sentence every time; hearing
+ * the same phrase all day makes the assistant feel like a machine reading a
+ * field. The seed keeps one answer stable while it is being spoken.
+ */
+function pickVariant(options, seed = Date.now()) {
+  if (!Array.isArray(options) || options.length === 0) return ''
+  const index = Math.abs(Math.floor(seed / 1000)) % options.length
+  return options[index]
+}
+
+/** Morning, afternoon or evening in Spain, for a natural greeting. */
+function partOfDay(date = new Date(), timeZone = 'Europe/Madrid') {
+  let hour
+  try {
+    hour = Number(
+      new Intl.DateTimeFormat('es-ES', { timeZone, hour: 'numeric', hour12: false }).format(date)
+    )
+  } catch {
+    hour = date.getHours()
+  }
+
+  if (!Number.isFinite(hour)) hour = 12
+  if (hour < 6) return 'night'
+  if (hour < 14) return 'morning'
+  if (hour < 21) return 'afternoon'
+  return 'night'
+}
+
+/**
+ * A short remark about how the day is going.
+ *
+ * This is what makes it sound like an assistant rather than a database: it
+ * notices progress instead of only reciting numbers. Only ever states facts
+ * we can see in the route.
+ */
+function progressRemark(doneCount, pendingCount) {
+  const total = doneCount + pendingCount
+  if (total === 0) return ''
+
+  if (doneCount === 0) return ''
+  if (pendingCount === 0) return ''
+  if (pendingCount === 1) return 'Ya solo te queda uno.'
+  if (doneCount >= pendingCount) return 'Vas por buen camino.'
+  return ''
+}
+
 /** Join city names the way a person would say them. */
 function speakList(items) {
   if (items.length === 0) return ''
@@ -246,12 +333,18 @@ function buildNavigationUrls(stop) {
  * Every branch returns a `speech` sentence: the whole point is that the
  * salesperson never has to look at the screen.
  */
-function answerQuestion({ intent, route, stops, done, coords }) {
+function answerQuestion({ intent, route, stops, done, coords, seed = Date.now(), now = new Date() }) {
   if (intent === 'unknown') {
     return {
       intent,
-      speech:
-        'No te he entendido. Puedes preguntar cuál es tu siguiente cliente, cuántos clientes tienes hoy, o decir llévame al siguiente.',
+      speech: pickVariant(
+        [
+          'Perdona, no te he pillado. Puedes preguntarme quién es tu siguiente cliente, cuántos tienes hoy, o decirme que te lleve al siguiente.',
+          'No te he entendido bien. Pregúntame por tu siguiente cliente, por los que tienes hoy, o dime que te lleve al siguiente.',
+          'Eso no lo he cogido. Prueba con: quién es el siguiente, cuántos clientes tengo hoy, o llévame al siguiente.',
+        ],
+        seed
+      ),
       stop: null,
       navigation: null,
     }
@@ -260,7 +353,14 @@ function answerQuestion({ intent, route, stops, done, coords }) {
   if (!route || stops.length === 0) {
     return {
       intent,
-      speech: 'No tienes ninguna ruta guardada para hoy.',
+      speech: pickVariant(
+        [
+          'No veo ninguna ruta guardada para hoy. Si la preparas en Visitas, te voy guiando.',
+          'Hoy no tienes ruta guardada. Créala en Visitas y te aviso de cada parada.',
+          'No encuentro ruta para hoy. En cuanto guardes una, te digo por dónde empezar.',
+        ],
+        seed
+      ),
       stop: null,
       navigation: null,
     }
@@ -275,18 +375,59 @@ function answerQuestion({ intent, route, stops, done, coords }) {
     if (pending.length === 0) {
       return {
         intent,
-        speech: `Has terminado la ruta de hoy: ${stops.length} clientes${where}.`,
+        speech: pickVariant(
+          [
+            `Ya está, ruta terminada: ${stops.length} clientes${where}. Buen trabajo.`,
+            `Has cerrado la ruta de hoy, ${stops.length} clientes${where}. Nada más pendiente.`,
+            `Todo hecho: los ${stops.length} clientes${where} están visitados.`,
+          ],
+          seed
+        ),
         stop: null,
         navigation: null,
       }
     }
 
     const doneCount = stops.length - pending.length
-    const progress = doneCount > 0 ? `, ${doneCount} ya visitados` : ''
+    const remark = progressRemark(doneCount, pending.length)
+
+    // Nothing done yet: this is the start of the day.
+    if (doneCount === 0) {
+      const moment = partOfDay(now)
+      // Only full-stop greetings: a comma would leave "Buenos días, Te
+      // esperan…", which reads and sounds wrong.
+      const opener =
+        moment === 'morning'
+          ? pickVariant(['Buenos días. ', '', 'Buenos días. '], seed)
+          : moment === 'afternoon'
+            ? pickVariant(['Buenas tardes. ', '', 'Buenas tardes. '], seed)
+            : ''
+
+      return {
+        intent,
+        speech: pickVariant(
+          [
+            `${opener}Hoy tienes ${stops.length} clientes${where}.`,
+            `${opener}Te esperan ${stops.length} clientes${where}.`,
+            `${opener}La ruta de hoy son ${stops.length} clientes${where}.`,
+          ],
+          seed
+        ).trim(),
+        stop: null,
+        navigation: null,
+      }
+    }
 
     return {
       intent,
-      speech: `Hoy tienes ${stops.length} clientes${where}${progress}. Te quedan ${pending.length}.`,
+      speech: pickVariant(
+        [
+          `Llevas ${doneCount} de ${stops.length}${where}. Te quedan ${pending.length}. ${remark}`,
+          `De los ${stops.length} de hoy${where} ya has visto ${doneCount}. Quedan ${pending.length}. ${remark}`,
+          `Van ${doneCount} visitados y quedan ${pending.length}${where}. ${remark}`,
+        ],
+        seed
+      ).trim(),
       stop: null,
       navigation: null,
     }
@@ -297,7 +438,14 @@ function answerQuestion({ intent, route, stops, done, coords }) {
   if (!next) {
     return {
       intent,
-      speech: 'Ya has visitado todos los clientes de hoy.',
+      speech: pickVariant(
+        [
+          'Ya no queda nadie por visitar hoy. Buen trabajo.',
+          'Has visitado a todos los de hoy, no queda ninguno.',
+          'Ruta completa, no tienes más paradas hoy.',
+        ],
+        seed
+      ),
       stop: null,
       navigation: null,
     }
@@ -305,24 +453,45 @@ function answerQuestion({ intent, route, stops, done, coords }) {
 
   const distance = speakDistance(next.meters)
   const navigation = buildNavigationUrls(next)
+  const remaining = pending.length
 
   if (intent === 'navigate_next') {
     return {
       intent,
-      speech: `Vamos a ${next.name}${distance ? `, a ${distance}` : ''}. Abriendo la navegación.`,
+      speech: pickVariant(
+        [
+          `Vamos a ${next.name}${distance ? `, a ${distance}` : ''}. Te abro la navegación.`,
+          `Marchando a ${next.name}${distance ? `, ${distance}` : ''}. Abriendo el mapa.`,
+          `Te llevo a ${next.name}${distance ? `, a ${distance}` : ''}. Ahí va la ruta.`,
+        ],
+        seed
+      ),
       stop: next,
       navigation,
     }
   }
 
   const place = [next.address, next.city].filter(Boolean).join(', ')
-  const parts = [`Tu siguiente cliente es ${next.name}`]
-  if (place) parts.push(`en ${place}`)
-  if (distance) parts.push(`a ${distance}`)
+  const where = place ? `, en ${place}` : ''
+  const howFar = distance ? `, a ${distance}` : ''
+  // Mentioning what is left turns a lookup into a briefing.
+  const tail =
+    remaining === 1
+      ? ' Es el último de hoy.'
+      : remaining === 2
+        ? ' Después te queda uno más.'
+        : ` Después te quedan ${remaining - 1}.`
 
   return {
     intent,
-    speech: `${parts.join(', ')}.`,
+    speech: pickVariant(
+      [
+        `Tu siguiente cliente es ${next.name}${where}${howFar}.${tail}`,
+        `Ahora toca ${next.name}${where}${howFar}.${tail}`,
+        `Te espera ${next.name}${where}${howFar}.${tail}`,
+      ],
+      seed
+    ),
     stop: next,
     navigation,
   }
@@ -333,6 +502,7 @@ module.exports = {
   fold,
   detectIntent,
   classifyRecording,
+  looksLikeQuestion,
   distanceMeters,
   speakDistance,
   speakList,
@@ -340,6 +510,9 @@ module.exports = {
   completedIds,
   pickNextStop,
   listCities,
+  pickVariant,
+  partOfDay,
+  progressRemark,
   buildNavigationUrls,
   answerQuestion,
 }

@@ -24,7 +24,9 @@ const {
   parseRouteCustomers,
   completedIds,
   answerQuestion,
+  buildNavigationUrls,
 } = require('./_shared/voiceAssistCore.cjs')
+const { answerCustomerQuestion } = require('./_shared/customerQueryCore.cjs')
 
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024
 const STT_TIMEOUT_MS = 60000
@@ -293,10 +295,51 @@ exports.handler = async event => {
   // whole address book with every recording.
   const { data: customers } = await auth.supabase
     .from('customers')
-    .select('id, name, company, latitude, longitude, city')
+    .select('id, name, company, latitude, longitude, city, province, address, phone')
     .limit(2000)
 
   const callLlm = createOpenAiCaller(apiKey)
+
+  // A short question we do not answer with a fixed sentence: let the model
+  // phrase it, but only from the customers we actually found in the CRM.
+  if (classified.kind === 'customer-question') {
+    const answer = await answerCustomerQuestion(callLlm, {
+      question: transcript,
+      customers: customers || [],
+      coords,
+      maxAttempts: 2,
+    })
+
+    const stop = answer.customer
+      ? {
+          id: answer.customer.id,
+          name: answer.customer.name,
+          address: String(answer.customer.address || ''),
+          city: String(answer.customer.city || ''),
+          latitude: Number.isFinite(Number(answer.customer.latitude))
+            ? Number(answer.customer.latitude)
+            : null,
+          longitude: Number.isFinite(Number(answer.customer.longitude))
+            ? Number(answer.customer.longitude)
+            : null,
+        }
+      : null
+
+    return jsonResponse(200, {
+      success: true,
+      kind: 'question',
+      data: {
+        question: transcript,
+        intent: answer.navigate ? 'navigate_next' : 'customer_info',
+        speech: answer.speech,
+        stop,
+        navigation: stop ? buildNavigationUrls(stop) : null,
+        route_name: null,
+        is_today: false,
+      },
+    })
+  }
+
   const spokenName = await extractSpokenCustomer(callLlm, transcript)
   const match = resolveCaptureCustomer({
     coords,

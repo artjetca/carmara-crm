@@ -126,10 +126,20 @@ function speakWithBrowser(sentence: string): void {
  * robotic and is frequently silent inside the iOS WebView, which defeats the
  * whole point of not looking at the phone.
  */
-export async function speak(sentence: string): Promise<void> {
-  if (!sentence || typeof window === 'undefined') return
+export type SpeakOutcome = 'natural' | 'browser' | 'silent'
+
+/** Why the last answer could not be spoken, for on-device diagnosis. */
+let lastSpeakError = ''
+
+export function getLastSpeakError(): string {
+  return lastSpeakError
+}
+
+export async function speak(sentence: string): Promise<SpeakOutcome> {
+  if (!sentence || typeof window === 'undefined') return 'silent'
 
   stopCurrentAudio()
+  lastSpeakError = ''
 
   try {
     const headers = await authHeaders()
@@ -139,10 +149,12 @@ export async function speak(sentence: string): Promise<void> {
       body: JSON.stringify({ text: sentence, voice: getPreferredVoice() }),
     })
 
-    if (!response.ok) throw new Error('tts-failed')
+    if (!response.ok) throw new Error(`tts-http-${response.status}`)
 
     const payload = await response.json()
-    if (!payload.success || !payload.data?.audio_base64) throw new Error('tts-empty')
+    if (!payload.success || !payload.data?.audio_base64) {
+      throw new Error(payload.error ? `tts:${payload.error}` : 'tts-empty')
+    }
 
     const audio = new Audio(
       `data:${payload.data.mime_type || 'audio/mpeg'};base64,${payload.data.audio_base64}`
@@ -150,9 +162,16 @@ export async function speak(sentence: string): Promise<void> {
     currentAudio = audio
 
     // Playing follows a tap, so autoplay restrictions do not apply.
+    // Inside the iOS WebView `play()` can still reject (audio session busy
+    // right after recording), so a failure has to fall through to the backup
+    // voice rather than leave the driver in silence.
+    audio.volume = 1
     await audio.play()
-  } catch {
+    return 'natural'
+  } catch (error) {
+    lastSpeakError = error instanceof Error ? error.message : 'error desconocido'
     speakWithBrowser(sentence)
+    return 'browser'
   }
 }
 
